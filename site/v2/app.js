@@ -141,6 +141,7 @@ function drawMap(cells, opts) {
   var vb = viewBox(opts.box || sh.box, opts.pad == null ? 0.02 : opts.pad);
   var fs = vb[2] / 34;
   var out = ['<svg class="map shapes" viewBox="' + vb.join(" ") +
+    (opts.cover ? '" preserveAspectRatio="xMidYMid slice' : "") +
     '" role="group" aria-label="' + esc(opts.aria) + '">'];
 
   // Every area we can draw, in the sunk colour, so the painted ones read as
@@ -168,9 +169,26 @@ function drawMap(cells, opts) {
   // Cap the count as well as the size: a city of 150 areas will happily pass a
   // dozen names that individually fit and collectively are a hedge.
   labels = labels.filter(function (l) { return l.w >= l.s.length * fs * 0.46; });
+  if (opts.cover) {
+    // The banner is one frame shown through two very different windows, and
+    // `slice` crops whichever axis has slack. A desktop banner is far wider
+    // than the frame, so it keeps the full width and loses top and bottom; a
+    // phone card is nearly square, so it keeps the full height and loses the
+    // sides. A name near a cropped edge renders decapitated, and no label
+    // beats half a label — so names outside the *desktop* safe area are
+    // dropped outright, and those outside the much narrower *phone* one are
+    // marked `wide` and hidden by the stylesheet below 900px.
+    var cx = vb[0] + vb[2] / 2, cy = vb[1] + vb[3] / 2;
+    labels = labels.filter(function (l) {
+      if (Math.abs(l.y - cy) >= vb[3] * 0.27) return false;
+      l.wide = Math.abs(l.x - cx) >= vb[2] * 0.17;
+      return Math.abs(l.x - cx) < vb[2] * 0.44;
+    });
+  }
   labels.sort(function (x, y) { return y.w - x.w; });
   labels.slice(0, 11).forEach(function (l) {
-    out.push('<text class="lbl" x="' + l.x + '" y="' + (l.y + fs * 0.34) +
+    out.push('<text class="lbl' + (l.wide ? " wide" : "") + '" x="' + l.x +
+      '" y="' + (l.y + fs * 0.34) +
       '" font-size="' + fs.toFixed(2) +
       '" stroke-width="' + (fs * 0.22).toFixed(2) +
       '">' + esc(l.s) + "</text>");
@@ -819,6 +837,12 @@ function screenArea(key) {
   if (at) {
     var w = at[4] - at[2], h = at[5] - at[3], m = Math.max(w, h) * 0.32;
     var box = [at[2] - m, at[3] - m, at[4] + m, at[5] + m];
+    // The map is a banner across the content column, not a sidebar square:
+    // widen the frame to ~2.6:1 so the district sits centred with a full ring
+    // of neighbours filling the width. The svg crops with `slice`, so a phone
+    // simply sees the centre of this same frame.
+    var bw = box[2] - box[0], bh = box[3] - box[1], want = bh * 2.6;
+    if (bw < want) { box[0] -= (want - bw) / 2; box[2] += (want - bw) / 2; }
     var near = allAreas().filter(function (o) {
       var bx = sh.at[o.key];
       return bx && bx[2] < box[2] && bx[4] > box[0] && bx[3] < box[3] && bx[5] > box[1];
@@ -834,10 +858,11 @@ function screenArea(key) {
       // city; the nearest couple of dozen is a neighbourhood, the rest is a
       // reprint of the front page.
       .slice(0, 26);
-    mini = '<div class="mapcard"><div class="maphead"><span class="t">' +
+    mini = '<div class="mapcard maparea"><div class="maphead"><span class="t">' +
       t("area.map.tap", { name: esc(areaName(key)) }) + "</span></div>" +
       drawMap(near, {
         aria: t("map.aria.area", { name: areaName(key) }), box: box, active: key,
+        cover: true,
       }) + "</div>";
   }
 
@@ -1298,7 +1323,7 @@ window.__render__ = function (path) {
   return {
     body: html,
     city: atCity ? city.slug : "",
-    split: !!box.querySelector(".side, .mapcard, .shot"),
+    split: !!box.querySelector(".side, .mapcard:not(.maparea), .shot"),
     head: headFor(path),
     links: links,
   };
@@ -1378,7 +1403,7 @@ function render() {
   view.innerHTML = html;
   // Two columns only when there is something to put in the second one; a lot
   // list has no map, and an empty sticky column is just a wide margin.
-  view.className = "wrap" + (view.querySelector(".side, .mapcard, .shot") ? " split" : "");
+  view.className = "wrap" + (view.querySelector(".side, .mapcard:not(.maparea), .shot") ? " split" : "");
   window.scrollTo(0, 0);
   wire();
 }
