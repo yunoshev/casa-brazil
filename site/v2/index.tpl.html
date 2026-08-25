@@ -1,0 +1,38 @@
+<meta charset="utf-8">
+<!-- Overwritten by the runtime once it knows the reader's language. -->
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<!-- The head carries the reference language as a fallback and the runtime
+     rewrites it on load. Per-language pages at their own URLs come with the
+     static routes; until then a crawler that runs no JS sees one language. -->
+<title data-i18n="meta.title">__TITLE__</title>
+<meta name="description" data-i18n-content="meta.desc" content="__DESC__">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,700;12..96,800&family=Instrument+Sans:wght@400;500;600;700&family=Martian+Mono:wght@400;500;600&display=swap">
+<link rel="stylesheet" href="/v2/style.css">
+
+<header class="top">
+  <div class="wrap">
+    <a class="brand" href="/" data-i18n="brand.name"></a>
+    <span class="grow"></span>
+    <button class="pick" id="citypick" aria-haspopup="listbox" aria-expanded="false"
+            data-i18n-aria="nav.city">
+      <span id="cityname"></span>
+      <svg viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.8"
+           stroke-linecap="round" stroke-linejoin="round"><path d="M3 5l3 3 3-3"/></svg>
+    </button>
+    <button class="pick icon" id="theme" data-i18n-title="nav.theme" data-i18n-aria="nav.theme">
+      <svg id="themeicon" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+           stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"></svg>
+    </button>
+    <div class="menu" id="citymenu" hidden role="listbox" data-i18n-aria="nav.city"></div>
+  </div>
+</header>
+
+<main class="wrap" id="view"></main>
+
+<script>window.__I18N__ = __I18N_DATA__;</script>
+<script src="/parts/lang.js"></script>
+<script src="/parts/chrome.js"></script>
+<script>window.__D__ = __PAYLOAD__;</script>
+<script src="/v2/app.js"></script>

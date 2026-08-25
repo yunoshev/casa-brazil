@@ -1,0 +1,4 @@
+dist/
+.prerender-profile/
+__pycache__/
+*.pyc

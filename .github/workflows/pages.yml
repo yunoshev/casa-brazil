@@ -1,0 +1,85 @@
+# The site, built and published by GitHub itself.
+#
+# Lives here rather than in .github/workflows because this directory is a
+# corner of a private monorepo, and the site is published from its own public
+# repository — `publish_repo.py` copies this file into place as
+# .github/workflows/pages.yml. Nothing in the public repo is a secret: the
+# payload it builds from is the same JSON the site ships to every reader.
+#
+# Two things this buys over pushing a built `dist`:
+#   * the site is reproducible from the repository, so a bad deploy is a git
+#     revert rather than an archaeology exercise;
+#   * `dist` never enters git history. It is 7 000 files and a rebuild reprices
+#     almost all of them, so committing it would add a few hundred megabytes a
+#     year to a repository whose actual source is three megabytes.
+name: pages
+
+on:
+  push:
+    branches: [main]
+  # Data changes without the code changing; this is how a refresh ships.
+  workflow_dispatch:
+
+# The default 10-builds-an-hour ceiling does not apply to a workflow that
+# publishes with actions/deploy-pages, which is one of the reasons to use one.
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    # Quietly waits until the domain decision lands in the SITE_URL repository
+    # variable — a red build on every push before that would only teach people
+    # to ignore red builds.
+    if: vars.SITE_URL != ''
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Install
+        run: pip install --disable-pip-version-check websockets
+
+      - name: Build the payload
+        run: python proto_build.py
+
+      # Chrome is preinstalled on ubuntu-latest; prerender drives it over CDP.
+      - name: Serve and pre-render
+        env:
+          # Set SITE_URL as a repository variable once the domain is decided.
+          # Canonical links, the sitemap and robots.txt all read it, and a
+          # wrong value here is the one mistake a static site cannot correct
+          # after the fact.
+          SITE: ${{ vars.SITE_URL }}
+        run: |
+          test -n "$SITE" || { echo "::error::SITE_URL не задан"; exit 1; }
+          python -u serve.py --port 8899 &
+          for i in $(seq 1 60); do
+            curl -sf -o /dev/null http://127.0.0.1:8899/v2/index.html && break
+            sleep 0.5
+          done
+          python -u prerender.py --site "$SITE"
+
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: dist
+
+  deploy:
+    needs: build
+    if: vars.SITE_URL != ''
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
+      - id: deploy
+        uses: actions/deploy-pages@v4

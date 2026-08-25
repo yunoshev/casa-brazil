@@ -1,0 +1,40 @@
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>__TITLE__</title>
+<meta name="description" content="__DESC__">
+<!-- One URL per page, and the page says which one it is. A reader who arrives
+     with ?lang= on the end is looking at the same page in another language,
+     not at a second page. -->
+<link rel="canonical" href="__CANONICAL__">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,700;12..96,800&family=Instrument+Sans:wght@400;500;600;700&family=Martian+Mono:wght@400;500;600&display=swap">
+<link rel="stylesheet" href="/v2/style.css">
+__LD__
+
+<header class="top">
+  <div class="wrap">
+    <a class="brand" href="/">Preço&nbsp;<em>Real</em></a>
+    <span class="grow"></span>
+    <button class="pick" id="citypick" aria-haspopup="listbox" aria-expanded="false">
+      <span id="cityname"></span>
+      <svg viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.8"
+           stroke-linecap="round" stroke-linejoin="round"><path d="M3 5l3 3 3-3"/></svg>
+    </button>
+    <button class="pick icon" id="theme">
+      <svg id="themeicon" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+           stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"></svg>
+    </button>
+    <div class="menu" id="citymenu" hidden role="listbox"></div>
+  </div>
+</header>
+
+<main class="__CLASS__" id="view">__BODY__</main>
+
+<!-- Everything a flat page needs that a link cannot express: the theme, and
+     the city menu. No dataset and no renderer — the content above was written
+     at build time and every route below it is a file. -->
+<script>window.__I18N__ = __I18N_DATA__; window.__CITIES__ = __CITIES_DATA__;
+window.__HERE__ = __HERE_DATA__;</script>
+<script src="/parts/lang.js" defer></script>
+<script src="/parts/chrome.js" defer></script>

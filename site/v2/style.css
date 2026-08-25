@@ -1,0 +1,500 @@
+/* Preço Real — phone-first.
+ *
+ * The palette carries meaning, not decoration: green and red are reserved for
+ * "cheaper / dearer than the hammer" and are never used for chrome, so a colour
+ * on this page always means the same thing. The one non-semantic colour is the
+ * chartreuse marker, used to show which thing is currently selected — and
+ * nowhere else. */
+
+:root{
+  --paper:#F4F7F3;
+  --card:#FFFFFF;
+  --sunk:#EDF1EB;
+  --ink:#0F1310;
+  --ink2:#59635B;
+  --ink3:#8A948C;
+  --line:#DFE6DD;
+  --line2:#EEF2ED;
+
+  --good:#0E6E45;
+  --good-bg:#E2F2E8;
+  --bad:#BE3418;
+  --bad-bg:#FBE8E3;
+  --warn:#8F6206;
+  --warn-bg:#F8EFDC;
+  --mute:#7D8880;
+  --mute-bg:#E9EDE8;
+
+  --mark:#D6F24F;
+  --shadow:0 1px 2px rgba(15,19,16,.05), 0 8px 24px -12px rgba(15,19,16,.18);
+
+  --display:"Bricolage Grotesque","Trebuchet MS",sans-serif;
+  --body:"Instrument Sans","Helvetica Neue",Arial,sans-serif;
+  --label:"Martian Mono",ui-monospace,SFMono-Regular,monospace;
+
+  --pad:18px;
+  --r:16px;
+}
+
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --paper:#0C100D; --card:#141915; --sunk:#101511;
+    --ink:#ECF2EE; --ink2:#98A69C; --ink3:#6C7970;
+    --line:#222B24; --line2:#1A211C;
+    --good:#4ECB90; --good-bg:#12291F;
+    --bad:#FF7C5E;  --bad-bg:#2C1710;
+    --warn:#DFAA4A; --warn-bg:#2A2113;
+    --mute:#8D998F; --mute-bg:#1B221D;
+    --mark:#C6E64A;
+    --shadow:0 1px 2px rgba(0,0,0,.5), 0 10px 28px -14px rgba(0,0,0,.7);
+  }
+}
+:root[data-theme="dark"]{
+  --paper:#0C100D; --card:#141915; --sunk:#101511;
+  --ink:#ECF2EE; --ink2:#98A69C; --ink3:#6C7970;
+  --line:#222B24; --line2:#1A211C;
+  --good:#4ECB90; --good-bg:#12291F;
+  --bad:#FF7C5E;  --bad-bg:#2C1710;
+  --warn:#DFAA4A; --warn-bg:#2A2113;
+  --mute:#8D998F; --mute-bg:#1B221D;
+  --mark:#C6E64A;
+  --shadow:0 1px 2px rgba(0,0,0,.5), 0 10px 28px -14px rgba(0,0,0,.7);
+}
+
+*{box-sizing:border-box}
+html,body{margin:0;padding:0}
+body{
+  background:var(--paper); color:var(--ink);
+  font-family:var(--body); font-size:16px; line-height:1.45;
+  -webkit-font-smoothing:antialiased;
+  padding-bottom:34px;
+}
+h1,h2,h3{font-family:var(--display); margin:0; text-wrap:balance; letter-spacing:-.02em}
+button{font:inherit; color:inherit; background:none; border:0; cursor:pointer}
+a{color:inherit}
+
+.wrap{max-width:520px; margin:0 auto; padding:0 var(--pad)}
+
+/* ---- chrome ---------------------------------------------------- */
+
+.top{
+  position:sticky; top:0; z-index:40;
+  background:color-mix(in srgb, var(--paper) 88%, transparent);
+  backdrop-filter:saturate(1.4) blur(12px);
+  border-bottom:1px solid var(--line2);
+}
+.top .wrap{display:flex; align-items:center; gap:8px; height:54px; position:relative}
+.brand{
+  font-family:var(--display); font-weight:800; font-size:17px; letter-spacing:-.03em;
+  display:inline-flex; align-items:center; min-height:44px;
+}
+.brand em{font-style:normal; color:var(--good)}
+.grow{flex:1}
+
+.pick{
+  display:inline-flex; align-items:center; gap:6px;
+  min-height:44px; padding:0 14px; border-radius:99px;
+  border:1px solid var(--line); background:var(--card);
+  font-size:14px; font-weight:600;
+}
+.pick svg{width:12px; height:12px; opacity:.55}
+.pick.icon{padding:0; width:44px; justify-content:center}
+.pick.icon svg{width:17px; height:17px; opacity:.8}
+
+.back{
+  display:inline-flex; align-items:center; gap:8px;
+  min-height:44px; padding:0 4px; font-weight:600; font-size:15px;
+}
+.back svg{width:16px; height:16px}
+
+/* ---- hero ------------------------------------------------------ */
+
+.hero{padding:22px 0 6px}
+h1{font-size:30px; font-weight:800; line-height:1.08}
+h1 .q{color:var(--bad)}
+.mark{
+  background:var(--mark); color:#0F1310;
+  padding:0 .2em; border-radius:5px;
+  box-decoration-break:clone; -webkit-box-decoration-break:clone;
+}
+.lede{color:var(--ink2); font-size:15px; margin:12px 0 0}
+
+/* ---- the catch ------------------------------------------------- */
+
+.catch{
+  display:grid; grid-template-columns:1fr auto 1fr; align-items:center; gap:10px;
+  background:var(--card); border:1px solid var(--line); border-radius:var(--r);
+  padding:14px; margin-top:18px; box-shadow:var(--shadow);
+}
+.catch .lab{
+  font-family:var(--label); font-size:9px; letter-spacing:.1em;
+  text-transform:uppercase; color:var(--ink3); display:block; margin-bottom:4px;
+}
+.catch .big{font-family:var(--display); font-size:26px; font-weight:800; line-height:1}
+.catch .was{color:var(--ink3); text-decoration:line-through; text-decoration-color:var(--bad); text-decoration-thickness:2px}
+.catch .arr{color:var(--ink3)}
+.catch .now.up{color:var(--bad)}
+.catch .now.dn{color:var(--good)}
+.catch .foot{grid-column:1/-1; font-size:12.5px; color:var(--ink2); border-top:1px solid var(--line2); padding-top:10px; margin-top:2px}
+
+/* ---- stat tiles ------------------------------------------------ */
+
+.tiles{display:grid; grid-template-columns:repeat(3,1fr); gap:8px; margin-top:12px}
+.tile{
+  background:var(--card); border:1px solid var(--line); border-radius:12px;
+  padding:11px 10px; text-align:left;
+}
+.tile b{display:block; font-family:var(--display); font-size:19px; font-weight:800; letter-spacing:-.03em}
+.tile span{display:block; font-size:11px; color:var(--ink2); line-height:1.25; margin-top:3px}
+
+/* ---- map ------------------------------------------------------- */
+
+.mapcard{
+  background:var(--card); border:1px solid var(--line); border-radius:var(--r);
+  padding:12px; margin-top:14px; box-shadow:var(--shadow);
+}
+.maphead{display:flex; align-items:center; gap:8px; margin-bottom:8px}
+.maphead .t{font-family:var(--label); font-size:10px; letter-spacing:.1em; text-transform:uppercase; color:var(--ink3)}
+.zoomout{
+  min-height:44px; padding:0 14px; border-radius:99px; border:1px solid var(--line);
+  font-size:12.5px; font-weight:600; display:inline-flex; align-items:center; gap:6px;
+}
+/* The hex map paints its label halos slightly outside the box; the outline map
+ * must NOT — its background layer spans the whole city while the viewBox is
+ * cropped to one zone, and `visible` lets that layer paint over the page. */
+svg.map{display:block; width:100%; height:auto; overflow:visible; touch-action:manipulation}
+svg.map.shapes{overflow:hidden}
+svg.map .hex{stroke:var(--card); stroke-width:1.5; cursor:pointer}
+/* The halo has to be the hex's own fill, set per element — a fixed light halo
+ * erases white type the moment a cell goes dark. */
+svg.map .lbl{
+  font-family:var(--body); font-weight:700; text-anchor:middle;
+  pointer-events:none; paint-order:stroke; stroke-width:2.6px; stroke-linejoin:round;
+}
+svg.map .sub{font-family:var(--label); font-weight:400; text-anchor:middle; pointer-events:none; opacity:.62}
+svg.map g.on .hex{stroke:var(--ink); stroke-width:2.5}
+svg.map g.on .area{stroke:var(--ink) !important; stroke-width:1.4px !important}
+svg.map .area{cursor:pointer; transition:filter .12s ease}
+svg.map .cell:hover .area, svg.map .cell:focus-visible .area{filter:brightness(1.12)}
+svg.map .ghost{pointer-events:none}
+svg.map.shapes{max-height:62vh}
+
+.legend{display:flex; align-items:center; gap:10px; margin-top:10px; flex-wrap:wrap}
+.legend .sw{display:inline-flex; align-items:center; gap:5px; font-size:11px; color:var(--ink2)}
+.legend i{width:11px; height:11px; border-radius:3px; display:inline-block;
+  border:1px solid color-mix(in srgb, var(--ink) 14%, transparent)}
+
+/* ---- lists ----------------------------------------------------- */
+
+.sec{margin-top:22px}
+.sechead{display:flex; align-items:baseline; gap:8px; margin-bottom:10px; flex-wrap:wrap}
+.sechead h2{font-size:19px; font-weight:800}
+.sechead .n{font-family:var(--label); font-size:11px; color:var(--ink3)}
+
+.rowlist{display:flex; flex-direction:column; gap:8px}
+.row{
+  display:block; width:100%; text-align:left; text-decoration:none;
+  background:var(--card); border:1px solid var(--line); border-radius:14px;
+  padding:12px 14px; min-height:56px;
+}
+.row .r1{display:flex; align-items:center; gap:10px}
+.row .nm{font-weight:700; font-size:15px; flex:1; min-width:0;
+  overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
+.row .sub{font-size:12px; color:var(--ink2); margin-top:3px}
+.bar{height:5px; border-radius:99px; background:var(--sunk); margin-top:9px; overflow:hidden}
+.bar i{display:block; height:100%; border-radius:99px}
+
+.pill{
+  font-family:var(--label); font-size:11px; font-weight:600;
+  padding:4px 8px; border-radius:8px; white-space:nowrap;
+}
+.pill.good{color:var(--good); background:var(--good-bg)}
+.pill.bad{color:var(--bad); background:var(--bad-bg)}
+.pill.mute{color:var(--mute); background:var(--mute-bg)}
+.pill.warn{color:var(--warn); background:var(--warn-bg)}
+
+/* ---- lot card in a list ---------------------------------------- */
+
+.lot{display:flex; gap:12px; align-items:stretch}
+.lot .ph{
+  width:82px; min-width:82px; height:82px; border-radius:11px;
+  background:var(--sunk) center/cover no-repeat; overflow:hidden;
+  display:flex; align-items:center; justify-content:center;
+}
+.lot .ph span{font-family:var(--label); font-size:8px; color:var(--ink3); text-align:center; padding:4px}
+.lot .body{flex:1; min-width:0; display:flex; flex-direction:column; justify-content:space-between}
+.lot .ttl{font-weight:700; font-size:14.5px; line-height:1.25}
+.lot .meta{font-size:12px; color:var(--ink2)}
+
+.lot .r1{display:flex; align-items:flex-start; gap:8px}
+.lot .r1 .ttl{flex:1; min-width:0}
+/* One line, not two columns: at 70px each, "R$ 33 635" broke across lines. */
+.lot .nums{margin-top:6px}
+.lot .nums .k{font-family:var(--label); font-size:8.5px; letter-spacing:.08em;
+  text-transform:uppercase; color:var(--ink3); white-space:nowrap}
+.lot .nums .v{font-weight:700; font-size:13.5px; font-variant-numeric:tabular-nums;
+  white-space:nowrap; overflow:hidden; text-overflow:ellipsis}
+.lot .nums em{font-style:normal; color:var(--ink3); font-weight:400}
+.lot .nums b{color:var(--good)}
+
+/* ---- verdict --------------------------------------------------- */
+
+.verdict{
+  background:var(--card); border:1px solid var(--line); border-radius:var(--r);
+  padding:16px; box-shadow:var(--shadow); margin-top:14px;
+}
+.verdict .word{
+  font-family:var(--display); font-size:26px; font-weight:800; line-height:1.05;
+  letter-spacing:-.03em; margin:0;
+}
+.verdict .word.good{color:var(--good)}
+.verdict .word.bad{color:var(--bad)}
+.verdict .word.mute{color:var(--mute)}
+.verdict .delta{font-family:var(--display); font-size:34px; font-weight:800; letter-spacing:-.04em; float:right; line-height:1}
+.verdict .say{color:var(--ink2); font-size:14px; margin:10px 0 0; clear:both}
+
+.scale{margin-top:20px}
+.scale .track{position:relative; height:3px; background:var(--line); border-radius:99px; margin:0 0 16px}
+.scale .tick{position:absolute; top:50%; transform:translate(-50%,-50%)}
+.scale .dot{width:13px; height:13px; border-radius:99px; border:3px solid var(--card); display:block}
+.scale .keys{display:grid; grid-template-columns:1fr 1fr; gap:7px 14px}
+.scale .key{display:flex; align-items:baseline; gap:7px; min-width:0}
+.scale .key i{width:9px; height:9px; min-width:9px; border-radius:99px; align-self:center}
+.scale .key .kk{
+  font-family:var(--label); font-size:8.5px; letter-spacing:.05em;
+  text-transform:uppercase; color:var(--ink3); flex:1; min-width:0;
+}
+.scale .key b{font-size:13px; font-variant-numeric:tabular-nums; white-space:nowrap}
+
+.facts{display:grid; grid-template-columns:repeat(4,1fr); gap:6px; margin-top:6px}
+.fact{background:var(--sunk); border-radius:10px; padding:9px 8px; text-align:center}
+.fact .k{font-family:var(--label); font-size:8px; letter-spacing:.06em; text-transform:uppercase; color:var(--ink3); display:block}
+.fact .v{font-weight:700; font-size:13px; margin-top:3px; display:block}
+
+.note{
+  font-size:12.5px; color:var(--ink2); background:var(--sunk);
+  border-radius:12px; padding:11px 13px; margin-top:12px;
+}
+.note b{color:var(--ink)}
+
+
+/* ---- the city list --------------------------------------------- */
+
+/* Two ways in, one list. The strip is on the city screen because the reader
+ * should *see* that there are three cities without opening anything; the menu
+ * rides in the header so a district or a lot page can still switch. */
+.menu{
+  position:absolute; top:calc(100% - 3px); right:0; z-index:60; min-width:min(280px, 86vw);
+  background:var(--card); border:1px solid var(--line); border-radius:15px;
+  box-shadow:0 20px 44px rgba(15,20,30,.16); padding:6px;
+  display:flex; flex-direction:column; gap:2px;
+}
+.menu[hidden]{display:none}
+.mi{
+  display:block; width:100%; text-align:left; padding:9px 11px;
+  border-radius:11px; min-height:46px; background:none; border:0; cursor:pointer;
+}
+.mi:hover, .mi:focus-visible{background:var(--sunk)}
+.mi .mn{display:block; font-weight:700; font-size:15px}
+.mi .ms{display:block; font-size:11.5px; color:var(--ink2); margin-top:2px}
+.mi.on .mn{color:var(--good)}
+
+.strip{display:flex; gap:7px; margin-top:14px; overflow-x:auto; padding-bottom:2px;
+  scrollbar-width:none; -webkit-overflow-scrolling:touch}
+.strip::-webkit-scrollbar{display:none}
+.cbtn{
+  flex:0 0 auto; min-height:44px; padding:7px 13px; border-radius:12px;
+  border:1px solid var(--line); background:var(--card); cursor:pointer;
+  display:flex; flex-direction:column; justify-content:center; gap:1px;
+}
+.cbtn b{font-size:14px; font-weight:700; white-space:nowrap}
+.cbtn span{font-family:var(--label); font-size:9.5px; color:var(--ink3); white-space:nowrap}
+.cbtn.on{border-color:var(--ink); background:var(--ink)}
+.cbtn.on b{color:var(--paper)}
+.cbtn.on span{color:color-mix(in srgb, var(--paper) 68%, transparent)}
+
+/* The promise, above the headline: what this is, and what it costs. */
+.kicker{
+  display:flex; align-items:center; gap:7px; flex-wrap:wrap;
+  font-family:var(--label); font-size:10px; letter-spacing:.07em;
+  text-transform:uppercase; color:var(--ink3); margin-bottom:11px;
+}
+.kicker i{width:6px; height:6px; border-radius:99px; background:var(--good); display:block}
+.kicker b{color:var(--ink2); font-weight:500}
+
+/* ---- misc ------------------------------------------------------ */
+
+.cta{
+  display:flex; align-items:center; justify-content:center; gap:8px;
+  width:100%; min-height:52px; border-radius:14px; margin-top:14px;
+  background:var(--ink); color:var(--paper); font-weight:700; font-size:15.5px;
+}
+.foot{color:var(--ink3); font-size:11.5px; margin:26px 0 10px; line-height:1.5}
+.hid{display:none !important}
+
+.shot{width:100%; border-radius:16px; display:block; margin-top:6px}
+
+/* Desktop keeps the same DOM — the map (or, on a lot, its photo) simply moves
+ * into a sticky second column and stays put while the reading column scrolls.
+ * Everything else falls into column one in source order, so the phone layout
+ * needs no duplicate markup and cannot drift out of sync. */
+@media (min-width:900px){
+  :root{--pad:28px}
+  .wrap{max-width:1120px}
+  h1{font-size:44px; max-width:16ch}
+  .kicker{font-size:11px}
+  .cbtn b{font-size:15px}
+  .lede{font-size:17px; max-width:52ch}
+  .hero{padding:36px 0 6px}
+
+  .split{
+    display:grid; grid-template-columns:minmax(0,1fr) 420px;
+    column-gap:34px; align-items:start;
+  }
+  .split > *{grid-column:1; min-width:0}
+  .split > .side, .split > .mapcard, .split > .shot{
+    grid-column:2; grid-row:1 / span 99; margin-top:36px;
+  }
+  /* Only a column shorter than the viewport may stick — a tall one would pin
+     its own bottom out of reach. */
+  .split > .mapcard, .split > .shot{position:sticky; top:78px}
+  .split > .side > .mapcard:first-child{margin-top:0}
+  .split > .verdict{margin-top:18px}
+
+  .catch{grid-template-columns:auto auto auto 1fr; gap:18px; padding:18px 20px}
+  .catch .big{font-size:32px}
+  .catch .foot{grid-column:auto; border-top:0; border-left:1px solid var(--line2);
+    padding:0 0 0 18px; margin:0}
+  .tiles{max-width:640px}
+  .rowlist{max-width:720px}
+  .facts{grid-template-columns:repeat(4,1fr)}
+}
+
+/* Tap targets stay 44px tall even though the type is small — the row is
+   deliberately quiet, but a thumb still has to be able to hit it. */
+.langs{margin:10px 0 0; display:flex; flex-wrap:wrap; align-items:center;
+  font-size:12px; letter-spacing:.01em}
+.langs b, .langs a{display:inline-flex; align-items:center; min-height:44px}
+.langs b{font-weight:600; color:var(--ink2)}
+.langs a{color:var(--ink3); text-decoration:none}
+.langs a:hover{color:var(--ink); text-decoration:underline; text-underline-offset:3px}
+.langs i{font-style:normal; color:var(--line); padding:0 9px}
+
+/* The price chain as a ladder, not a row: three columns with multipliers
+   between them do not survive a 390px phone. */
+.ladder{margin:20px 0 4px; border:1px solid var(--line); border-radius:16px;
+  padding:6px 16px 10px; background:var(--card)}
+.rung{display:grid; grid-template-columns:1fr auto; align-items:baseline;
+  column-gap:12px; padding:12px 0 0}
+.rung .rl{font-weight:650; color:var(--ink); font-size:15px}
+.rung .rv{font-family:"Martian Mono",ui-monospace,monospace; font-size:17px;
+  font-weight:600; color:var(--ink2); font-variant-numeric:tabular-nums}
+.rung .rs{grid-column:1 / -1; color:var(--ink3); font-size:12.5px; line-height:1.45;
+  margin-top:2px}
+.rung.is-end .rl, .rung.is-end .rv{color:var(--good)}
+.mul{display:flex; align-items:center; gap:8px; margin:10px 0 0; padding-left:2px;
+  color:var(--ink3); font-size:11.5px; letter-spacing:.06em; text-transform:uppercase}
+.mul span{font-family:"Martian Mono",ui-monospace,monospace; font-size:12px;
+  letter-spacing:0; text-transform:none; color:var(--ink2);
+  border:1px solid var(--line); border-radius:999px; padding:2px 8px}
+.mul::after{content:""; flex:1; height:1px; background:var(--line)}
+
+/* The city list and the map cells became anchors when the routes became real
+   files; they still have to look like the controls they were. */
+.cbtn, .mi{text-decoration:none; color:inherit}
+svg.map a.cell{cursor:pointer}
+svg.map a.cell:focus-visible{outline:2px solid var(--ink); outline-offset:2px}
+
+/* ---- map palette -------------------------------------------------
+ *
+ * Fills live here and not in the markup because the markup is written once, at
+ * build time, and read by people on both themes. Seven steps either side of
+ * the pivot; step 0 is already tinted, so a district sitting exactly on the
+ * pivot never comes out the colour of "no data".
+ *
+ * Declared as tokens so the dark variants redefine twelve values rather than
+ * twelve selectors — and so no colour has its only definition inside a media
+ * query, which is the way a page ends up unreadable in one of the two themes. */
+:root{
+  --q-up-0:#BFE0CE; --q-up-1:#A6D5BC; --q-up-2:#89C7A6;
+  --q-up-3:#69B78E; --q-up-4:#47A375; --q-up-5:#2A8B5C; --q-up-6:#0E6E45;
+  --q-dn-0:#F3CFC6; --q-dn-1:#EEBBAE; --q-dn-2:#E7A292;
+  --q-dn-3:#DE8672; --q-dn-4:#D26A53; --q-dn-5:#C35138; --q-dn-6:#B23A1E;
+}
+/* Dark: the same seven steps walked outwards from the dark ground, so a pale
+   district still reads as "little here" instead of glowing. */
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --q-up-0:#1B3A2A; --q-up-1:#1E4A33; --q-up-2:#1F5B3D;
+    --q-up-3:#1E6D47; --q-up-4:#1B8052; --q-up-5:#17945D; --q-up-6:#12A868;
+    --q-dn-0:#48231B; --q-dn-1:#5A291D; --q-dn-2:#6D2F20;
+    --q-dn-3:#823522; --q-dn-4:#983B23; --q-dn-5:#AF4124; --q-dn-6:#C74724;
+  }
+}
+:root[data-theme="dark"]{
+  --q-up-0:#1B3A2A; --q-up-1:#1E4A33; --q-up-2:#1F5B3D;
+  --q-up-3:#1E6D47; --q-up-4:#1B8052; --q-up-5:#17945D; --q-up-6:#12A868;
+  --q-dn-0:#48231B; --q-dn-1:#5A291D; --q-dn-2:#6D2F20;
+  --q-dn-3:#823522; --q-dn-4:#983B23; --q-dn-5:#AF4124; --q-dn-6:#C74724;
+}
+
+svg.map .ghost{fill:var(--sunk); stroke:var(--line2)}
+svg.map .lbl{fill:var(--ink); stroke:var(--card)}
+
+.q-none{fill:var(--mute-bg); background:var(--mute-bg)}
+.q-up-0{fill:var(--q-up-0); background:var(--q-up-0)}
+.q-up-1{fill:var(--q-up-1); background:var(--q-up-1)}
+.q-up-2{fill:var(--q-up-2); background:var(--q-up-2)}
+.q-up-3{fill:var(--q-up-3); background:var(--q-up-3)}
+.q-up-4{fill:var(--q-up-4); background:var(--q-up-4)}
+.q-up-5{fill:var(--q-up-5); background:var(--q-up-5)}
+.q-up-6{fill:var(--q-up-6); background:var(--q-up-6)}
+.q-dn-0{fill:var(--q-dn-0); background:var(--q-dn-0)}
+.q-dn-1{fill:var(--q-dn-1); background:var(--q-dn-1)}
+.q-dn-2{fill:var(--q-dn-2); background:var(--q-dn-2)}
+.q-dn-3{fill:var(--q-dn-3); background:var(--q-dn-3)}
+.q-dn-4{fill:var(--q-dn-4); background:var(--q-dn-4)}
+.q-dn-5{fill:var(--q-dn-5); background:var(--q-dn-5)}
+.q-dn-6{fill:var(--q-dn-6); background:var(--q-dn-6)}
+
+.delta.up, .key b.c-hammer{color:var(--good)}
+.delta.dn{color:var(--bad)}
+.key b.c-open{color:var(--ink)}
+.key b.c-market{color:var(--ink2)}
+.key b.c-aval{color:var(--ink3)}
+.dot.c-open, .key i.c-open{background:var(--ink)}
+.dot.c-hammer, .key i.c-hammer{background:var(--good)}
+.dot.c-market, .key i.c-market{background:var(--ink2)}
+.dot.c-aval, .key i.c-aval{background:var(--ink3)}
+.bar i.up{background:var(--good)}
+.bar i.dn{background:var(--bad)}
+.bar i.no{background:var(--line)}
+
+/* The paid-price block on a district page. Deliberately not a "tile": a tile is
+   a count, and this is a price with a unit, a sample size and a comparison —
+   four facts that only mean something while they stay attached to each other. */
+.mkt{margin:18px 0 0}
+.mkt .mrow{
+  padding:12px 14px; border:1px solid var(--line); border-radius:14px;
+  background:var(--card); margin-top:8px;
+}
+.mkt .mtop{display:flex; align-items:center; gap:8px}
+.mkt .mtop .lab{font-weight:650; font-size:14px}
+.mkt .mval{display:flex; align-items:baseline; gap:8px; margin-top:4px; flex-wrap:wrap}
+.mkt .mval b{
+  font-family:var(--display); font-weight:800; font-size:23px; letter-spacing:-.03em;
+  font-variant-numeric:tabular-nums;
+}
+.mkt .mval .u{font-family:var(--label); font-size:10px; color:var(--ink3)}
+.mkt .msub{font-size:12px; color:var(--ink3); margin-top:3px}
+.mkt .foot{margin-top:10px}
+
+/* Entry-cost rows inside a .mkt card: a small ledger, not a table — labels
+   left, money right, the total ruled off from the parts. */
+.mkt .erow{display:flex; align-items:baseline; gap:10px; padding:3px 0}
+.mkt .erow .el{flex:1; min-width:0; font-size:13px; color:var(--ink2)}
+.mkt .erow .ep{font-family:var(--label); font-style:normal; font-size:10px; color:var(--ink3)}
+.mkt .erow .ev{font-variant-numeric:tabular-nums; font-weight:650; font-size:14px; white-space:nowrap}
+.mkt .erow.tot{border-top:1px solid var(--line); margin-top:6px; padding-top:8px}
+.mkt .erow.tot .el{font-weight:700; color:var(--ink)}
+.mkt .erow.tot .ev{font-family:var(--display); font-weight:800; font-size:17px}
