@@ -26,6 +26,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import json
+import os
 import re
 import shutil
 import subprocess
@@ -38,7 +39,27 @@ import websockets
 
 HERE = Path(__file__).parent
 SITE = HERE / "site"
-CHROME = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
+
+
+def _chrome_bin() -> str:
+    """Wherever this machine keeps its Chrome.
+
+    CI (ubuntu-latest) has google-chrome on PATH, a Mac keeps it under
+    /Applications, and CHROME_BIN overrides both when neither guess is right.
+    """
+    for p in (
+        os.environ.get("CHROME_BIN"),
+        shutil.which("google-chrome"),
+        shutil.which("chromium-browser"),
+        shutil.which("chromium"),
+        "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+    ):
+        if p and Path(p).exists():
+            return p
+    raise SystemExit("no Chrome found — install one or point CHROME_BIN at it")
+
+
+CHROME = _chrome_bin()
 
 #: The one language that gets its own files. Search demand for Brazilian
 #: auction property outside Portuguese is not small, it is absent: Google
