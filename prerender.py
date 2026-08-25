@@ -82,13 +82,21 @@ def chrome(port: int, profile: Path) -> subprocess.Popen:
             CHROME,
             "--headless=new",
             "--disable-gpu",
+            # Ubuntu 24.04 (today's ubuntu-latest) blocks unprivileged user
+            # namespaces, so Chrome's sandbox cannot start in CI. This tool
+            # renders only its own localhost pages, so the sandbox buys
+            # nothing here; /dev/shm in a runner is too small for a real tab.
+            "--no-sandbox",
+            "--disable-dev-shm-usage",
             f"--remote-debugging-port={port}",
             f"--user-data-dir={profile}",
             "--window-size=414,900",
             "about:blank",
         ],
         stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
+        # In CI the browser's own complaint is the only clue a failed start
+        # leaves behind; locally it is just noise.
+        stderr=None if os.environ.get("CI") else subprocess.DEVNULL,
     )
 
 
