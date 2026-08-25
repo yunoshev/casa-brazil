@@ -366,6 +366,13 @@ svg.map.shapes{max-height:62vh}
   .catch .foot{grid-column:auto; border-top:0; border-left:1px solid var(--line2);
     padding:0 0 0 18px; margin:0}
   .tiles{max-width:640px}
+  /* Inside the map column the card is 420px wide: back to the phone shape —
+     three cells over one full-width caption — and tiles stretch the column. */
+  .side .catch{grid-template-columns:1fr auto 1fr; gap:10px; padding:14px}
+  .side .catch .big{font-size:26px}
+  .side .catch .foot{grid-column:1/-1; border-left:0; border-top:1px solid var(--line2);
+    padding:10px 0 0; margin:2px 0 0}
+  .side .tiles{max-width:none}
   .rowlist{max-width:720px}
   .facts{grid-template-columns:repeat(4,1fr)}
 }

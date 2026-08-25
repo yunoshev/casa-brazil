@@ -412,7 +412,7 @@ function screenHome() {
       legend() +
       '<a class="cta" href="' + esc(cityBase(main)) + '">' +
         t("home.city.open", { city: esc(main.nome) }) + "</a>" +
-    "</div></div>" : "") +
+    "</div>" +
 
     catchCard(n) +
 
@@ -421,6 +421,7 @@ function screenHome() {
       tile(n.deals, plur("city.tile.deals", n.deals)) +
       tile(n.below, t("city.tile.below")) +
     "</div>" +
+    "</div>" : "") +
 
     '<section class="sec"><div class="sechead"><h2>' + t("home.why.h2") + "</h2></div>" +
       '<p class="lede">' + t("home.why.p", { deals: b(num(n.deals)) }) + "</p>" +
@@ -609,8 +610,8 @@ function cityRow(c) {
          : '<span class="pill mute">' +
              t(marketOnly(c) ? "city.row.market" : "area.row.nodata") + "</span>") + "</div>" +
     '<div class="sub">' + citySub(c) + "</div>" +
-    '<div class="bar"><i class="' + (has ? (share >= 0.3 ? "up" : "dn") : "no") +
-      '" style="width:' + (has ? Math.round(100 * share) : 0) + '%"></i></div></a>';
+    (has ? '<div class="bar"><i class="' + (share >= 0.3 ? "up" : "dn") +
+      '" style="width:' + Math.round(100 * share) + '%"></i></div>' : "") + "</a>";
 }
 
 /* Every number on the country page, from every row we have. Cheap enough to do
@@ -783,8 +784,8 @@ function areaRow(a) {
           lots: lots(a.n), pct: Math.round(100 * a.share), median: pct(a.margin),
         })
       : lots(a.n)) + "</div>" +
-    '<div class="bar"><i class="' + (has ? (a.share >= 0.3 ? "up" : "dn") : "no") +
-      '" style="width:' + (has ? Math.round(100 * a.share) : 0) + '%"></i></div></a>';
+    (has ? '<div class="bar"><i class="' + (a.share >= 0.3 ? "up" : "dn") +
+      '" style="width:' + Math.round(100 * a.share) + '%"></i></div>' : "") + "</a>";
 }
 
 function screenArea(key) {
