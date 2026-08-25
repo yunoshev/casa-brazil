@@ -23,7 +23,10 @@ on:
 # The default 10-builds-an-hour ceiling does not apply to a workflow that
 # publishes with actions/deploy-pages, which is one of the reasons to use one.
 permissions:
-  contents: read
+  # write: a failed build pushes its own log to the ci-debug branch, because
+  # this repo's Actions logs are not readable anonymously and the operator
+  # works over git.
+  contents: write
   pages: write
   id-token: write
 
@@ -60,12 +63,26 @@ jobs:
           # base path from this URL and prefixes every asset and link.
           SITE: ${{ vars.SITE_URL || 'https://yunoshev.github.io/casa-brazil' }}
         run: |
+          set -o pipefail
           python -u serve.py --port 8899 &
           for i in $(seq 1 60); do
             curl -sf -o /dev/null http://127.0.0.1:8899/v2/index.html && break
             sleep 0.5
           done
-          python -u prerender.py --site "$SITE"
+          python -u prerender.py --site "$SITE" 2>&1 | tee prerender.log
+
+      # Failure forensics an anonymous reader can reach: the log rides a
+      # throwaway orphan branch instead of the run's own (auth-only) log view.
+      - name: Publish the failure log
+        if: failure()
+        run: |
+          git config user.name ci
+          git config user.email ci@localhost
+          git checkout --orphan ci-debug
+          git rm -rfq --cached . || true
+          git add -f prerender.log || true
+          git commit -q -m "prerender log, run $GITHUB_RUN_ID" || exit 0
+          git push -f origin ci-debug
 
       # enablement: turns Pages on for the repo on first run, so the deploy
       # needs no manual visit to Settings.
