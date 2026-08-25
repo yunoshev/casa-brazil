@@ -251,7 +251,9 @@ FLAT = {"/404": "404.html"}
 
 def kind_of(path: str) -> str:
     parts = [p for p in path.strip("/").split("/") if p]
-    return "lotes" if "lote" in parts else "areas"
+    if "lote" in parts:
+        return "lotes"
+    return "ruas" if "rua" in parts else "areas"
 
 
 def write_sitemap(out: Path, paths: list[str], site: str, when: str) -> None:

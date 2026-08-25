@@ -61,6 +61,8 @@ TZ = {
     "RIO DE JANEIRO": "America/Sao_Paulo",
     "SAO GONCALO": "America/Sao_Paulo",
     "SAO PAULO": "America/Sao_Paulo",
+    "FORTALEZA": "America/Fortaleza",
+    "RECIFE": "America/Recife",
 }
 
 
@@ -104,6 +106,34 @@ SHAPES: dict[str, dict[str, Any]] = {
         "source": "map.source.sg_points",
         "exact": False,
     },
+    # IBGE's census address register (CNEFE): a district label on every address
+    # in the country. Coarser than Rio's cadastre but national — it is how a
+    # city with no open cadastre still gets real outlines instead of a search
+    # box. Rows labelled with the city's own name are census noise, dropped.
+    "FORTALEZA": {
+        "kind": "points",
+        "db": "cnefe_points.sqlite",
+        "sql": "select lat, lon, bairro from points where city = 'FORTALEZA' "
+        "and bairro is not null and upper(bairro) <> 'FORTALEZA'",
+        "cell": 80.0,
+        "maxd": 600.0,
+        "unit": "district",
+        "source": "map.source.cnefe",
+        "titlecase": True,
+        "exact": False,
+    },
+    "RECIFE": {
+        "kind": "points",
+        "db": "cnefe_points.sqlite",
+        "sql": "select lat, lon, bairro from points where city = 'RECIFE' "
+        "and bairro is not null and upper(bairro) <> 'RECIFE'",
+        "cell": 80.0,
+        "maxd": 600.0,
+        "unit": "district",
+        "source": "map.source.cnefe",
+        "titlecase": True,
+        "exact": False,
+    },
 }
 
 
@@ -111,6 +141,16 @@ def norm(s: str) -> str:
     """`Brás de Pina` and `BRAS DE PINA` are the same district in two feeds."""
     s = unicodedata.normalize("NFKD", (s or "").strip())
     return "".join(ch for ch in s if not unicodedata.combining(ch)).upper()
+
+
+#: Same rule as the front end's `title()`: connectives stay down.
+_SMALL = {"de", "da", "do", "das", "dos", "e", "em", "a", "o"}
+
+
+def pt_title(s: str) -> str:
+    """BOA VIAGEM -> Boa Viagem. CNEFE shouts; a page heading should not."""
+    words = (s or "").lower().split()
+    return " ".join(w if i and w in _SMALL else w.capitalize() for i, w in enumerate(words))
 
 
 def _point_source(cfg: dict) -> list[tuple[float, float, str]]:
@@ -143,6 +183,38 @@ def _point_source(cfg: dict) -> list[tuple[float, float, str]]:
     return out
 
 
+#: Traced outlines, written by whichever build had the geometry sources and
+#: read by whichever build does not. The public repository that GitHub builds
+#: the site from carries `site.json` but not the 30-136 MB point registers the
+#: outlines are traced from — without this cache its build would silently ship
+#: every city without a map. Written and read as one file next to site.json,
+#: so the lot-to-area mapping inside it is always from the same run as the
+#: lots themselves.
+SHAPE_CACHE = HERE / "data" / "shapes_cache.json"
+_shape_cache: dict[str, Any] | None = None
+_shape_fresh: dict[str, Any] = {}
+
+
+def _cached_outline(cidade: str) -> dict | None:
+    global _shape_cache
+    if _shape_cache is None:
+        _shape_cache = json.loads(SHAPE_CACHE.read_text()) if SHAPE_CACHE.exists() else {}
+    hit = _shape_cache.get(cidade)
+    if hit:
+        print(f"  {cidade}: геометрии-источника нет — контуры из shapes_cache.json", flush=True)
+    return hit
+
+
+def save_shape_cache() -> None:
+    """Persist what this run traced, keeping cached entries it had to reuse."""
+    if not _shape_fresh:
+        return
+    merged = {**(_shape_cache or {}), **_shape_fresh}
+    SHAPE_CACHE.write_text(json.dumps(merged, ensure_ascii=False, separators=(",", ":")))
+    kb = SHAPE_CACHE.stat().st_size / 1024
+    print(f"data/shapes_cache.json — {kb:,.0f} KB, {len(merged)} городов", flush=True)
+
+
 def outlines(cidade: str, rows: list, cols: dict[str, int]) -> dict | None:
     """The city's map: one outline per area, and which area each lot sits in.
 
@@ -159,7 +231,7 @@ def outlines(cidade: str, rows: list, cols: dict[str, int]) -> dict | None:
     if cfg["kind"] == "polys":
         path = DATA.parent / cfg["file"]
         if not path.exists():
-            return None
+            return _cached_outline(cidade)
         feats = json.loads(path.read_text())["features"]
         nice: dict[str, str] = {}
         for f in feats:
@@ -180,10 +252,10 @@ def outlines(cidade: str, rows: list, cols: dict[str, int]) -> dict | None:
     else:
         pts = _point_source(cfg)
         if len(pts) < 500:
-            return None
+            return _cached_outline(cidade)
         nice = {}
         for _, _, b in pts:
-            nice.setdefault(norm(b), b)
+            nice.setdefault(norm(b), pt_title(b) if cfg.get("titlecase") else b)
         keys = sorted(nice)
         gid = {k: i for i, k in enumerate(keys)}
         lab, geo = shapes.rasterise(
@@ -206,7 +278,7 @@ def outlines(cidade: str, rows: list, cols: dict[str, int]) -> dict | None:
             of[str(r[cols["id"]])] = keys[g]
 
     boxes = [v["box"] for v in paths.values()]
-    return {
+    out = {
         "unit": cfg["unit"],
         "source": cfg["source"],
         "exact": cfg["exact"],
@@ -227,6 +299,8 @@ def outlines(cidade: str, rows: list, cols: dict[str, int]) -> dict | None:
         "at": {keys[g]: [v["cx"], v["cy"]] + v["box"] for g, v in paths.items()},
         "of": of,
     }
+    _shape_fresh[cidade] = out
+    return out
 
 
 def market(cidade: str, keys: set[str]) -> dict[str, Any]:
@@ -241,13 +315,20 @@ def market(cidade: str, keys: set[str]) -> dict[str, Any]:
     path = DATA.parent / "itbi_bairro.json"
     if not path.exists():
         return {}
-    doc = json.loads(path.read_text())
-    if norm(doc.get("city") or "") != cidade:
+    c = json.loads(path.read_text()).get("cities", {}).get(cidade)
+    if not c:
         return {}
     out: dict[str, Any] = {
-        "year": doc["year"],
-        "city": {"flat": doc.get("city_flat_m2"), "house": doc.get("city_house_m2")},
-        "d": {k: v for k, v in doc["d"].items() if k in keys and v},
+        "year": c["year"],
+        # "base_value" marks the cities whose register holds max(declared,
+        # appraised) rather than the declared price — the page must say so.
+        "basis": c.get("basis") or "aggregates",
+        "city": {
+            "flat": c["city"].get("f"),
+            "house": c["city"].get("h"),
+            "res": c["city"].get("r"),
+        },
+        "d": {k: v for k, v in c["d"].items() if k in keys and v},
     }
     return out if out["d"] else {}
 
@@ -268,6 +349,31 @@ def upkeep(cidade: str, keys: set[str]) -> dict[str, Any]:
         return {}
     d = {k: v["c"] for k, v in doc["d"].items() if k in keys and v.get("c")}
     return {"city": doc["city"]["condo"], "d": d} if d else {}
+
+
+def streets(cidade: str, keys: set[str]) -> dict[str, Any]:
+    """Street-level medians from `itbi_street.py`, for cities that have them.
+
+    Filtered to streets whose home district is on the map, because the street
+    page leans on its district for the comparison and the way back. Streets
+    lost here are counted out loud rather than silently.
+    """
+    path = DATA.parent / "itbi_street.json"
+    if not path.exists():
+        return {}
+    doc = json.loads(path.read_text())
+    if doc.get("city") != cidade:
+        return {}
+    kept = {
+        c: dict(r, bairros=[b for b in r["bairros"] if b in keys])
+        for c, r in doc["streets"].items()
+        if r["bairro"] in keys
+    }
+    dropped = len(doc["streets"]) - len(kept)
+    if dropped:
+        print(f"  {cidade}: {dropped} улиц вне карты районов — пропущены")
+    by = {k: [c for c in v if c in kept] for k, v in doc["by"].items() if k in keys}
+    return {"year": doc["year"], "d": kept, "by": {k: v for k, v in by.items() if v}}
 
 
 def borrowed(c: dict) -> dict[str, str]:
@@ -347,6 +453,7 @@ def build_city(c: dict, cols: dict[str, int]) -> dict:
         # number without another spelling to get wrong.
         "market": market(norm(c["cidade"]), set((shp or {}).get("nice") or ())),
         "upkeep": upkeep(norm(c["cidade"]), set((shp or {}).get("nice") or ())),
+        "streets": streets(norm(c["cidade"]), set((shp or {}).get("nice") or ())),
         "rows": rows,
     }
 
@@ -383,6 +490,7 @@ def main() -> None:
         "cols": src["cols"],
         "cities": [build_city(c, cols) for c in src["cities"]],
     }
+    save_shape_cache()
     if not payload["generated"]:
         payload["generated"] = __import__("datetime").date.today().isoformat()
 

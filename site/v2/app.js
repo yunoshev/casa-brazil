@@ -45,6 +45,14 @@ function $(id) { return document.getElementById(id); }
  * far away, describe a district rather than an address. */
 function reliable(r) { return r[C.conf] === "ok" && r[C.ring] <= 1000; }
 
+/* A city we carry for its paid side only: no comps pipeline, no hammer chain,
+ * every verdict withheld. The screens say what the city *does* have — the
+ * register — instead of printing zeros against a promise we never made. */
+function marketOnly(c) {
+  c = c || city;
+  return !(c.chain && c.chain.hammer_over_asking);
+}
+
 var TIERS = [
   [35, "good", "lot.verdict.much_cheaper"],
   [15, "good", "lot.verdict.cheaper"],
@@ -180,11 +188,14 @@ function mapSource() {
 }
 
 function legend() {
+  var mo = marketOnly();
   return '<div class="legend">' +
-    '<span class="sw"><i class="q-up-6"></i>' + t("map.legend.good") + "</span>" +
-    '<span class="sw"><i class="q-dn-6"></i>' + t("map.legend.bad") + "</span>" +
-    '<span class="sw"><i class="q-none"></i>' + t("map.legend.none") + "</span>" +
-    '<span class="sw wide">' + t("map.legend.note", { source: mapSource() }) + "</span>" +
+    (mo ? "" :
+      '<span class="sw"><i class="q-up-6"></i>' + t("map.legend.good") + "</span>" +
+      '<span class="sw"><i class="q-dn-6"></i>' + t("map.legend.bad") + "</span>" +
+      '<span class="sw"><i class="q-none"></i>' + t("map.legend.none") + "</span>") +
+    '<span class="sw wide">' + t(mo ? "map.legend.note.market" : "map.legend.note",
+      { source: mapSource() }) + "</span>" +
     "</div>";
 }
 
@@ -200,6 +211,7 @@ function median(a) {
 var city = D.cities[0];
 var byArea = {};
 var slugToKey = { fwd: {}, rev: {} };
+var streetBySlug = {};
 var lotById = {};
 
 /* Which area a lot sits in is decided at build time by its coordinates, not by
@@ -237,6 +249,9 @@ function indexCity(c) {
   });
   // Both directions: the URL carries a slug, the data is keyed by the raster
   // key, and a reader arriving from outside has only the slug.
+  streetBySlug = {};
+  var sts = (c.streets || {}).d || {};
+  Object.keys(sts).forEach(function (code) { streetBySlug[sts[code].slug] = code; });
   slugToKey = { fwd: {}, rev: {} };
   var nice = (c.shapes || {}).nice || {};
   Object.keys(nice).forEach(function (k) {
@@ -293,6 +308,12 @@ function guessCity() {
 /* Anchors, not buttons. Another city is another page, and a page is something
  * a reader can open in a new tab and a crawler can follow — a scripted button
  * is neither. */
+function citySub(c) {
+  return marketOnly(c)
+    ? t("city.pick.sub.market", { lots: lots(c.stats.lots), deals: num(c.stats.paid_deals) })
+    : t("city.pick.sub", { lots: lots(c.stats.lots), below: num(c.stats.below) });
+}
+
 function cityList(kind) {
   return D.cities.map(function (c) {
     var on = c.slug === city.slug;
@@ -307,8 +328,7 @@ function cityList(kind) {
     return '<a class="mi' + (on ? " on" : "") + '" href="' + url +
       '" data-city="' + esc(c.slug) + '" role="option" aria-selected="' + on +
       '"><span class="mn">' + esc(c.nome) + '</span><span class="ms">' +
-      t("city.pick.sub", { lots: lots(c.stats.lots), below: num(c.stats.below) }) +
-      "</span></a>";
+      citySub(c) + "</span></a>";
   }).join("");
 }
 
@@ -322,9 +342,7 @@ function paintPick() {
   window.__CITIES__ = D.cities.map(function (c) {
     return {
       slug: c.slug, uf: c.uf, cslug: c.cslug, nome: c.nome,
-      sub: strip(t("city.pick.sub", {
-        lots: lots(c.stats.lots), below: num(c.stats.below),
-      })),
+      sub: strip(citySub(c)),
     };
   });
   if (window.CHROME) window.CHROME.boot();
@@ -366,7 +384,7 @@ function screenHome() {
     catchCard(n) +
 
     '<div class="tiles">' +
-      tile(n.lots, plur("city.tile.lots", n.lots)) +
+      tile(n.lots, plur("unit.lot", n.lots)) +
       tile(n.deals, plur("city.tile.deals", n.deals)) +
       tile(n.below, t("city.tile.below")) +
     "</div>" +
@@ -426,12 +444,14 @@ function marketCard(key) {
   var lines = [];
   if (d.f) lines.push(mktLine("flat", d.f, mk.city.flat));
   if (d.h) lines.push(mktLine("house", d.h, mk.city.house));
+  if (d.r) lines.push(mktLine("res", d.r, mk.city.res));
   if (!lines.length) return "";
   return '<section class="mkt"><div class="sechead"><h2>' +
       t("mkt.h2") +
       '</h2><span class="n">' + t("mkt.year", { year: mk.year }) + "</span></div>" +
     lines.join("") +
-    '<p class="foot">' + t("mkt.note") + "</p></section>";
+    '<p class="foot">' + t("mkt.note") +
+      (mk.basis === "base_value" ? " " + t("mkt.note.base") : "") + "</p></section>";
 }
 
 function mktLine(kind, own, base) {
@@ -455,6 +475,72 @@ function mktLine(kind, own, base) {
     '<div class="mval"><b>' + money(value) + '</b><span class="u">' +
       t("mkt.per") + "</span></div>" +
     '<div class="msub">' + t("mkt.deals", { n: num(n) }) + "</div></div>";
+}
+
+/* One street, one number. The page exists because the register is street-level
+ * and nobody else publishes at that grain: "quanto custa na rua X" has an
+ * answer and no competition for it. Same bar as districts — twelve deeds in
+ * the last full year or no number — and the comparison is the street's own
+ * district in the same year, because the register is nominal and any series
+ * would measure inflation. */
+function screenStreet(code) {
+  var st = city.streets.d[code];
+  var year = city.streets.year;
+  var dk = st.bairro;
+  var mk = city.market && city.market.d ? city.market.d[dk] : null;
+  var lines = [];
+  if (st.f) lines.push(streetLine("flat", st.f, mk && mk.f ? mk.f[0] : null));
+  if (st.h) lines.push(streetLine("house", st.h, mk && mk.h ? mk.h[0] : null));
+  return '' +
+    '<div class="hero">' + back(href("/a/" + encodeURIComponent(dk)), areaName(dk)) +
+      "<h1>" + esc(title(st.name)) + "</h1>" +
+      '<p class="lede">' + t("street.lede", {
+        district: link("/a/" + encodeURIComponent(dk), esc(areaName(dk))),
+        year: year,
+      }) + "</p></div>" +
+    '<section class="mkt"><div class="sechead"><h2>' + t("mkt.h2") +
+      '</h2><span class="n">' + t("mkt.year", { year: year }) + "</span></div>" +
+      lines.join("") +
+      '<p class="foot">' + t("street.note") + "</p></section>" +
+    (st.bairros.length > 1 ? '<p class="foot">' + t("street.spans", {
+      list: st.bairros.map(function (k) {
+        return link("/a/" + encodeURIComponent(k), esc(areaName(k)));
+      }).join(" · "),
+    }) + "</p>" : "") +
+    footer();
+}
+
+function streetLine(kind, own, base) {
+  var rel = base ? Math.round(100 * (own[0] / base - 1)) : null;
+  return '<div class="mrow">' +
+    '<div class="mtop"><span class="lab">' + t("mkt.kind." + kind) + "</span>" +
+      '<span class="grow"></span>' +
+      (rel === null ? "" : '<span class="pill mute">' +
+        t("street.vs", { pct: (rel > 0 ? "+" : rel < 0 ? "\u2212" : "") + Math.abs(rel) + "%" }) +
+        "</span>") + "</div>" +
+    '<div class="mval"><b>' + money(own[0]) + '</b><span class="u">' +
+      t("mkt.per") + "</span></div>" +
+    '<div class="msub">' + t("mkt.deals", { n: num(own[1]) }) + "</div></div>";
+}
+
+/* The district's streets, ranked by how much actually changed hands. Every
+ * street page is discovered through this list — the walk follows links, so a
+ * street that is on no list is a page that does not exist. */
+function streetList(key) {
+  var sts = city.streets;
+  if (!sts || !sts.by || !sts.by[key]) return "";
+  var rows = sts.by[key].map(function (code) {
+    var st = sts.d[code];
+    var main = st.f || st.h;
+    return '<a class="row" href="' + href("/r/" + encodeURIComponent(code)) + '">' +
+      '<div class="r1"><span class="nm">' + esc(title(st.name)) + "</span>" +
+        '<span class="pill mute">' + money(main[0]) + "/" + t("unit.m2") + "</span></div>" +
+      '<div class="sub">' + t("mkt.deals", { n: num((st.f ? st.f[1] : 0) + (st.h ? st.h[1] : 0)) }) +
+      "</div></a>";
+  });
+  return '<section class="sec"><div class="sechead"><h2>' + t("street.list.h2") +
+    '</h2><span class="n">' + t("mkt.year", { year: sts.year }) + "</span></div>" +
+    '<div class="rowlist">' + rows.join("") + "</div></section>";
 }
 
 /* The second price tag: what a flat here costs to keep, per month. A R$300k
@@ -492,10 +578,9 @@ function cityRow(c) {
     '<div class="r1"><span class="nm">' + esc(c.nome) + "</span>" +
     (has ? '<span class="pill ' + (share >= 0.3 ? "good" : "bad") + '">' +
              t("area.row.pill", { below: s.below, rel: s.reliable }) + "</span>"
-         : '<span class="pill mute">' + t("area.row.nodata") + "</span>") + "</div>" +
-    '<div class="sub">' + t("city.pick.sub", {
-      lots: lots(s.lots), below: num(s.below),
-    }) + "</div>" +
+         : '<span class="pill mute">' +
+             t(marketOnly(c) ? "city.row.market" : "area.row.nodata") + "</span>") + "</div>" +
+    '<div class="sub">' + citySub(c) + "</div>" +
     '<div class="bar"><i class="' + (has ? (share >= 0.3 ? "up" : "dn") : "no") +
       '" style="width:' + (has ? Math.round(100 * share) : 0) + '%"></i></div></a>';
 }
@@ -560,18 +645,20 @@ function screenCity() {
         city: '<span class="mark">' + esc(city.nome) + "</span>",
       }) +
         "</h1>" +
-      '<p class="lede">' + t("city.lede") + "</p>" +
+      '<p class="lede">' + t(marketOnly() ? "city.lede.market" : "city.lede") + "</p>" +
       '<div class="strip">' + cityList("strip") + "</div>" +
     "</section>" +
 
     catchCard(s) +
 
     '<div class="tiles">' +
-      tile(s.lots, plur("city.tile.lots", s.lots)) +
+      tile(s.lots, plur(marketOnly() ? "unit.lot" : "city.tile.lots", s.lots)) +
       (s.paid_deals
         ? tile(s.paid_deals, plur("city.tile.deals", s.paid_deals))
         : tile(s.listings, plur("city.tile.listings", s.listings))) +
-      tile(s.below, t("city.tile.below")) +
+      (marketOnly()
+        ? tile(mktDistricts(), plur("city.tile.districts", mktDistricts()))
+        : tile(s.below, t("city.tile.below"))) +
     "</div>" + lent() +
 
     (cells.length ? '<div class="side">' +
@@ -629,6 +716,10 @@ function chainParts(premiumKey, auctionKey) {
   if (bw.premium) parts.push(t(premiumKey, { city: esc(bw.premium) }));
   if (bw.auction) parts.push(t(auctionKey, { city: esc(bw.auction) }));
   return parts.length ? parts.join(t("chain.join")) : "";
+}
+
+function mktDistricts() {
+  return Object.keys((city.market || {}).d || {}).length;
 }
 
 function tile(n, sub) {
@@ -714,8 +805,9 @@ function screenArea(key) {
         ? t("area.lede.nolots", { all: link("/all", t("area.nolots.cta")) })
         : a.rel
           ? t("area.lede", { lots: lots(a.n), rel: a.rel, below: b(a.below) })
-          : t("area.lede.nodata", { lots: lots(a.n) })) + "</p></div>" + mini +
-    marketCard(key) + upkeepCard(key) +
+          : t(marketOnly() ? "area.lede.market" : "area.lede.nodata",
+              { lots: lots(a.n) })) + "</p></div>" + mini +
+    marketCard(key) + upkeepCard(key) + streetList(key) +
     (a.n ? '<section class="sec"><div class="rowlist">' +
       a.rows.slice().sort(function (x, y) {
         var rx = reliable(x), ry = reliable(y);
@@ -742,6 +834,8 @@ var ITBI_RATE = {
   "rio-de-janeiro-rj": 0.03,
   "sao-goncalo-rj": 0.02,
   "sao-paulo-sp": 0.03,
+  "fortaleza-ce": 0.03,
+  "recife-pe": 0.03,
 };
 var NOTARY_RATE = 0.012;
 
@@ -918,23 +1012,31 @@ function fact(k, val) {
 }
 
 function screenAll() {
+  var mo = marketOnly();
   return '<div class="hero">' + back(href(), city.nome) +
-    "<h1>" + t("all.h1") + "</h1>" +
-    '<p class="lede">' + t("all.lede") + "</p></div>" +
+    "<h1>" + t(mo ? "all.h1.market" : "all.h1") + "</h1>" +
+    '<p class="lede">' + t(mo ? "all.lede.market" : "all.lede") + "</p></div>" +
     '<section class="sec"><div class="rowlist">' +
     city.rows.slice(0, 80).map(lotRow).join("") + "</div></section>" + footer();
 }
 
 function screenHonest() {
   var s = city.stats;
+  var mo = marketOnly();
   var lentParts = chainParts("honest.chain.premium", "honest.chain.auction");
   return '<div class="hero">' + back(href(), city.nome) +
     "<h1>" + t("honest.h1") + "</h1></div>" +
     '<div class="verdict">' +
-    '<p class="say">' + t("honest.basis", {
-      deals: b(num(s.paid_deals)), listings: b(num(s.listings)),
-    }) + "</p>" + ladder() +
-    '<p class="say">' + t("honest.head") + "</p>" +
+    (mo
+      ? '<p class="say">' + t("honest.basis.market", {
+          deals: b(num(s.paid_deals)), year: city.market ? city.market.year : "",
+        }) + "</p>" +
+        ((city.market || {}).basis === "base_value"
+          ? '<p class="say">' + t("honest.base") + "</p>" : "")
+      : '<p class="say">' + t("honest.basis", {
+          deals: b(num(s.paid_deals)), listings: b(num(s.listings)),
+        }) + "</p>" + ladder() +
+        '<p class="say">' + t("honest.head") + "</p>") +
     (city.shapes ? '<p class="say">' + t("honest.map", {
       source: t(city.shapes.source),
       kind: t(city.shapes.exact ? "honest.map.exact" : "honest.map.inferred"),
@@ -1023,7 +1125,7 @@ function back(url, label) {
  * Call sites still pass the short internal forms ("/a/COPACABANA", "/all") and
  * this is the single place that knows what they look like on the wire. */
 var ROOT = "/leilao-de-imoveis";
-var SEG = { all: "todos-os-lotes", honest: "como-calculamos", lot: "lote" };
+var SEG = { all: "todos-os-lotes", honest: "como-calculamos", lot: "lote", rua: "rua" };
 
 /* A lot's URL carries what the lot is, not what the database calls it:
  *   /lote/apartamento-64m2-penha-circular-0e2af7f775f1e45c/
@@ -1063,6 +1165,11 @@ function href(path) {
   if (p === "/honest") return base + SEG.honest + "/";
   var m = /^\/a\/(.*)$/.exec(p);
   if (m) return base + slugOf(decodeURIComponent(m[1])) + "/";
+  m = /^\/r\/(.*)$/.exec(p);
+  if (m) {
+    var st = city.streets && city.streets.d[decodeURIComponent(m[1])];
+    return st ? base + SEG.rua + "/" + st.slug + "/" : base;
+  }
   m = /^\/l\/(.*)$/.exec(p);
   if (m) {
     var id = decodeURIComponent(m[1]);
@@ -1109,6 +1216,10 @@ function screenFor(path) {
   if (p[0] === SEG.all) return screenAll();
   if (p[0] === SEG.honest) return screenHonest();
   if (p[0] === SEG.lot) return screenLot(idFromSlug(decodeURIComponent(p[1] || "")));
+  if (p[0] === SEG.rua) {
+    var sc = streetBySlug[decodeURIComponent(p[1] || "")];
+    return sc ? screenStreet(sc) : screenCity();
+  }
   var key = slugToKey.fwd[p[0]];
   return key ? screenArea(key) : screenCity();
 }
@@ -1163,7 +1274,15 @@ function headFor(path) {
   }
   if (!city) return base;
   var name = city.nome;
-  if (slugToKey.fwd[last]) {
+  if (p[p.length - 2] === SEG.rua && streetBySlug[last]) {
+    var stx = city.streets.d[streetBySlug[last]];
+    var main = stx.f || stx.h;
+    base.title = t("head.street.title", { street: title(stx.name), city: name });
+    base.desc = t("head.street.desc", {
+      street: title(stx.name), district: areaName(stx.bairro),
+      year: city.streets.year, value: money(main[0]), n: num(main[1]),
+    });
+  } else if (slugToKey.fwd[last]) {
     var st = areaStat(slugToKey.fwd[last]);
     base.title = t("head.area.title", { name: areaName(st.key), city: name });
     base.desc = t("head.area.desc", {
@@ -1184,9 +1303,13 @@ function headFor(path) {
     base.desc = t("head.all.desc", { city: name, lots: lots(city.stats.lots) });
   } else {
     base.title = t("head.city.title", { prep: cityPrep(), city: name });
-    base.desc = t("head.city.desc", {
-      city: name, lots: lots(city.stats.lots), below: num(city.stats.below),
-    });
+    base.desc = marketOnly()
+      ? t("head.city.desc.market", {
+          city: name, lots: lots(city.stats.lots), districts: num(mktDistricts()),
+        })
+      : t("head.city.desc", {
+          city: name, lots: lots(city.stats.lots), below: num(city.stats.below),
+        });
   }
   return base;
 }
