@@ -1085,7 +1085,9 @@ function screenHonest() {
           ? '<p class="say">' + t("honest.base") + "</p>" : "")
       : '<p class="say">' + t("honest.basis", {
           deals: b(num(s.paid_deals)), listings: b(num(s.listings)),
-        }) + "</p>" + ladder() +
+        }) + "</p>" +
+        ((city.market || {}).basis === "base_value"
+          ? '<p class="say">' + t("honest.base") + "</p>" : "") + ladder() +
         '<p class="say">' + t("honest.head") + "</p>") +
     (city.shapes ? '<p class="say">' + t("honest.map", {
       source: t(city.shapes.source),

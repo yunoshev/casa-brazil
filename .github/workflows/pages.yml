@@ -42,7 +42,7 @@ jobs:
           python-version: "3.13"
 
       - name: Install
-        run: pip install --disable-pip-version-check websockets
+        run: pip install --disable-pip-version-check websockets numpy
 
       - name: Build the payload
         run: python proto_build.py
