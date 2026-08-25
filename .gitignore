@@ -2,4 +2,3 @@ dist/
 .prerender-profile/
 __pycache__/
 *.pyc
-site/v2/index.html
