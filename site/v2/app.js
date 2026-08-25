@@ -1001,6 +1001,13 @@ function screenLot(id) {
 
       entryCard(r) +
 
+      // Caixa publishes an edital PDF for every sale; the worker only trusts
+      // Caixa's own domains, so the reader pastes that link and gets the
+      // dossiê free. Other sources' documents live behind auctioneers' sites
+      // the allowlist does not know — no box rather than a box that fails.
+      (r[C.src] === "caixa"
+        ? '<section class="mkt azbox" data-az="' + esc(r[C.id]) + '"></section>' : "") +
+
       (r[C.link] ? '<a class="cta" href="' + esc(r[C.link]) +
         '" target="_blank" rel="noopener">' + t("lot.cta") + "</a>" : "") +
     "</div>" + footer();
@@ -1332,6 +1339,7 @@ function render() {
 }
 
 function wire() {
+  if (window.ANALYZE) window.ANALYZE.wire();
   var near = $("near");
   if (near) near.addEventListener("click", askNear);
   wireCity($("view"));

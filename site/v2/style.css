@@ -498,3 +498,23 @@ svg.map .lbl{fill:var(--ink); stroke:var(--card)}
 .mkt .erow.tot{border-top:1px solid var(--line); margin-top:6px; padding-top:8px}
 .mkt .erow.tot .el{font-weight:700; color:var(--ink)}
 .mkt .erow.tot .ev{font-family:var(--display); font-weight:800; font-size:17px}
+
+/* ---- análise de documento (F3) --------------------------------- */
+/* The one form on the site. Same card as the market blocks, because to the
+   reader it is the same kind of thing: a fact about this lot, on demand. */
+.azform { display: flex; gap: 8px; margin: 10px 0 2px; }
+.azform input {
+  flex: 1; min-width: 0; padding: 10px 12px;
+  border: 1px solid var(--line); border-radius: 10px;
+  background: var(--sunk); color: var(--ink);
+  font: 500 14px/1.3 var(--body);
+}
+.azform input:focus { outline: 2px solid var(--mark); outline-offset: 1px; }
+.azform .cta { margin: 0; padding: 10px 16px; width: auto; white-space: nowrap; }
+.azform button[disabled] { opacity: 0.55; }
+.azlist { margin: 6px 0 10px; padding-left: 18px; }
+.azlist li { margin: 3px 0; font: 400 13.5px/1.45 var(--body); color: var(--ink); }
+.azout .facts { margin-top: 10px; }
+.azout .v.good { color: var(--good); }
+.azout .v.bad { color: var(--bad); }
+.azout .v.mute { color: var(--mute); }

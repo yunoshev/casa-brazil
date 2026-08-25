@@ -50,7 +50,7 @@ LANG = "pt"
 
 #: Everything a page needs that is not the page. Copied, not linked, so the
 #: output directory is the whole site.
-ASSETS = ("v2/style.css", "parts/lang.js", "parts/chrome.js")
+ASSETS = ("v2/style.css", "parts/lang.js", "parts/chrome.js", "parts/analyze.js")
 
 
 def chrome(port: int, profile: Path) -> subprocess.Popen:
