@@ -373,13 +373,46 @@ function wireCity(root) {
  * cache. */
 function screenHome() {
   var n = national();
+  // The country page opens on the product, not on prose: every city we cover,
+  // full width and first — a visitor must see in one glance what exists — and
+  // the default city's own map beside them. The default is the biggest city;
+  // its page is one tap away and the header menu switches to any other.
+  var main = D.cities[0];
+  if (city.slug !== main.slug) { indexCity(main); paintPick(); }
+  var areas = allAreas().filter(function (a) { return city.shapes && city.shapes.d[a.key]; });
+  var cells = areas.map(function (a) {
+    return {
+      key: a.key, share: a.share, rel: a.rel, go: href("/a/" + encodeURIComponent(a.key)),
+      aria: t("city.area.aria", { name: areaName(a.key), lots: lots(a.n), below: a.below }),
+    };
+  });
   return '' +
-    '<section class="hero">' +
+    '<section class="hero home">' +
       '<p class="kicker"><i></i>' + t("brand.kicker") +
         b(t("brand.kicker.free")) + "</p>" +
       "<h1>" + t("home.h1", { br: '<span class="mark">' + t("home.br") + "</span>" }) + "</h1>" +
       '<p class="lede">' + t("home.lede") + "</p>" +
     "</section>" +
+
+    '<section class="sec"><div class="sechead"><h2>' + t("home.cities.h2") +
+      '</h2><span class="n">' + t("home.cities.note") + "</span></div>" +
+      '<div class="rowlist">' + D.cities.map(cityRow).join("") + "</div>" +
+    "</section>" +
+
+    (cells.length ? '<div class="side"><div class="mapcard">' +
+      '<div class="maphead"><span class="t">' + esc(main.nome) + " · " +
+        t("city.map.tap", {
+          n: cells.length, unit: plur("unit." + city.shapes.unit, cells.length),
+        }) + "</span></div>" +
+      drawMap(cells, {
+        aria: t("map.aria.city", { city: main.nome }),
+        box: frame(cells.map(function (c) { return c.key; })),
+        pad: 0.07,
+      }) +
+      legend() +
+      '<a class="cta" href="' + esc(cityBase(main)) + '">' +
+        t("home.city.open", { city: esc(main.nome) }) + "</a>" +
+    "</div></div>" : "") +
 
     catchCard(n) +
 
@@ -388,11 +421,6 @@ function screenHome() {
       tile(n.deals, plur("city.tile.deals", n.deals)) +
       tile(n.below, t("city.tile.below")) +
     "</div>" +
-
-    '<section class="sec"><div class="sechead"><h2>' + t("home.cities.h2") +
-      '</h2><span class="n">' + t("home.cities.note") + "</span></div>" +
-      '<div class="rowlist">' + D.cities.map(cityRow).join("") + "</div>" +
-    "</section>" +
 
     '<section class="sec"><div class="sechead"><h2>' + t("home.why.h2") + "</h2></div>" +
       '<p class="lede">' + t("home.why.p", { deals: b(num(n.deals)) }) + "</p>" +

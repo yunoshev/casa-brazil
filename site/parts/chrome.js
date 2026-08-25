@@ -79,7 +79,8 @@
     if (!menu || !list.length) return;
     menu.innerHTML = list.map(function (c) {
       var on = c.slug === here;
-      var url = "/leilao-de-imoveis/" + (c.uf ? c.uf + "/" : "") + (c.cslug || c.slug) + "/";
+      var url = (global.__BASE__ || "") + "/leilao-de-imoveis/" +
+        (c.uf ? c.uf + "/" : "") + (c.cslug || c.slug) + "/";
       return '<a class="mi' + (on ? " on" : "") + '" href="' + esc(url) +
         '" data-city="' + esc(c.slug) + '" role="option" aria-selected="' + on +
         '"><span class="mn">' + esc(c.nome) + '</span><span class="ms">' +

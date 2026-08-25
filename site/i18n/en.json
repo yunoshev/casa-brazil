@@ -134,6 +134,7 @@
  "home.br": "in&nbsp;Brazil",
  "home.cities.h2": "Where we have measured",
  "home.cities.note": "share of lots below the hammer",
+ "home.city.open": "Open {city}",
  "home.h1": "Property auctions {br} — are they really cheap?",
  "home.lede": "<b>The discount the platforms advertise is measured against the bank's appraisal.</b> We measure against the price identical properties actually fetch at the hammer — and where there are no comparable sales nearby, we show no number at all.",
  "home.method": "Each city's own arithmetic: {links}",

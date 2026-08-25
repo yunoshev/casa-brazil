@@ -33,10 +33,6 @@ concurrency:
 
 jobs:
   build:
-    # Quietly waits until the domain decision lands in the SITE_URL repository
-    # variable — a red build on every push before that would only teach people
-    # to ignore red builds.
-    if: vars.SITE_URL != ''
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -58,9 +54,12 @@ jobs:
           # Canonical links, the sitemap and robots.txt all read it, and a
           # wrong value here is the one mistake a static site cannot correct
           # after the fact.
-          SITE: ${{ vars.SITE_URL }}
+          # Until the domain decision lands in the SITE_URL repository
+          # variable, the site lives on the repo's own github.io address —
+          # a project page, so under /casa-brazil/; prerender derives the
+          # base path from this URL and prefixes every asset and link.
+          SITE: ${{ vars.SITE_URL || 'https://yunoshev.github.io/casa-brazil' }}
         run: |
-          test -n "$SITE" || { echo "::error::SITE_URL не задан"; exit 1; }
           python -u serve.py --port 8899 &
           for i in $(seq 1 60); do
             curl -sf -o /dev/null http://127.0.0.1:8899/v2/index.html && break
@@ -68,14 +67,17 @@ jobs:
           done
           python -u prerender.py --site "$SITE"
 
+      # enablement: turns Pages on for the repo on first run, so the deploy
+      # needs no manual visit to Settings.
       - uses: actions/configure-pages@v5
+        with:
+          enablement: true
       - uses: actions/upload-pages-artifact@v3
         with:
           path: dist
 
   deploy:
     needs: build
-    if: vars.SITE_URL != ''
     runs-on: ubuntu-latest
     environment:
       name: github-pages

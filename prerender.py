@@ -111,6 +111,24 @@ def blob(obj) -> str:
     return json.dumps(obj, ensure_ascii=False, separators=(",", ":")).replace("</", "<\\/")
 
 
+#: The path GitHub serves a project site under ("/casa-brazil"), empty on a
+#: real domain. Derived from --site once; a page baked for the root breaks
+#: every stylesheet and map the moment Pages puts it in a subfolder.
+BASE = ""
+
+
+def rebase(html: str) -> str:
+    """Prefix every root-absolute href/src with BASE.
+
+    The regex touches attributes only: canonical, sitemap and breadcrumb URLs
+    are already built from the full --site value, and the inline data blobs
+    carry slugs, not paths. Protocol-relative "//" is left alone.
+    """
+    if not BASE:
+        return html
+    return re.sub(r'\b(href|src)="/(?!/)', f'\\1="{BASE}/', html)
+
+
 def shell(tpl: str, head: dict, body: str, split: bool, ld: list, chrome: dict) -> str:
     """One rendered screen, wrapped in the page it ships as."""
     scripts = "\n".join(
@@ -122,6 +140,7 @@ def shell(tpl: str, head: dict, body: str, split: bool, ld: list, chrome: dict) 
         tpl.replace("__I18N_DATA__", blob(chrome["i18n"]))
         .replace("__CITIES_DATA__", blob(chrome["cities"]))
         .replace("__HERE_DATA__", blob(chrome["here"]))
+        .replace("__BASE_DATA__", json.dumps(BASE))
         .replace("__TITLE__", esc_attr(head["title"]))
         .replace("__DESC__", esc_attr(head["desc"]))
         .replace("__CANONICAL__", esc_attr(head["canonical"]))
@@ -139,6 +158,7 @@ def shell(tpl: str, head: dict, body: str, split: bool, ld: list, chrome: dict) 
 #: build checks that every one of them was consumed.
 MARKERS = (
     "__I18N_DATA__",
+    "__BASE_DATA__",
     "__CITIES_DATA__",
     "__HERE_DATA__",
     "__TITLE__",
@@ -414,7 +434,7 @@ async def run(a, ws_url: str, tpl: str, out: Path) -> None:
                 rel = FLAT.get(path) or (path.strip("/") + "/index.html").lstrip("/")
                 target = out / rel
                 target.parent.mkdir(parents=True, exist_ok=True)
-                target.write_text(html)
+                target.write_text(rebase(html))
                 written += 1
                 if written % 250 == 0:
                     rate = written / max(time.time() - t0, 1e-6)
@@ -458,6 +478,10 @@ def main() -> None:
     ap.add_argument("--port", type=int, default=9340)
     ap.add_argument("--limit", type=int, default=0, help="stop after N pages (a smoke run)")
     a = ap.parse_args()
+    global BASE
+    BASE = __import__("urllib.parse", fromlist=["urlparse"]).urlparse(a.site).path.rstrip("/")
+    if BASE:
+        print(f"базовый путь: {BASE} (сайт живёт в подпапке)", flush=True)
     out = Path(a.out)
     prepare(out)
     tpl = (SITE / "v2" / "page.tpl.html").read_text()
