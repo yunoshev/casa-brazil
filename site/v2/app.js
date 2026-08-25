@@ -394,9 +394,23 @@ function screenHome() {
       '<p class="lede">' + t("home.lede") + "</p>" +
     "</section>" +
 
+    // Only cities with a measured verdict get a slot here: the page's promise
+    // is the real discount, and a row answering "no estimate" to that promise
+    // sells weakness. The market-only cities keep their pages and their place
+    // in the header menu; on the front they are one quiet line, which is what
+    // "we hold their deals but not their verdicts yet" actually merits.
     '<section class="sec"><div class="sechead"><h2>' + t("home.cities.h2") +
       '</h2><span class="n">' + t("home.cities.note") + "</span></div>" +
-      '<div class="rowlist">' + D.cities.map(cityRow).join("") + "</div>" +
+      '<div class="rowlist">' +
+        D.cities.filter(function (c) { return !marketOnly(c); }).map(cityRow).join("") +
+      "</div>" +
+      (D.cities.some(marketOnly)
+        ? '<p class="foot" style="margin-top:10px">' + t("home.more", {
+            links: D.cities.filter(marketOnly).map(function (c) {
+              return '<a href="' + esc(cityBase(c)) + '">' + esc(c.nome) + "</a>";
+            }).join(" · "),
+          }) + "</p>"
+        : "") +
     "</section>" +
 
     (cells.length ? '<div class="side"><div class="mapcard">' +

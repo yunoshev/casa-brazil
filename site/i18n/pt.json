@@ -138,6 +138,7 @@
  "home.h1": "Leilão de imóveis {br} — é barato mesmo?",
  "home.lede": "<b>O desconto que as plataformas anunciam é calculado sobre a avaliação do banco.</b> Nós calculamos sobre o preço pelo qual imóveis iguais são realmente arrematados — e, onde não há vendas comparáveis por perto, não mostramos número nenhum.",
  "home.method": "A conta de cada cidade, em detalhe: {links}",
+ "home.more": "Ainda sem estimativa, mas já com os preços reais do ITBI por bairro: {links}",
  "home.why.h2": "Por que mais um número",
  "home.why.p": "A avaliação do banco é um laudo que ninguém pagou. Nós partimos do ITBI — o imposto que só existe depois da escritura assinada — e de {deals} vendas que aconteceram de verdade. Depois trazemos esse preço até onde o leilão termina, porque quem arremata não paga preço de anúncio.",
  "honest.base": "<b>O preço no registro é um teto.</b> A prefeitura grava o maior entre o valor declarado e a própria avaliação, então as medianas podem ficar um pouco acima do que realmente foi pago.",

@@ -138,6 +138,7 @@
  "home.h1": "Property auctions {br} — are they really cheap?",
  "home.lede": "<b>The discount the platforms advertise is measured against the bank's appraisal.</b> We measure against the price identical properties actually fetch at the hammer — and where there are no comparable sales nearby, we show no number at all.",
  "home.method": "Each city's own arithmetic: {links}",
+ "home.more": "No estimate yet, but already with real ITBI prices per district: {links}",
  "home.why.h2": "Why another number",
  "home.why.p": "A bank appraisal is a valuation nobody paid. We start from ITBI — the tax that only exists once a deed has been signed — and from {deals} sales that actually happened. Then we carry that price down to where the auction ends, because a winning bidder does not pay asking price.",
  "honest.base": "<b>The register's price is an upper bound.</b> The city records the larger of the declared value and its own appraisal, so the medians can sit slightly above what was really paid.",
