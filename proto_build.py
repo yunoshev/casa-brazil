@@ -452,6 +452,10 @@ def build_city(c: dict, cols: dict[str, int]) -> dict:
         # Keyed the same way the map is, so a district page can ask for its own
         # number without another spelling to get wrong.
         "market": market(norm(c["cidade"]), set((shp or {}).get("nice") or ())),
+        # What a property in this district usually *is* — median size, asking
+        # per m², how many listings say so. Not filtered to the map's keys:
+        # the reader who needs it most is on a lot the map could not place.
+        "asking_by_district": c.get("asking_by_district") or {},
         "upkeep": upkeep(norm(c["cidade"]), set((shp or {}).get("nice") or ())),
         "streets": streets(norm(c["cidade"]), set((shp or {}).get("nice") or ())),
         "rows": rows,

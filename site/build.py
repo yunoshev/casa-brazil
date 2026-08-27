@@ -285,7 +285,9 @@ def lot_meta(city: dict[str, Any], row: list[Any], col: dict[str, int], cats: di
     title = " · ".join(p for p in parts if p) + f" — {city['nome']}"
     desc = ref.get("lot.meta.desc", "{opening} → {hammer}").format(
         opening=f"R$ {row[col['preco']]:,}".replace(",", " "),
-        hammer=f"R$ {row[col['hammer']]:,}".replace(",", " "),
+        # A lot whose verdict is withheld has no hammer price; the opening
+        # bid is then the only figure the description can honestly carry.
+        hammer=f"R$ {row[col['hammer']] or row[col['preco']]:,}".replace(",", " "),
         city=city["nome"],
     )
     return {"file": f"{slug}-{ident[:8]}.html", "title": title, "desc": desc}

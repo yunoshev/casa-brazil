@@ -983,6 +983,82 @@ function idFromSlug(sl) {
   return lotById[tail] ? tail : sl;
 }
 
+/* Why a lot carries no verdict, said out loud.
+ *
+ * "Não damos estimativa" on its own reads as a broken feature. Every silence
+ * here has a specific cause the pipeline already knows, so the page names it —
+ * and where the reason is a missing measurement rather than a missing market,
+ * it hands the reader the district yardstick the estimate would have used.
+ *
+ * The key maps are written out in full because the build's key scanner and the
+ * prerender slice read literal dotted strings: "why." + code would ship a page
+ * whose text exists in no language file. */
+var WHY_KEY = {
+  no_area: "why.no_area",
+  no_type: "why.no_type",
+  city_only: "why.city_only",
+  no_coords: "why.no_coords",
+  no_comps: "why.no_comps",
+};
+var CONF_KEY = {
+  restricted: "why.conf.restricted",
+  rights: "why.conf.rights",
+  price_gap: "why.conf.price_gap",
+  appraisal_gap: "why.conf.appraisal_gap",
+  no_appraisal: "why.conf.no_appraisal",
+};
+//: Past this the comps are no longer a neighbourhood (geo_comps.CONTEXT_RING_M).
+var CONTEXT_RING_M = 5000;
+
+/* What a property in this district usually is, so "no estimate" still leaves
+ * the reader with a yardstick. Asking prices, and the sentence says so. */
+function askingHint(r) {
+  var by = city.asking_by_district || {};
+  var d = by[areaOf(r) || ""] || by[normKey(r[C.bairro])];
+  if (d) {
+    return '<p class="hint">' + t("why.hint", {
+      bairro: esc(title(r[C.bairro] || (areaOf(r) ? areaName(areaOf(r)) : city.nome))),
+      area: d[0], m2: money(d[1]), n: num(d[2]),
+    }) + "</p>";
+  }
+  var all = Object.keys(by).map(function (k) { return by[k][1]; });
+  if (!all.length) return "";
+  all.sort(function (a, b) { return a - b; });
+  return '<p class="hint">' + t("why.hint.city", {
+    city: esc(city.nome), m2: money(all[Math.floor(all.length / 2)]),
+  }) + "</p>";
+}
+
+function whyBlock(r) {
+  if (reliable(r)) return "";
+  var ring = r[C.ring] || 0;
+  var out = "";
+
+  // One cause, named. A withheld verdict has either a missing input (why) or a
+  // failed cross-check (conf); "ok but the comps are 1-5 km out" is its own case.
+  var body = WHY_KEY[r[C.why]] ? t(WHY_KEY[r[C.why]], { tipo: esc(title(r[C.tipo] || t("lot.fallback"))) })
+    : CONF_KEY[r[C.conf]] ? t(CONF_KEY[r[C.conf]])
+    : (!r[C.why] && ring > 1000 && ring <= CONTEXT_RING_M)
+      ? t("why.ring", { ring: num(ring) })
+      : "";
+  if (body) {
+    var hint = (r[C.why] === "no_area" || r[C.why] === "no_comps") ? askingHint(r) : "";
+    out += '<div class="why"><div class="wh">' + t("why.h") + "</div><p>" + body + "</p>" +
+      hint + "</div>";
+  }
+
+  // A number found only by opening the radius to the far side of the city is
+  // worth showing and worth flagging in the same breath — and it stacks on top
+  // of any cause above, because both are true of the same lot.
+  if (ring > CONTEXT_RING_M) {
+    var km = Math.round(ring / 1000);
+    out += '<div class="why wide"><div class="wh">' + t("why.wide.h", { km: km }) + "</div>" +
+      "<p>" + t("why.wide", { km: km, n: num(r[C.n]) }) + "</p>" +
+      (body ? "" : askingHint(r)) + "</div>";
+  }
+  return out;
+}
+
 function screenLot(id) {
   var r = null;
   for (var i = 0; i < city.rows.length; i++) {
@@ -1028,9 +1104,7 @@ function screenLot(id) {
             n: r[C.n], deals: plur("unit.deal", r[C.n]), ring: num(r[C.ring]),
           }) + "</p>"
         : '<p class="word mute">' + t("lot.verdict.none") + "</p>" +
-          '<p class="say">' + t("lot.say.none", {
-            ring: r[C.ring] ? t("lot.say.none.ring", { ring: num(r[C.ring]) }) : "",
-          }) + "</p>") +
+          whyBlock(r)) +
 
       // Four prices on one scale, but the names live underneath: on a phone the
       // four labels sit within a few pixels of each other whenever two prices

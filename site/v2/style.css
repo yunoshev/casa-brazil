@@ -278,6 +278,25 @@ svg.map.shapes{max-height:62vh}
 .fact .k{font-family:var(--label); font-size:8.5px; letter-spacing:.06em; text-transform:uppercase; color:var(--ink3); display:block}
 .fact .v{font-weight:700; font-size:14px; margin-top:3px; display:block}
 
+/* Why a lot has no verdict. Given real room, because once the number is
+ * missing the reason is the answer the reader came for — and the widened-radius
+ * case gets the warning colour, since a comp thirty kilometres away is a fact
+ * about our search, not about the property. */
+.why{
+  text-align:left; margin-top:14px; padding:14px 16px;
+  background:var(--sunk); border:1px solid var(--line2); border-radius:12px;
+}
+.why .wh{
+  font-family:var(--label); font-size:11px; letter-spacing:.09em;
+  text-transform:uppercase; color:var(--ink3); margin-bottom:7px;
+}
+.why p{margin:0; color:var(--ink2); font-size:15px; line-height:1.5}
+.why .hint{margin-top:9px; color:var(--ink3); font-size:14px}
+.why.wide{background:var(--warn-bg); border-color:var(--warn)}
+.why.wide .wh{color:var(--warn); font-size:13px; letter-spacing:.05em}
+.why.wide p{color:var(--ink)}
+.why.wide .hint{color:var(--ink2)}
+
 .note{
   font-size:13.5px; color:var(--ink2); background:var(--sunk);
   border-radius:12px; padding:11px 13px; margin-top:12px;
@@ -568,6 +587,10 @@ svg.map .lbl{fill:var(--ink); stroke:var(--card)}
   .maphead .t{font-size:11.5px}
 
   .verdict .say{font-size:16px}
+  .why p{font-size:16px}
+  .why .hint{font-size:15px}
+  .why .wh{font-size:11.5px}
+  .why.wide .wh{font-size:14px}
   .note{font-size:14px}
   .foot{font-size:13px}
 
