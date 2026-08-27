@@ -73,6 +73,9 @@ LANG = "pt"
 #: output directory is the whole site.
 ASSETS = (
     "v2/style.css",
+    "v2/fonts/bricolage.woff2",
+    "v2/fonts/instrument.woff2",
+    "v2/fonts/martian.woff2",
     "parts/lang.js",
     "parts/chrome.js",
     "parts/analyze.js",
@@ -204,6 +207,29 @@ def rebase(html: str) -> str:
     if not BASE:
         return html
     return re.sub(r'\b(href|src)="/(?!/)', f'\\1="{BASE}/', html)
+
+
+#: Codepoints the shipped webfonts were cut to (`fonts_build.py` writes it).
+#: Loaded once; empty when the file is missing, which turns the check off
+#: rather than failing a build on a machine that has not run the font tool.
+def font_charset() -> set[str]:
+    f = SITE / "v2" / "fonts" / "charset.json"
+    if not f.exists():
+        return set()
+    return {chr(c) for c in json.loads(f.read_text())}
+
+
+def missing_glyphs(text: str, allowed: set[str]) -> set[str]:
+    """Characters a reader would see in a fallback face.
+
+    The fonts are subset to what the data contains, so this is the tripwire on
+    that decision: the day a district name arrives with a letter outside the
+    set, the build says which letter instead of quietly rendering one word in
+    Helvetica on nine thousand pages.
+    """
+    if not allowed:
+        return set()
+    return {c for c in set(text) if c not in allowed and c.isprintable() and not c.isspace()}
 
 
 def analytics() -> str:
@@ -475,6 +501,8 @@ async def run(a, ws_url: str, tpl: str, out: Path) -> None:
             # and it is the one page the walk cannot discover, because nothing
             # in a body links up to it — the brand lives in the template.
             queue = ["/"] + city_paths
+            glyphs = font_charset()
+            unknown: set[str] = set()
             # The shell has no route of its own, so it redirects on load — and
             # the redirect drops the ?lang= that was on it, after which the
             # runtime falls back to whatever this browser profile happens to
@@ -496,6 +524,11 @@ async def run(a, ws_url: str, tpl: str, out: Path) -> None:
                     f"страница отрисовалась на {got_lang!r}, а не {LANG!r} — "
                     f"сборка на чужом языке хуже, чем несобранная"
                 )
+
+            # Tell the renderer which catalogues will actually travel with a
+            # page, so it does not offer the reader languages the file cannot
+            # switch into.
+            await tab.settled("window.__SHIP_LANGS__ = " + json.dumps([LANG]))
 
             # The header's own data, read once. Only the shipped language's
             # catalogue travels with the pages; the others stay behind with the
@@ -535,6 +568,10 @@ async def run(a, ws_url: str, tpl: str, out: Path) -> None:
                 left = [m for m in MARKERS if m in html]
                 if left:
                     raise SystemExit(f"в {path} остались маркеры шаблона: {sorted(left)}")
+                # Only the visible text: markup and inline data never reach a
+                # font. Collected, not raised — one stray character deserves a
+                # line at the end, not nine thousand dead builds.
+                unknown |= missing_glyphs(re.sub(r"<[^>]+>", " ", page["body"]), glyphs)
                 # lstrip, because the country page strips down to "" and
                 # `out / "/index.html"` is not out at all — pathlib treats an
                 # absolute right-hand side as the whole answer, and this one
@@ -555,6 +592,14 @@ async def run(a, ws_url: str, tpl: str, out: Path) -> None:
                         seen.add(href)
                         queue.append(href)
 
+            if unknown:
+                print(
+                    f"  ВНИМАНИЕ: {len(unknown)} символов нет в подрезанных шрифтах, "
+                    f"читатель увидит их системным начертанием: "
+                    f"{' '.join(sorted(unknown))}\n"
+                    f"  добавьте их в EXTRA в fonts_build.py и пересоберите шрифты",
+                    flush=True,
+                )
             write_sitemap(out, sorted(p for p in seen if p not in FLAT), a.site, a.generated)
             write_robots(out, a.site)
 

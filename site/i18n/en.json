@@ -115,7 +115,7 @@
  "entry.note.extrajud": "Note: in an extrajudicial auction (Law 9.514) condominium debt can follow the property — the CPC protection only applies in court sales.",
  "entry.total": "Real entry price",
  "foot.note": "Data: ITBI, Caixa, listing portals. Updated {date}. This is not investment advice and not a valuation for a transaction — read the edital and the matrícula before the auction.",
- "foot.privacy": "We count visits without cookies and collect no personal data.",
+ "foot.privacy": "We count visits without cookies and collect no personal data. In your browser we keep only the language, city and theme you picked.",
  "head.all.desc": "{lots}, ranked by the margin to the real hammer price rather than by the discount a platform advertises off the bank's appraisal.",
  "head.all.title": "Every lot at auction, {city} — by real margin",
  "head.area.desc": "{name}, {city}: {lots} at auction. {below} of {rel} with a reliable estimate open below the price properties like these actually go for.",

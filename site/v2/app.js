@@ -954,12 +954,25 @@ function lotLine(r) {
   return bits.join(" · ");
 }
 
-function lotRow(r) {
+/* `i` arrives free from every call site's .map(lotRow). It decides one thing:
+ * whether this row's photo waits. Deferring the picture the reader is already
+ * looking at is the classic own-goal of lazy loading — it delays the largest
+ * paint instead of saving anything — so the two rows that open above the fold
+ * on a phone stay eager and everything below them waits. */
+function lotRow(r, i) {
   var vd = verdict(r);
   var ph = photo(r);
+  var eager = !i || i < 2;
   return '<a class="row lot" href="' + href("/l/" + encodeURIComponent(r[C.id])) + '">' +
-    '<div class="ph"' + (ph ? ' style="background-image:url(' + esc(ph) + ')"' : "") + ">" +
-      (ph ? "" : "<span>" + t("lot.nophoto") + "</span>") + "</div>" +
+    // A real <img>, not a background-image: only an element the browser knows
+    // is an image can be deferred. A district list is up to two hundred lots,
+    // and every one of them was fetching a full-size photo from Caixa before
+    // the reader had scrolled — ten megabytes to read one page. The intrinsic
+    // size is stated so the row does not jump when the picture lands.
+    '<div class="ph">' + (ph
+      ? '<img src="' + esc(ph) + '" alt="" decoding="async" width="82" height="82"' +
+        (eager ? "" : ' loading="lazy"') + ' onerror="this.remove()">'
+      : "<span>" + t("lot.nophoto") + "</span>") + "</div>" +
     '<div class="body">' +
       '<div class="r1"><div class="ttl">' + lotLine(r) + "</div>" +
         '<span class="pill ' + (vd ? vd[1] : "mute") + '">' +
@@ -1092,8 +1105,11 @@ function screenLot(id) {
       '<p class="lede">' + lotLine(r) + " · " +
         esc(title(r[C.bairro] || (key ? areaName(key) : city.nome))) + "</p></div>" +
 
-    (ph ? '<img class="shot" src="' + esc(ph) + '" alt="" ' +
-      "onerror=\"this.style.display='none'\">" : "") +
+    // The one photo on a lot page is the reader's first impression and very
+    // often the largest thing painted, so it stays eager and says so.
+    (ph ? '<img class="shot" src="' + esc(ph) + '" alt="" decoding="async"' +
+      ' fetchpriority="high" width="640" height="480"' +
+      " onerror=\"this.style.display='none'\">" : "") +
 
     '<div class="verdict">' +
       (vd
@@ -1254,7 +1270,15 @@ function footNote() {
    390px phone has no room for a third control. Each language is a real link to
    a real URL, so it survives a page with no JS. */
 function langbar() {
-  var all = LANG.langs;
+  // What the *shipped page* will carry, not what this build tab happens to
+  // hold. The pre-render renders every page in a shell loaded with all three
+  // catalogues but writes only one of them into the file, so reading
+  // LANG.langs here baked a three-way switcher into 9 318 pages where two of
+  // the three links changed nothing: ?lang=ru on a flat page finds no Russian
+  // catalogue and re-renders in Portuguese. Dead controls, and an hreflang
+  // pointing at a URL that is not in that language, which Search Console
+  // reports as an error.
+  var all = window.__SHIP_LANGS__ || LANG.langs;
   if (all.length < 2) return "";
   return '<p class="langs">' + all.map(function (c) {
     var name = esc(LANG.names[c]);

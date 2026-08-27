@@ -1,3 +1,32 @@
+/* Fonts, ours. Not fonts.googleapis.com.
+ *
+ * That host was the only third party this page blocked on: a DNS lookup, a TLS
+ * handshake and a render-blocking stylesheet before a single letter could be
+ * drawn — and the last request that handed a reader's IP to somebody else,
+ * which a footer promising no tracking should not have to explain.
+ *
+ * One variable file per family instead of nine static weights, subset to the
+ * characters a Brazilian auction page contains and pinned to the axes this
+ * stylesheet actually varies: 734 KB upstream, 124 KB here. Rebuild with
+ * `fonts_build.py`; the pre-render checks every page against the character set
+ * those files were cut to and says so if the data grows past it.
+ *
+ * Relative URLs on purpose: GitHub Pages serves this site from /casa-brazil/,
+ * and a path relative to the stylesheet is right in both places without the
+ * build having to rewrite it. */
+@font-face{
+  font-family:"Bricolage Grotesque"; src:url(fonts/bricolage.woff2) format("woff2");
+  font-weight:400 800; font-style:normal; font-display:swap;
+}
+@font-face{
+  font-family:"Instrument Sans"; src:url(fonts/instrument.woff2) format("woff2");
+  font-weight:400 700; font-style:normal; font-display:swap;
+}
+@font-face{
+  font-family:"Martian Mono"; src:url(fonts/martian.woff2) format("woff2");
+  font-weight:400 600; font-style:normal; font-display:swap;
+}
+
 /* Preço Real — phone-first.
  *
  * The palette carries meaning, not decoration: green and red are reserved for
@@ -228,6 +257,7 @@ svg.map.shapes{max-height:62vh}
   background:var(--sunk) center/cover no-repeat; overflow:hidden;
   display:flex; align-items:center; justify-content:center;
 }
+.lot .ph img{width:100%; height:100%; object-fit:cover; display:block}
 .lot .ph span{font-family:var(--label); font-size:8.5px; color:var(--ink3); text-align:center; padding:4px}
 .lot .body{flex:1; min-width:0; display:flex; flex-direction:column; justify-content:space-between}
 .lot .ttl{font-weight:700; font-size:15.5px; line-height:1.25}
@@ -358,7 +388,9 @@ svg.map.shapes{max-height:62vh}
 .foot{color:var(--ink3); font-size:12.5px; margin:26px 0 10px; line-height:1.5}
 .hid{display:none !important}
 
-.shot{width:100%; border-radius:16px; display:block; margin-top:6px}
+/* height:auto so the intrinsic 640x480 in the markup reserves the right box
+   before the file arrives, without pinning the rendered height to it. */
+.shot{width:100%; height:auto; border-radius:16px; display:block; margin-top:6px}
 
 /* Desktop keeps the same DOM — the map (or, on a lot, its photo) simply moves
  * into a sticky second column and stays put while the reading column scrolls.

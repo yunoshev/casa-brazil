@@ -115,7 +115,7 @@
  "entry.note.extrajud": "Atenção: em leilão extrajudicial (Lei 9.514) a dívida de condomínio pode acompanhar o imóvel — a proteção do CPC vale só no judicial.",
  "entry.total": "Entrada real",
  "foot.note": "Dados: ITBI, Caixa, portais de anúncios. Atualizado em {date}. Isto não é recomendação de investimento nem laudo de avaliação — antes do leilão, leia o edital e a matrícula.",
- "foot.privacy": "Contamos visitas sem cookies e não coletamos dados pessoais.",
+ "foot.privacy": "Contamos visitas sem cookies e não coletamos dados pessoais. No seu navegador guardamos apenas o idioma, a cidade e o tema que você escolheu.",
  "head.all.desc": "{lots}, ordenados pela margem até o preço real de arremate — e não pelo desconto que a plataforma anuncia sobre a avaliação do banco.",
  "head.all.title": "Todos os lotes em leilão, {city} — por margem real",
  "head.area.desc": "{name}, {city}: {lots} em leilão. {below} de {rel} com estimativa confiável abrem abaixo do preço pelo qual imóveis assim são de fato arrematados.",
