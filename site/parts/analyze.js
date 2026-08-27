@@ -103,6 +103,9 @@
       btn.disabled = true;
       out.innerHTML = "";
       say(t("az.wait"));
+      // Every call spends a free Gemini key. Knowing how many there are is the
+      // difference between "the feature is used" and a bill nobody predicted.
+      if (global.track) global.track("analyze_edital", { stage: "start" });
       fetch(WORKER, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -113,12 +116,24 @@
         });
       }).then(function (r) {
         btn.disabled = false;
-        if (!r.ok) { say(errText(r.body && r.body.error)); return; }
+        if (!r.ok) {
+          say(errText(r.body && r.body.error));
+          if (global.track) {
+            global.track("analyze_edital", {
+              stage: "error", reason: (r.body && r.body.error) || "unknown",
+            });
+          }
+          return;
+        }
         msg.hidden = true;
         out.innerHTML = render(r.body, r.hit);
+        if (global.track) {
+          global.track("analyze_edital", { stage: "ok", cached: r.hit ? 1 : 0 });
+        }
       }).catch(function () {
         btn.disabled = false;
         say(errText());
+        if (global.track) global.track("analyze_edital", { stage: "error", reason: "network" });
       });
     });
   }

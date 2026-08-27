@@ -71,7 +71,13 @@ LANG = "pt"
 
 #: Everything a page needs that is not the page. Copied, not linked, so the
 #: output directory is the whole site.
-ASSETS = ("v2/style.css", "parts/lang.js", "parts/chrome.js", "parts/analyze.js")
+ASSETS = (
+    "v2/style.css",
+    "parts/lang.js",
+    "parts/chrome.js",
+    "parts/analyze.js",
+    "parts/analytics.js",
+)
 
 
 def chrome(port: int, profile: Path) -> subprocess.Popen:
@@ -200,6 +206,29 @@ def rebase(html: str) -> str:
     return re.sub(r'\b(href|src)="/(?!/)', f'\\1="{BASE}/', html)
 
 
+def analytics() -> str:
+    """The counters, or nothing at all.
+
+    Both IDs are repository variables, so turning measurement on is a setting
+    and not a commit, and a local checkout measures nothing because nobody set
+    them. Emitting an empty string rather than a disabled script keeps the
+    no-analytics build byte-identical to what it was before this existed.
+    """
+    ga4 = (os.environ.get("GA4_ID") or "").strip()
+    cf = (os.environ.get("CF_BEACON") or "").strip()
+    if not ga4 and not cf:
+        return ""
+    cfg = {k: v for k, v in (("ga4", ga4), ("cf", cf)) if v}
+    print(f"аналитика: {', '.join(sorted(cfg))}", flush=True)
+    return (
+        f"<script>window.__ANALYTICS__ = {blob(cfg)};</script>\n"
+        '<script src="/parts/analytics.js" defer></script>\n'
+    )
+
+
+ANALYTICS = ""
+
+
 def shell(tpl: str, head: dict, body: str, split: bool, ld: list, chrome: dict) -> str:
     """One rendered screen, wrapped in the page it ships as."""
     scripts = "\n".join(
@@ -218,6 +247,7 @@ def shell(tpl: str, head: dict, body: str, split: bool, ld: list, chrome: dict) 
         .replace("__LD__", scripts)
         .replace("__CLASS__", "wrap split" if split else "wrap")
         .replace("__BODY__", body)
+        .replace("__COUNTERS__", ANALYTICS)
     )
 
 
@@ -238,6 +268,11 @@ MARKERS = (
     "__LD__",
     "__CLASS__",
     "__BODY__",
+    # Fourth time: the hole is __COUNTERS__ and the global it fills in is
+    # window.__ANALYTICS__ *on purpose*. Naming them alike makes the inserted
+    # snippet match the marker it just replaced, and the check below fires on
+    # a page that is in fact correct.
+    "__COUNTERS__",
 )
 
 
@@ -551,8 +586,9 @@ def main() -> None:
     ap.add_argument("--port", type=int, default=9340)
     ap.add_argument("--limit", type=int, default=0, help="stop after N pages (a smoke run)")
     a = ap.parse_args()
-    global BASE
+    global BASE, ANALYTICS
     BASE = __import__("urllib.parse", fromlist=["urlparse"]).urlparse(a.site).path.rstrip("/")
+    ANALYTICS = analytics()
     if BASE:
         print(f"базовый путь: {BASE} (сайт живёт в подпапке)", flush=True)
     out = Path(a.out)

@@ -62,6 +62,15 @@ jobs:
           # a project page, so under /casa-brazil/; prerender derives the
           # base path from this URL and prefixes every asset and link.
           SITE: ${{ vars.SITE_URL || 'https://yunoshev.github.io/casa-brazil' }}
+          # Measurement is a repository variable, not a commit. Unset means the
+          # pages ship with no counter at all — which is what a fork, a local
+          # checkout and a preview build should be. Set both under
+          # Settings → Secrets and variables → Actions → Variables:
+          #   GA4_ID     the "G-" measurement ID of a GA4 web data stream
+          #   CF_BEACON  the token from Cloudflare → Web Analytics → the site
+          # Neither is a secret: both ship inside every page by design.
+          GA4_ID: ${{ vars.GA4_ID }}
+          CF_BEACON: ${{ vars.CF_BEACON }}
         run: |
           set -o pipefail
           python -u serve.py --port 8899 &

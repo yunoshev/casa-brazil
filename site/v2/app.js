@@ -465,7 +465,7 @@ function screenHome() {
       }) + "</p>" +
     "</section>" +
 
-    '<p class="foot">' + t("foot.note", { date: esc(D.generated) }) + "</p>" + langbar();
+    '<p class="foot">' + footNote() + "</p>" + langbar();
 }
 
 /* Not a dead end: a lot page that has gone is exactly where a reader arrives
@@ -482,7 +482,7 @@ function screenNotFound() {
     '<section class="sec"><div class="sechead"><h2>' + t("home.cities.h2") + "</h2></div>" +
       '<div class="rowlist">' + D.cities.map(cityRow).join("") + "</div>" +
     "</section>" +
-    '<p class="foot">' + t("foot.note", { date: esc(D.generated) }) + "</p>" + langbar();
+    '<p class="foot">' + footNote() + "</p>" + langbar();
 }
 
 /* What was actually paid in this district, from the town hall's own register.
@@ -1151,7 +1151,8 @@ function screenLot(id) {
         ? '<section class="mkt azbox" data-az="' + esc(r[C.id]) + '"></section>' : "") +
 
       (r[C.link] ? '<a class="cta" href="' + esc(r[C.link]) +
-        '" target="_blank" rel="noopener">' + t("lot.cta") + "</a>" : "") +
+        '" target="_blank" rel="noopener" data-out="' + esc(r[C.src] || "lot") + '">' +
+        t("lot.cta") + "</a>" : "") +
     "</div>" + footer();
 }
 
@@ -1238,7 +1239,14 @@ function ladder() {
 function footer() {
   return '<p class="foot">' +
     link("/all", t("nav.all")) + " · " + link("/honest", t("nav.honest")) + "<br>" +
-    t("foot.note", { date: esc(D.generated) }) + "</p>" + langbar();
+    footNote() + "</p>" + langbar();
+}
+
+/* What the data is, and what we count. The second half is short on purpose:
+ * a site that measures its readers without cookies can say so in one line
+ * instead of sending them to a policy nobody opens. */
+function footNote() {
+  return t("foot.note", { date: esc(D.generated) }) + " " + t("foot.privacy");
 }
 
 /* Down here on purpose. The runtime already picks the visitor's language from
