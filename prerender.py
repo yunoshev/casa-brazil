@@ -131,8 +131,50 @@ class Tab:
         r = await self.send("Runtime.evaluate", expression=expr, returnByValue=True)
         got = r.get("result", {})
         if r.get("exceptionDetails"):
-            raise RuntimeError(r["exceptionDetails"].get("text", "JS threw"))
+            raise RuntimeError(detail(r["exceptionDetails"]))
         return got.get("value")
+
+    async def settled(self, expr: str, tries: int = 60):
+        """Evaluate once the page has stopped moving under us.
+
+        The shell redirects on load. Between the poll that sees `__render__`
+        and the next call, a slow runner can navigate away — the execution
+        context dies and CDP answers with a bare "Uncaught" that names
+        nothing. Waiting for the renderer again and retrying is the whole fix;
+        a real error in the expression survives every attempt and is raised.
+        """
+        last = ""
+        for _ in range(tries):
+            try:
+                return await self.js(expr)
+            except RuntimeError as e:
+                last = str(e)
+                await asyncio.sleep(0.25)
+                for _ in range(600):
+                    if await self.js("typeof window.__render__ === 'function' && !!window.__D__"):
+                        break
+                    await asyncio.sleep(0.1)
+        raise RuntimeError(f"страница не устоялась: {last}")
+
+
+async def alive(tab, expr: str) -> bool:
+    """A poll that treats "the context just died" as "not ready yet"."""
+    try:
+        return bool(await tab.js(expr))
+    except RuntimeError:
+        return False
+
+
+def detail(ex: dict) -> str:
+    """Everything Chrome knows about a thrown exception, on one line.
+
+    `exceptionDetails["text"]` alone is "Uncaught" — true, and useless from a
+    CI log an hour after the fact.
+    """
+    val = ex.get("exception") or {}
+    where = f"{ex.get('lineNumber', '?')}:{ex.get('columnNumber', '?')}"
+    said = val.get("description") or val.get("value") or ex.get("text") or "JS threw"
+    return f"{said} @ {ex.get('url') or 'eval'}:{where}"
 
 
 def blob(obj) -> str:
@@ -379,13 +421,13 @@ async def run(a, ws_url: str, tpl: str, out: Path) -> None:
             seed = f"{a.base}{a.shell}?lang={LANG}"
             await tab.send("Page.navigate", url=seed)
             for _ in range(600):
-                if await tab.js("typeof window.__render__ === 'function' && !!window.__D__"):
+                if await alive(tab, "typeof window.__render__ === 'function' && !!window.__D__"):
                     break
                 await asyncio.sleep(0.1)
             else:
                 raise SystemExit("страница не поднялась — __render__ не появился")
 
-            cities = await tab.js(
+            cities = await tab.settled(
                 "JSON.stringify(__D__.cities.map(function(c){"
                 "return {uf:c.uf, cslug:c.cslug||c.slug};}))"
             )
@@ -407,13 +449,13 @@ async def run(a, ws_url: str, tpl: str, out: Path) -> None:
             # front end this one replaces — which has no renderer at all.
             await tab.send("Page.navigate", url=f"{a.base}{city_paths[0]}?lang={LANG}")
             for _ in range(600):
-                if await tab.js("typeof window.__render__ === 'function'"):
+                if await alive(tab, "typeof window.__render__ === 'function'"):
                     break
                 await asyncio.sleep(0.1)
             else:
                 raise SystemExit(f"{city_paths[0]} не поднялась — рендерер не появился")
 
-            got_lang = await tab.js("window.LANG && window.LANG.code")
+            got_lang = await tab.settled("window.LANG && window.LANG.code")
             if got_lang != LANG:
                 raise SystemExit(
                     f"страница отрисовалась на {got_lang!r}, а не {LANG!r} — "
@@ -425,12 +467,14 @@ async def run(a, ws_url: str, tpl: str, out: Path) -> None:
             # single-page shell, because nothing on a flat page can re-render
             # into them anyway.
             want = runtime_keys()
-            whole = json.loads(await tab.js("JSON.stringify(__I18N__[" + json.dumps(LANG) + "])"))
+            whole = json.loads(
+                await tab.settled("JSON.stringify(__I18N__[" + json.dumps(LANG) + "])")
+            )
             missing = sorted(want - set(whole))
             if missing:
                 raise SystemExit(f"каталог {LANG} не знает ключей рантайма: {missing}")
             i18n = {LANG: {k: v for k, v in whole.items() if k in want or k == "_meta"}}
-            menu = json.loads(await tab.js("JSON.stringify(window.__CITIES__ || [])"))
+            menu = json.loads(await tab.settled("JSON.stringify(window.__CITIES__ || [])"))
             if not a.generated:
                 a.generated = await tab.js("__D__.generated") or ""
 
