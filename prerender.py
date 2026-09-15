@@ -25,8 +25,9 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import hashlib
 from datetime import date
-from html import escape
+from html import escape, unescape
 import json
 import os
 import re
@@ -35,6 +36,7 @@ import subprocess
 import time
 import urllib.error
 import urllib.request
+from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 from pathlib import Path
 
 import websockets
@@ -258,8 +260,33 @@ def analytics() -> str:
 ANALYTICS = ""
 
 
+def version_stylesheet(tpl: str) -> str:
+    """Version only the shell stylesheet, before root URLs are rebased."""
+    digest = hashlib.sha256((SITE / "v2/style.css").read_bytes()).hexdigest()[:12]
+
+    def version_link(match: re.Match) -> str:
+        tag = match.group(0)
+        if not re.search(r'\brel\s*=\s*([\"\'])stylesheet\1', tag, re.IGNORECASE):
+            return tag
+
+        def version_href(attribute: re.Match) -> str:
+            url = urlsplit(unescape(attribute.group(2)))
+            if url.scheme or url.netloc or url.path != "/v2/style.css":
+                return attribute.group(0)
+            query = [(key, value) for key, value in parse_qsl(url.query, keep_blank_values=True) if key != "v"]
+            query.append(("v", digest))
+            versioned = urlunsplit(url._replace(query=urlencode(query)))
+            quote = attribute.group(1)
+            return "href=" + quote + escape(versioned, quote=True) + quote
+
+        return re.sub(r'\bhref\s*=\s*([\"\'])(.*?)\1', version_href, tag, flags=re.IGNORECASE)
+
+    return re.sub(r"<link\b[^>]*>", version_link, tpl, flags=re.IGNORECASE)
+
+
 def shell(tpl: str, head: dict, body: str, split: bool, ld: list, chrome: dict, home: bool = False) -> str:
     """One rendered screen, wrapped in the page it ships as."""
+    tpl = version_stylesheet(tpl)
     scripts = "\n".join(
         f'<script type="application/ld+json">{json.dumps(x, ensure_ascii=False)}</script>'
         for x in ld

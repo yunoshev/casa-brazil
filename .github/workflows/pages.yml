@@ -66,6 +66,9 @@ jobs:
       - name: Check valuation provenance UI
         run: node test/valuation_ui.mjs
 
+      - name: Check stylesheet cache versioning
+        run: python test/test_asset_versioning.py
+
       # Chrome is preinstalled on ubuntu-latest; prerender drives it over CDP.
       - name: Serve and pre-render
         env:
