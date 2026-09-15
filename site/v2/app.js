@@ -865,7 +865,9 @@ function tile(n, sub) {
 }
 
 function catchCard(s) {
-  if (s.promised_med == null) return "";
+  // No loud cohort means there is no honest "worth hunting" comparison to
+  // make.  In particular, never publish a noisy "0 of 0" paragraph.
+  if (s.promised_med == null || !s.promised_hi_n) return "";
   var up = s.real_med > 0;
   return '<div class="catch">' +
     '<div><span class="lab">' + t("catch.promised") + "</span>" +
@@ -1093,6 +1095,11 @@ var WHY_KEY = {
   city_only: "why.city_only",
   no_coords: "why.no_coords",
   no_comps: "why.no_comps",
+  identity_mismatch: "why.identity_mismatch",
+  no_price: "why.no_price",
+  no_chain: "why.no_chain",
+  geometry_changed: "why.geometry_changed",
+  current_fields_changed: "why.current_fields_changed",
 };
 var CONF_KEY = {
   restricted: "why.conf.restricted",
@@ -1127,16 +1134,18 @@ function whyBlock(r) {
   if (reliable(r)) return "";
   var ring = r[C.ring] || 0;
   var out = "";
+  var valuation = valuationLotMeta(r);
+  var why = r[C.why] || (valuation && valuation.status === "abstained" ? valuation.reason : null);
 
   // One cause, named. A withheld verdict has either a missing input (why) or a
   // failed cross-check (conf); "ok but the comps are 1-5 km out" is its own case.
-  var body = WHY_KEY[r[C.why]] ? t(WHY_KEY[r[C.why]], { tipo: esc(title(r[C.tipo] || t("lot.fallback"))) })
+  var body = WHY_KEY[why] ? t(WHY_KEY[why], { tipo: esc(title(r[C.tipo] || t("lot.fallback"))) })
     : CONF_KEY[r[C.conf]] ? t(CONF_KEY[r[C.conf]])
     : (!r[C.why] && ring > 1000 && ring <= CONTEXT_RING_M)
       ? t("why.ring", { ring: num(ring) })
       : "";
   if (body) {
-    var hint = (r[C.why] === "no_area" || r[C.why] === "no_comps") ? askingHint(r) : "";
+    var hint = (why === "no_area" || why === "no_comps") ? askingHint(r) : "";
     out += '<div class="why"><div class="wh">' + t("why.h") + "</div><p>" + body + "</p>" +
       hint + "</div>";
   }
@@ -1151,6 +1160,47 @@ function whyBlock(r) {
       (body ? "" : askingHint(r)) + "</div>";
   }
   return out;
+}
+
+/* The estimate is a model output, not an auction outcome.  The export keeps
+ * the model-level contract separate from per-lot fingerprints so this notice
+ * remains useful even when only one of those layers is present. */
+function valuationProvenance(r) {
+  // Per-lot fingerprints remain a separate backend concern while the compact
+  // public notice is driven only by the top-level contract.
+  return D.valuation_provenance || null;
+}
+function valuationLotMeta(r) {
+  var root = valuationProvenance(r), cities = root && root.cities;
+  if (typeof city === "undefined" || !city) return null;
+  var owner = city;
+  // `refreshStats` also runs once for every city before navigation has picked
+  // one; resolve the row's owner so one city's lot cannot borrow another's
+  // abstention metadata during build-time aggregation.
+  D.cities.some(function (candidate) {
+    if ((candidate.rows || []).indexOf(r) >= 0) { owner = candidate; return true; }
+    return false;
+  });
+  var c = cities && owner && cities[owner.slug], lots = c && c.lots;
+  return lots && lots[String(r[C.id])] || null;
+}
+function valuationAbstained(r) {
+  var meta = valuationLotMeta(r);
+  return !!(meta && meta.status === "abstained");
+}
+function shownModelValue(v) {
+  return typeof v === "number" && isFinite(v) && v > 0;
+}
+function valuationNotice(r) {
+  // The notice follows values actually shown by the lot page, including
+  // lower-confidence and wider-radius context values; it is not a ranking
+  // badge. Historical lots use the asking-price renderer and never reach this
+  // path, so their archived price is not mislabeled as a recalculation.
+  var meta = valuationLotMeta(r);
+  if (!valuationProvenance(r) || !isCurrent(r) || valuationAbstained(r) ||
+      (!shownModelValue(r[C.hammer]) && !shownModelValue(r[C.mkt]))) return "";
+  return '<p class="note valuation-provenance">' +
+    t(meta ? "valuation.notice" : "valuation.notice.generic") + "</p>";
 }
 
 function screenLot(id) {
@@ -1239,6 +1289,8 @@ function screenLot(id) {
         : "") +
 
       (r[C.jud] ? '<p class="note">' + t("lot.note.court") + "</p>" : "") +
+
+      valuationNotice(r) +
 
       entryCard(r) +
 

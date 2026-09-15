@@ -1,0 +1,38 @@
+import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+import vm from 'node:vm';
+
+const source = readFileSync(new URL('../site/v2/app.js', import.meta.url), 'utf8').split('/* ---- boot ')[0];
+const catalog = JSON.parse(readFileSync(new URL('../site/i18n/en.json', import.meta.url), 'utf8'));
+catalog['foot.note'] = catalog['foot.note.unknown'];
+const cols = ['id', 'src', 'bairro', 'end', 'tipo', 'area', 'quartos', 'preco', 'hammer', 'margin', 'mkt', 'aval', 'avalpct', 'n', 'ring', 'conf', 'jud', 'mod', 'data', 'promised', 'prec', 'm2', 'lat', 'lon', 'link', 'why'];
+const row = fields => cols.map(key => fields[key] ?? null);
+const city = { slug: 'teste-sp', uf: 'sp', cslug: 'teste', nome: 'Teste', cidade: 'TESTE', stats: {}, chain: { hammer_over_asking: 1 }, shapes: null, market: {}, streets: {}, lifecycle: {}, rows: [] };
+const lot = row({ id: 'estimate-1', tipo: 'apartamento', area: 60, preco: 100000, hammer: 90000, margin: 10, mkt: 110000, aval: 120000, n: 4, ring: 500, conf: 'ok', promised: 50 });
+const withheld = row({ id: 'withheld-1', tipo: 'apartamento', area: 60, preco: 100000, hammer: 90000, margin: 10, mkt: 110000, aval: 120000, n: 0, ring: 500, conf: 'none', promised: 50 });
+const appraisalGap = row({ id: 'appraisal-gap-1', tipo: 'apartamento', area: 60, preco: 100000, hammer: 90000, margin: 10, mkt: 110000, aval: 120000, n: 4, ring: 500, conf: 'appraisal_gap', promised: 50 });
+const wide = row({ id: 'wide-1', tipo: 'apartamento', area: 60, preco: 100000, hammer: 90000, margin: 10, mkt: 110000, aval: 120000, n: 4, ring: 5000, conf: 'ok', promised: 50 });
+const archived = row({ id: 'archived-1', tipo: 'apartamento', area: 60, preco: 100000, hammer: 90000, margin: 10, mkt: 110000, aval: 120000, n: 4, ring: 500, conf: 'ok', promised: 50 });
+city.rows.push(lot, withheld, appraisalGap, wide, archived);
+city.lifecycle['estimate-1'] = { status: 'active' };
+city.lifecycle['withheld-1'] = { status: 'active' };
+city.lifecycle['appraisal-gap-1'] = { status: 'active' };
+city.lifecycle['wide-1'] = { status: 'active' };
+city.lifecycle['archived-1'] = { status: 'archived', last_price_brl: 100000 };
+const LANG = { code: 'en', langs: ['en'], names: { en: 'English' }, num: String, money: String, pct: String, plur: key => key, t: (key, vars, fallback) => catalog[key] || fallback || key };
+const ctx = vm.createContext({ window: { __D__: { cols, cities: [city], generated: null, valuation_provenance: { model_version: 'test', input_hashes: {}, computed_at: 'never-render', cities: { 'teste-sp': { comparable_basis: 'historical_cached_portal_asking_proxy', observed_date: 'unknown', lots: { 'estimate-1': { status: 'valued', reason: null, comparable_basis: 'historical_cached_portal_asking_proxy', sale_observation: false, observed_date: 'unknown' }, 'withheld-1': { status: 'abstained', reason: 'identity_mismatch', comparable_basis: 'historical_cached_portal_asking_proxy', sale_observation: false, observed_date: 'unknown' } } } } } }, __SHIP_LANGS__: ['en'] }, LANG, URL });
+vm.runInContext(source, ctx);
+ctx.indexCity(city);
+
+const html = ctx.screenFor(ctx.href('/l/estimate-1'));
+assert.match(html, new RegExp(catalog['valuation.notice'].replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
+assert.doesNotMatch(html, /never-render/);
+assert.doesNotMatch(html, /actual auction result[^<]*calculated_at/);
+assert.match(ctx.screenFor(ctx.href('/l/withheld-1')), new RegExp(catalog['why.identity_mismatch'].replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
+assert.doesNotMatch(ctx.screenFor(ctx.href('/l/withheld-1')), /actual auction result/);
+assert.match(ctx.screenFor(ctx.href('/l/appraisal-gap-1')), new RegExp(catalog['valuation.notice.generic'].replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
+assert.match(ctx.screenFor(ctx.href('/l/wide-1')), new RegExp(catalog['valuation.notice.generic'].replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
+assert.doesNotMatch(ctx.screenFor(ctx.href('/l/archived-1')), /Recalculated from archived listing comparables/);
+assert.match(ctx.screenFor(ctx.href('/l/estimate-1')), /Source-data freshness is unknown\./);
+assert.doesNotMatch(ctx.screenCity(), /0 of 0/);
+console.log('valuation UI: translated provenance notice, abstention reason, non-estimate, and empty catch cohort passed');

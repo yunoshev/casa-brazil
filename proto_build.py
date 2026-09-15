@@ -125,7 +125,15 @@ def catalogue_for_freshness(catalogues: dict[str, dict], generated: str | None) 
 
 def copy_top_metadata(payload: dict, source: dict) -> None:
     """Pass renderer contracts through exactly when the export supplies them."""
-    for key in ("provenance", "lifecycle_schema_version"):
+    # Valuation provenance is deliberately separate from source/lifecycle
+    # provenance: it describes how an estimate was produced, not whether the
+    # listing feed is current. Per-lot fingerprints are a separate backend
+    # contract and are not folded into this top-level metadata.
+    for key in (
+        "provenance",
+        "lifecycle_schema_version",
+        "valuation_provenance",
+    ):
         if key in source:
             payload[key] = source[key]
 

@@ -63,6 +63,9 @@ jobs:
       - name: Check homepage geoselection
         run: node --test site/test/geo.test.mjs
 
+      - name: Check valuation provenance UI
+        run: node test/valuation_ui.mjs
+
       # Chrome is preinstalled on ubuntu-latest; prerender drives it over CDP.
       - name: Serve and pre-render
         env:
