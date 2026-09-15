@@ -78,6 +78,7 @@ ASSETS = (
     "v2/fonts/martian.woff2",
     "parts/lang.js",
     "parts/chrome.js",
+    "parts/geo.js",
     "parts/analyze.js",
     "parts/analytics.js",
 )
@@ -255,7 +256,7 @@ def analytics() -> str:
 ANALYTICS = ""
 
 
-def shell(tpl: str, head: dict, body: str, split: bool, ld: list, chrome: dict) -> str:
+def shell(tpl: str, head: dict, body: str, split: bool, ld: list, chrome: dict, home: bool = False) -> str:
     """One rendered screen, wrapped in the page it ships as."""
     scripts = "\n".join(
         f'<script type="application/ld+json">{json.dumps(x, ensure_ascii=False)}</script>'
@@ -274,6 +275,7 @@ def shell(tpl: str, head: dict, body: str, split: bool, ld: list, chrome: dict) 
         .replace("__CLASS__", "wrap split" if split else "wrap")
         .replace("__BODY__", body)
         .replace("__COUNTERS__", ANALYTICS)
+        .replace("__HOME_GEO__", '<script src="/parts/geo.js" defer></script>' if home else "")
     )
 
 
@@ -299,6 +301,7 @@ MARKERS = (
     # snippet match the marker it just replaced, and the check below fires on
     # a page that is in fact correct.
     "__COUNTERS__",
+    "__HOME_GEO__",
 )
 
 
@@ -461,12 +464,13 @@ def write_robots(out: Path, site: str) -> None:
     out.joinpath("robots.txt").write_text(
         "User-agent: *\n"
         "Allow: /\n\n"
+        f"Disallow: {BASE}/_home/\n\n"
         "# Named on purpose. This site exists to be quoted.\n"
-        "User-agent: GPTBot\nAllow: /\n\n"
-        "User-agent: OAI-SearchBot\nAllow: /\n\n"
-        "User-agent: ClaudeBot\nAllow: /\n\n"
-        "User-agent: PerplexityBot\nAllow: /\n\n"
-        "User-agent: Google-Extended\nAllow: /\n\n"
+        f"User-agent: GPTBot\nDisallow: {BASE}/_home/\nAllow: /\n\n"
+        f"User-agent: OAI-SearchBot\nDisallow: {BASE}/_home/\nAllow: /\n\n"
+        f"User-agent: ClaudeBot\nDisallow: {BASE}/_home/\nAllow: /\n\n"
+        f"User-agent: PerplexityBot\nDisallow: {BASE}/_home/\nAllow: /\n\n"
+        f"User-agent: Google-Extended\nDisallow: {BASE}/_home/\nAllow: /\n\n"
         f"Sitemap: {site}/sitemap.xml\n"
     )
 
@@ -563,7 +567,8 @@ async def run(a, ws_url: str, tpl: str, out: Path) -> None:
                     page["body"],
                     page["split"],
                     [breadcrumbs(path, a.site)],
-                    {"i18n": i18n, "cities": menu, "here": {"city": page["city"]}},
+                    {"i18n": i18n, "cities": menu, "here": {"city": page["city"] or ("sao-paulo-sp" if path == "/" else "")}},
+                    path == "/",
                 )
                 left = [m for m in MARKERS if m in html]
                 if left:
@@ -591,6 +596,21 @@ async def run(a, ws_url: str, tpl: str, out: Path) -> None:
                     if href.startswith("/leilao-de-imoveis/") and href not in seen:
                         seen.add(href)
                         queue.append(href)
+
+            # Small map-only partials for the current city set. These files
+            # have no document shell/canonical and never enter the sitemap.
+            slugs = json.loads(await tab.settled(
+                "JSON.stringify(__D__.cities.map(function(c){return c.slug;}))"
+            ))
+            for slug in slugs:
+                fragment = await tab.settled(
+                    "window.__homeCityFragment__(" + json.dumps(slug) + ")"
+                )
+                if not fragment:
+                    raise SystemExit(f"home fragment missing for {slug}")
+                target = out / "_home" / f"{slug}.html"
+                target.parent.mkdir(parents=True, exist_ok=True)
+                target.write_text(rebase(fragment))
 
             if unknown:
                 print(

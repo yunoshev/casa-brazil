@@ -226,7 +226,10 @@ function median(a) {
   return s.length % 2 ? s[h] : (s[h - 1] + s[h]) / 2;
 }
 
-var city = D.cities[0];
+// The country page is national, but its static featured map must be stable:
+// São Paulo is the reference city when the reader has not chosen one.
+var DEFAULT_CITY = D.cities.filter(function (c) { return c.slug === "sao-paulo-sp"; })[0] || D.cities[0];
+var city = DEFAULT_CITY;
 var byArea = {};
 var slugToKey = { fwd: {}, rev: {} };
 var streetBySlug = {};
@@ -310,17 +313,10 @@ function allAreas() {
 
 /* ---- city switching -------------------------------------------- */
 
-/* Timezone picks the opening city without asking for anything. Coordinates are
- * personal data under the LGPD, and five in six Brazilians live outside the
- * three municipalities we cover, so a permission prompt on load would spend a
- * one-shot browser grant to tell most visitors we have nothing for them. */
+/* The public home starts at São Paulo. Approximate network selection for the
+ * flat home page lives in parts/geo.js; routes never infer or replace a city. */
 function guessCity() {
-  try {
-    var tz = Intl.DateTimeFormat().resolvedOptions().timeZone || "";
-    var hit = D.cities.filter(function (c) { return c.tz === tz; });
-    if (hit.length) return hit[0];
-  } catch (e) { /* older browsers just get the default */ }
-  return D.cities[0];
+  return DEFAULT_CITY;
 }
 
 /* Anchors, not buttons. Another city is another page, and a page is something
@@ -332,8 +328,14 @@ function citySub(c) {
     : t("city.pick.sub", { lots: lots(c.stats.lots), below: num(c.stats.below) });
 }
 
+function cityOrder(first) {
+  return D.cities.slice().sort(function (a, b) {
+    return (a.slug === first.slug ? -1 : b.slug === first.slug ? 1 : 0);
+  });
+}
+
 function cityList(kind) {
-  return D.cities.map(function (c) {
+  return cityOrder(DEFAULT_CITY).map(function (c) {
     var on = c.slug === city.slug;
     // cityBase, not the raw slug: two spellings of one city would become
     // two pages saying the same thing.
@@ -357,7 +359,7 @@ function cityList(kind) {
  * only hands it the shape it expects. */
 function paintPick() {
   window.__HERE__ = { city: city.slug };
-  window.__CITIES__ = D.cities.map(function (c) {
+  window.__CITIES__ = cityOrder(DEFAULT_CITY).map(function (c) {
     return {
       slug: c.slug, uf: c.uf, cslug: c.cslug, nome: c.nome,
       sub: strip(citySub(c)),
@@ -389,14 +391,8 @@ function wireCity(root) {
  * across all cities rather than borrowed from whichever one the reader was
  * last in — a country page showing Rio's median would be a lie told by a
  * cache. */
-function screenHome() {
-  var n = national();
-  // The country page opens on the product, not on prose: every city we cover,
-  // full width and first — a visitor must see in one glance what exists — and
-  // the default city's own map beside them. The default is the biggest city;
-  // its page is one tap away and the header menu switches to any other.
-  var main = D.cities[0];
-  if (city.slug !== main.slug) { indexCity(main); paintPick(); }
+function homeMap(main) {
+  if (city.slug !== main.slug) indexCity(main);
   var areas = allAreas().filter(function (a) { return city.shapes && city.shapes.d[a.key]; });
   var cells = areas.map(function (a) {
     return {
@@ -404,6 +400,26 @@ function screenHome() {
       aria: t("city.area.aria", { name: areaName(a.key), lots: lots(a.n), below: a.below }),
     };
   });
+  return cells.length ? '<div class="mapcard home-city-fragment" data-home-city="' + esc(main.slug) + '">' +
+    '<div class="maphead"><span class="t">' + esc(main.nome) + " · " +
+      t("city.map.tap", {
+        n: cells.length, unit: plur("unit." + city.shapes.unit, cells.length),
+      }) + "</span></div>" +
+    drawMap(cells, {
+      aria: t("map.aria.city", { city: main.nome }),
+      box: frame(cells.map(function (c) { return c.key; })),
+      pad: 0.07,
+    }) +
+    legend() +
+    '<a class="cta" href="' + esc(cityBase(main)) + '">' +
+      t("home.city.open", { city: esc(main.nome) }) + "</a>" +
+  "</div>" : "";
+}
+
+function screenHome() {
+  var n = national();
+  var main = DEFAULT_CITY;
+  var featured = homeMap(main);
   return '' +
     '<section class="hero home">' +
       '<p class="kicker"><i></i>' + t("brand.kicker") +
@@ -420,7 +436,7 @@ function screenHome() {
     '<section class="sec"><div class="sechead"><h2>' + t("home.cities.h2") +
       '</h2><span class="n">' + t("home.cities.note") + "</span></div>" +
       '<div class="rowlist">' +
-        D.cities.filter(function (c) { return !marketOnly(c); }).map(cityRow).join("") +
+        cityOrder(main).filter(function (c) { return !marketOnly(c); }).map(cityRow).join("") +
       "</div>" +
       (D.cities.some(marketOnly)
         ? '<p class="foot" style="margin-top:10px">' + t("home.more", {
@@ -431,20 +447,7 @@ function screenHome() {
         : "") +
     "</section>" +
 
-    (cells.length ? '<div class="side"><div class="mapcard">' +
-      '<div class="maphead"><span class="t">' + esc(main.nome) + " · " +
-        t("city.map.tap", {
-          n: cells.length, unit: plur("unit." + city.shapes.unit, cells.length),
-        }) + "</span></div>" +
-      drawMap(cells, {
-        aria: t("map.aria.city", { city: main.nome }),
-        box: frame(cells.map(function (c) { return c.key; })),
-        pad: 0.07,
-      }) +
-      legend() +
-      '<a class="cta" href="' + esc(cityBase(main)) + '">' +
-        t("home.city.open", { city: esc(main.nome) }) + "</a>" +
-    "</div>" +
+    (featured ? '<div class="side"><div id="home-city-fragment">' + featured + '</div><p class="foot" id="geo-note" aria-live="polite"></p>' +
 
     catchCard(n) +
 
@@ -1433,6 +1436,17 @@ window.__render__ = function (path) {
     head: headFor(path),
     links: links,
   };
+};
+
+// Map-only fragments are generated for the small, current city set. They are
+// not pages: no head, canonical, route, or sitemap entry accompanies them.
+window.__homeCityFragment__ = function (slug) {
+  var chosen = D.cities.filter(function (c) { return c.slug === slug; })[0];
+  if (!chosen) return null;
+  var before = city;
+  var html = homeMap(chosen);
+  indexCity(before);
+  return html;
 };
 
 /* What the head of this page should say. Kept next to the screens so a new

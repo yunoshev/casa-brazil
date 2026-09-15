@@ -50,6 +50,9 @@ jobs:
       - name: Build the payload
         run: python proto_build.py
 
+      - name: Check homepage geoselection
+        run: node --test site/test/geo.test.mjs
+
       # Chrome is preinstalled on ubuntu-latest; prerender drives it over CDP.
       - name: Serve and pre-render
         env:
