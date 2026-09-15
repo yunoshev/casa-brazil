@@ -66,6 +66,11 @@ jobs:
       - name: Check valuation provenance UI
         run: node test/valuation_ui.mjs
 
+      - name: Check consent and public analytics configuration
+        run: |
+          node --test site/test/analytics.test.mjs
+          python test/test_public_config.py
+
       - name: Check stylesheet cache versioning
         run: python test/test_asset_versioning.py
 
@@ -81,15 +86,11 @@ jobs:
           # a project page, so under /casa-brazil/; prerender derives the
           # base path from this URL and prefixes every asset and link.
           SITE: ${{ vars.SITE_URL || 'https://yunoshev.github.io/casa-brazil' }}
-          # Measurement is a repository variable, not a commit. Unset means the
-          # pages ship with no counter at all — which is what a fork, a local
-          # checkout and a preview build should be. Set both under
-          # Settings → Secrets and variables → Actions → Variables:
-          #   GA4_ID     the "G-" measurement ID of a GA4 web data stream
-          #   CF_BEACON  the token from Cloudflare → Web Analytics → the site
-          # Neither is a secret: both ship inside every page by design.
+          # Public settings, never credentials. Set the readiness assertion to
+          # true only after disabling GA automatic enhanced measurement.
+          # Visitors must also accept statistics before any Google tag loads.
           GA4_ID: ${{ vars.GA4_ID }}
-          CF_BEACON: ${{ vars.CF_BEACON }}
+          GA4_ENHANCED_MEASUREMENT_DISABLED: ${{ vars.GA4_ENHANCED_MEASUREMENT_DISABLED }}
         run: |
           set -o pipefail
           python -u serve.py --port 8899 &

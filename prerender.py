@@ -33,6 +33,7 @@ import os
 import re
 import shutil
 import subprocess
+import sys
 import time
 import urllib.error
 import urllib.request
@@ -42,6 +43,9 @@ from pathlib import Path
 import websockets
 
 HERE = Path(__file__).parent
+sys.path.insert(0, str(HERE))
+from public_config import snippet, privacy_page, validate_site_url
+
 SITE = HERE / "site"
 
 
@@ -238,23 +242,8 @@ def missing_glyphs(text: str, allowed: set[str]) -> set[str]:
 
 
 def analytics() -> str:
-    """The counters, or nothing at all.
-
-    Both IDs are repository variables, so turning measurement on is a setting
-    and not a commit, and a local checkout measures nothing because nobody set
-    them. Emitting an empty string rather than a disabled script keeps the
-    no-analytics build byte-identical to what it was before this existed.
-    """
-    ga4 = (os.environ.get("GA4_ID") or "").strip()
-    cf = (os.environ.get("CF_BEACON") or "").strip()
-    if not ga4 and not cf:
-        return ""
-    cfg = {k: v for k, v in (("ga4", ga4), ("cf", cf)) if v}
-    print(f"аналитика: {', '.join(sorted(cfg))}", flush=True)
-    return (
-        f"<script>window.__ANALYTICS__ = {blob(cfg)};</script>\n"
-        '<script src="/parts/analytics.js" defer></script>\n'
-    )
+    """Versioned consent module; Google additionally requires stream readiness."""
+    return snippet()
 
 
 ANALYTICS = ""
@@ -282,6 +271,12 @@ def version_stylesheet(tpl: str) -> str:
         return re.sub(r'\bhref\s*=\s*([\"\'])(.*?)\1', version_href, tag, flags=re.IGNORECASE)
 
     return re.sub(r"<link\b[^>]*>", version_link, tpl, flags=re.IGNORECASE)
+
+
+def write_privacy(out: Path, site: str) -> None:
+    target = out / "privacidade" / "index.html"
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text(rebase(version_stylesheet(privacy_page(site))))
 
 
 def shell(tpl: str, head: dict, body: str, split: bool, ld: list, chrome: dict, home: bool = False) -> str:
@@ -694,6 +689,7 @@ def main() -> None:
     ap.add_argument("--port", type=int, default=9340)
     ap.add_argument("--limit", type=int, default=0, help="stop after N pages (a smoke run)")
     a = ap.parse_args()
+    a.site = validate_site_url(a.site)
     global BASE, ANALYTICS
     BASE = __import__("urllib.parse", fromlist=["urlparse"]).urlparse(a.site).path.rstrip("/")
     ANALYTICS = analytics()
@@ -701,6 +697,7 @@ def main() -> None:
         print(f"базовый путь: {BASE} (сайт живёт в подпапке)", flush=True)
     out = Path(a.out)
     prepare(out)
+    write_privacy(out, a.site)
     tpl = (SITE / "v2" / "page.tpl.html").read_text()
 
     profile = HERE / ".prerender-profile"

@@ -1,92 +1,233 @@
-/* Who reads this site, and what they do with it.
- *
- * Two counters, on purpose. Cloudflare Web Analytics is the honest traffic
- * number: no cookies, no consent question, and it counts the readers who block
- * Google. GA4 is the one that will link to Search Console, so a query in the
- * console can be followed to what the reader did after clicking it — the whole
- * point of measuring an SEO-first site at all.
- *
- * GA4 runs in Consent Mode with everything denied. That is not a placeholder
- * waiting for a banner: with `analytics_storage: denied` the tag sets no
- * cookie and sends a cookieless ping, which under the LGPD needs no consent
- * dialogue and costs this site nothing it would otherwise have. A free tool
- * that answers "is anybody reading Pavuna" does not need to know who they are.
- *
- * Both IDs arrive from the build (repository variables), never from this file.
- * With neither set the whole module is inert, which is what a local checkout
- * and every pre-render run should be.
+/* Basic consent: no Google script, dataLayer or pings before acceptance.
+ * Read-only build config: __ANALYTICS__.ga4 and
+ * __ANALYTICS__.enhancedMeasurementDisabled === true. The latter asserts that
+ * automatic history, form, outbound, download and search measurement are OFF
+ * in the GA stream; send_page_view:false alone cannot disable those settings.
+ * Account setup belongs to the release owner. CF beacon is not bootstrapped
+ * here: it bypasses this module's URL and event sanitization.
+ * ANALYTICS.wire(root) observes new shell content; setConsent/getConsent let
+ * main add a privacy-settings link. Pre-consent events are discarded.
  */
 (function (global) {
   "use strict";
-
   var CFG = global.__ANALYTICS__ || {};
+  var KEY = "brazil-analytics-consent-v1";
+  var choice = null, started = false, panel = null, preferences = null, pageSeen = false;
+  var ctaSeen = false, lotSeen = false, observer = null;
+  var lastPath = null;
+  // Resolve LANG at use time: analytics may load before lang.js.
+  function t(key) { return global.LANG && global.LANG.t ? global.LANG.t(key) : key; }
+  var SOURCES = ["caixa", "zuk", "superbid", "sodre", "sodre-santoro", "sodresantoro", "leilaoimovel", "leilao-imovel", "vlance", "emgea", "resale", "santander", "lot"];
+  var CITIES = ["rio-de-janeiro-rj", "sao-paulo-sp", "sao-goncalo-rj", "recife-pe", "fortaleza-ce"];
+  var REASONS = ["rate_limited", "analysis_unavailable", "bad_domain", "too_large",
+    "upstream", "invalid_response", "network", "timeout", "unknown"];
+  var EVENTS = {
+    page_view: [], lot_view: [], lot_outbound: ["source", "page"],
+    city_switch: ["city_code"], lang_switch: ["lang"], analysis_cta_view: [],
+    analyze_edital: ["stage", "cached", "reason"],
+  };
 
-  /* The pre-render drives a real Chrome through nine thousand pages on every
-   * deploy. Without this guard each build would be the site's busiest day. */
   function offline() {
-    var h = location.hostname;
-    return location.protocol === "file:" ||
-      !h || h === "localhost" || h === "127.0.0.1" || h === "[::1]" ||
-      /^192\.168\./.test(h) || navigator.webdriver === true;
+    var h = global.location.hostname;
+    return global.location.protocol !== "https:" || !h || h === "localhost" ||
+      h === "127.0.0.1" || h === "[::1]" || /^192\.168\./.test(h) ||
+      global.navigator.webdriver === true;
   }
+  var ready = !offline() && /^G-[A-Z0-9]+$/.test(CFG.ga4 || "") && CFG.enhancedMeasurementDisabled === true;
+  try {
+    var saved = global.localStorage.getItem(KEY);
+    if (saved === "accepted" || saved === "rejected") choice = saved;
+  } catch (e) { /* session choice still works */ }
 
-  function load(src, attrs) {
-    var s = document.createElement("script");
-    s.async = true;
-    s.src = src;
-    for (var k in attrs) if (attrs.hasOwnProperty(k)) s.setAttribute(k, attrs[k]);
-    document.head.appendChild(s);
-  }
+  function includes(xs, value) { return xs.indexOf(value) !== -1; }
 
-  var on = !offline() && !!(CFG.ga4 || CFG.cf);
-
-  if (on && CFG.ga4) {
-    global.dataLayer = global.dataLayer || [];
-    // Not an arrow and not a rest parameter: gtag reads `arguments` itself,
-    // and everything else on this site is ES5 for the same reason.
-    function gtag() { global.dataLayer.push(arguments); }
-    global.gtag = gtag;
-    gtag("consent", "default", {
-      ad_storage: "denied",
-      ad_user_data: "denied",
-      ad_personalization: "denied",
-      analytics_storage: "denied",
+  // Never send a lot/address slug, arbitrary path, query or hash to Google.
+  // City codes are the finite catalogue, not user-provided labels.
+  function context() {
+    var path = global.location.pathname;
+    var base = path.indexOf("/casa-brazil/") === 0 ? "/casa-brazil/" : "/";
+    var result = { page_type: "other", page: base };
+    if (path === base || path === base + "index" + ".html") result.page_type = "home";
+    CITIES.some(function (city) {
+      var uf = city.slice(-2), slug = city.slice(0, -3);
+      var prefix = base + "leilao-de-imoveis/" + uf + "/" + slug + "/";
+      if (path.indexOf(prefix) !== 0) return false;
+      result.city_code = city;
+      var tail = path.slice(prefix.length);
+      result.page_type = !tail ? "city" : tail.indexOf("lote/") === 0 ? "lot" :
+        tail.indexOf("rua/") === 0 ? "street" : /^todos-os-lotes\/(pagina\/[1-9][0-9]*\/)?$/.test(tail) ? "all" :
+        /^arquivo\/(pagina\/[1-9][0-9]*\/)?$/.test(tail) ? "archive" :
+        tail === "como-calculamos/" ? "methodology" : "area";
+      result.page = prefix + (result.page_type === "lot" ? "lote/" : result.page_type === "street" ? "rua/" : "");
+      return true;
     });
-    gtag("js", new Date());
-    gtag("config", CFG.ga4, { anonymize_ip: true });
-    load("https://www.googletagmanager.com/gtag/js?id=" + encodeURIComponent(CFG.ga4));
+    result.lang = global.LANG && includes(["pt", "en", "ru"], global.LANG.code) ? global.LANG.code : "pt";
+    return result;
   }
 
-  if (on && CFG.cf) {
-    load("https://static.cloudflareinsights.com/beacon.min.js",
-      { "data-cf-beacon": JSON.stringify({ token: CFG.cf }) });
+  function referrer() {
+    try {
+      var u = new URL(document.referrer);
+      // Known search origins preserve attribution without query text.
+      if (/^(www\.)?(google\.(com|com\.br|pt|ru|co\.uk)|bing\.com|duckduckgo\.com)$/.test(u.hostname)) return "https://" + u.hostname + "/";
+    } catch (e) { /* empty/unknown referrer omitted */ }
+    return "";
   }
 
-  /* One call for the rest of the site. Inert when analytics is off, so a
-   * caller never has to ask whether it is. */
   function track(name, params) {
-    if (!on || !global.gtag) return;
-    try { global.gtag("event", name, params || {}); } catch (e) { /* never break a page */ }
+    if (!ready || choice !== "accepted" || !started || !Object.prototype.hasOwnProperty.call(EVENTS, name)) return false;
+    try {
+      var ctx = context(), p = params || {}, safe = { page_type: ctx.page_type, lang: ctx.lang };
+      if (ctx.city_code) safe.city_code = ctx.city_code;
+      var source = document.querySelector("[data-out]");
+      if (ctx.page_type === "lot" && source && includes(SOURCES, source.getAttribute("data-out"))) safe.source = source.getAttribute("data-out");
+      var allowed = EVENTS[name].concat(["source", "city_code", "lang"]);
+      allowed.forEach(function (key) {
+        var value = p[key];
+        if (key === "source" && includes(SOURCES, value)) safe.source = value;
+        if (key === "city_code" && includes(CITIES, value)) safe.city_code = value;
+        if (key === "lang" && includes(["pt", "en", "ru"], value)) safe.lang = value;
+        if (key === "stage" && includes(["start", "ok", "error"], value)) safe.stage = value;
+        if (key === "cached" && (value === 0 || value === 1)) safe.cached = value;
+        if (key === "reason") safe.reason = includes(REASONS, value) ? value : "unknown";
+        if (key === "page") safe.page = ctx.page;
+      });
+      safe.page_location = global.location.origin + ctx.page;
+      safe.page_referrer = referrer();
+      safe.page_title = ctx.page_type;
+      safe.send_to = CFG.ga4;
+      global.gtag("event", name, safe);
+      return true;
+    } catch (e) { return false; }
   }
   global.track = track;
 
-  /* Delegated, because a static page's body was written at build time.
-   *
-   * Three things worth a name. Everything else GA4's enhanced measurement
-   * already counts, and a custom event that duplicates a built-in one only
-   * makes the reports harder to read. */
+  function start() {
+    if (!ready || choice !== "accepted" || started) return;
+    try {
+      global.dataLayer = global.dataLayer || [];
+      global.gtag = function () { global.dataLayer.push(arguments); };
+      global["ga-disable-" + CFG.ga4] = false;
+      global.gtag("consent", "default", {
+        ad_storage: "denied", ad_user_data: "denied", ad_personalization: "denied", analytics_storage: "granted",
+      });
+      var ctx = context();
+      global.gtag("set", {
+        page_location: global.location.origin + ctx.page, page_referrer: referrer(), page_title: ctx.page_type,
+      });
+      global.gtag("js", new Date());
+      global.gtag("config", CFG.ga4, {
+        send_page_view: false, allow_google_signals: false, allow_ad_personalization_signals: false,
+        cookie_flags: "SameSite=Lax;Secure",
+      });
+      var script = document.createElement("script");
+      script.async = true;
+      script.referrerPolicy = "no-referrer";
+      script.src = "https://www.googletagmanager.com/gtag/js?id=" + encodeURIComponent(CFG.ga4);
+      document.head.appendChild(script);
+      started = true;
+    } catch (e) { /* blocked tag never affects the product */ }
+  }
+
+  function setConsent(value) {
+    if (value !== "accepted" && value !== "rejected") return;
+    choice = value;
+    try { global.localStorage.setItem(KEY, value); } catch (e) { /* keep in memory */ }
+    if (panel) panel.hidden = true;
+    if (preferences) preferences.focus();
+    if (value === "accepted") {
+      if (started) {
+        global["ga-disable-" + CFG.ga4] = false;
+        try { global.gtag("consent", "update", { analytics_storage: "granted" }); } catch (e) { /* optional */ }
+      } else start();
+      wire(document);
+    } else if (started) {
+      global["ga-disable-" + CFG.ga4] = true;
+      try { global.gtag("consent", "update", { analytics_storage: "denied" }); } catch (e) { /* optional */ }
+    }
+  }
+
+  function banner() {
+    if (!ready || !document.body) return;
+    if (!preferences) {
+      preferences = document.createElement("button");
+      preferences.type = "button";
+      preferences.textContent = t("analytics.preferences");
+      preferences.setAttribute("style", "display:block;margin:16px auto;padding:10px 16px;cursor:pointer");
+      preferences.addEventListener("click", function () {
+        if (panel) {
+          panel.hidden = false;
+          panel.querySelector("button").focus();
+        }
+      });
+      document.body.appendChild(preferences);
+    }
+    if (panel) return;
+    panel = document.createElement("aside");
+    panel.hidden = !!choice;
+    panel.setAttribute("role", "region");
+    panel.setAttribute("aria-label", t("analytics.title"));
+    panel.setAttribute("style", "position:fixed;bottom:12px;left:12px;right:12px;z-index:1000;max-width:36rem;margin:auto;padding:16px;background:var(--paper,#fff);color:var(--ink,#222);border:1px solid currentColor;border-radius:8px;box-shadow:0 2px 16px #0002");
+    var text = document.createElement("p");
+    text.textContent = t("analytics.consent");
+    panel.appendChild(text);
+    ["rejected", "accepted"].forEach(function (value) {
+      var button = document.createElement("button");
+      button.type = "button";
+      button.textContent = value === "accepted" ? t("analytics.accept") : t("analytics.reject");
+      button.setAttribute("style", "margin:4px;padding:10px 16px;cursor:pointer");
+      button.addEventListener("click", function () { setConsent(value); });
+      panel.appendChild(button);
+    });
+    document.body.appendChild(panel);
+  }
+
+  function wire(root) {
+    if (!ready) return;
+    banner();
+    if (!started || choice !== "accepted") return;
+    if (lastPath !== global.location.pathname) {
+      lastPath = global.location.pathname;
+      pageSeen = lotSeen = ctaSeen = false;
+      if (observer) observer.disconnect();
+    }
+    if (!pageSeen) pageSeen = track("page_view");
+    var scope = root || document;
+    var lot = scope.querySelector("[data-out], [data-az]");
+    if (!lotSeen && lot && context().page_type === "lot") lotSeen = track("lot_view", { source: lot.getAttribute("data-out") || "caixa" });
+    if (ctaSeen || !global.IntersectionObserver) return;
+    if (!observer) observer = new global.IntersectionObserver(function (entries) {
+      entries.forEach(function (entry) {
+        if (!ctaSeen && entry.isIntersecting && entry.intersectionRatio > 0) {
+          ctaSeen = track("analysis_cta_view", { source: "caixa" });
+          if (ctaSeen) observer.disconnect();
+        }
+      });
+    }, { threshold: 0.1 });
+    var nodes = scope.querySelectorAll("[data-az] .cta");
+    for (var i = 0; i < nodes.length; i++) {
+      if (nodes[i].closest(".azform")) observer.observe(nodes[i]);
+    }
+  }
+
   document.addEventListener("click", function (e) {
     var el = e.target.closest && e.target.closest("[data-out], [data-city], [data-lang]");
     if (!el) return;
-    // The click that means the site worked: the reader went to bid.
-    if (el.hasAttribute("data-out")) {
-      track("lot_outbound", { source: el.getAttribute("data-out"), page: location.pathname });
-    } else if (el.hasAttribute("data-city")) {
-      track("city_switch", { city: el.getAttribute("data-city") });
-    } else if (el.hasAttribute("data-lang")) {
-      // Whether anyone outside Portuguese exists here is a real open question;
-      // the desk research said no, and this is the measurement that settles it.
-      track("lang_switch", { lang: el.getAttribute("data-lang") });
-    }
+    if (el.hasAttribute("data-out")) track("lot_outbound", { source: el.getAttribute("data-out"), page: true });
+    else if (el.hasAttribute("data-city")) track("city_switch", { city_code: el.getAttribute("data-city") });
+    else if (el.hasAttribute("data-lang")) track("lang_switch", { lang: el.getAttribute("data-lang") });
   });
+
+  global.ANALYTICS = Object.freeze({ wire: wire, setConsent: setConsent, getConsent: function () { return choice; } });
+  function boot() {
+    start(); wire(document);
+    // The existing analysis module inserts its form after DOMContentLoaded;
+    // shell navigation replaces #view. Observe both without changing its API.
+    if (ready && global.MutationObserver) {
+      var updates = new global.MutationObserver(function () { wire(document); });
+      updates.observe(document.getElementById("view") || document.body, { childList: true, subtree: true });
+    }
+  }
+  if (document.readyState !== "loading") boot();
+  else document.addEventListener("DOMContentLoaded", boot);
 })(window);

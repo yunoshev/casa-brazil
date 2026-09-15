@@ -34,6 +34,7 @@ sys.path.insert(0, str(Path(__file__).parent))
 sys.path.insert(0, str(Path(__file__).parent / "site"))
 import build as classic
 import shapes
+from public_config import snippet
 
 HERE = Path(__file__).parent
 SITE = HERE / "site" / "v2"
@@ -614,6 +615,7 @@ def main() -> None:
         # A plain "__I18N__" would also match the `window.__I18N__ =` it is
         # being assigned to, and replace both halves of the line.
         .replace("__I18N_DATA__", classic.blob(cats))
+        .replace("__COUNTERS__", snippet())
         # The <title> and description are rewritten by the runtime, but a
         # crawler that runs no JS has to find something better than a marker.
         .replace("__TITLE__", ref["meta.title"])
