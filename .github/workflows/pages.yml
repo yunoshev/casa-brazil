@@ -91,6 +91,8 @@ jobs:
           # Visitors must also accept statistics before any Google tag loads.
           GA4_ID: ${{ vars.GA4_ID }}
           GA4_ENHANCED_MEASUREMENT_DISABLED: ${{ vars.GA4_ENHANCED_MEASUREMENT_DISABLED }}
+          # Default-off browser gate; Main enables only after shared-core readiness.
+          BRAZIL_PUBLIC_ANALYSIS_ENABLED: ${{ vars.BRAZIL_PUBLIC_ANALYSIS_ENABLED || 'false' }}
         run: |
           set -o pipefail
           python -u serve.py --port 8899 &

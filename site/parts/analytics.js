@@ -20,11 +20,13 @@
   var SOURCES = ["caixa", "zuk", "superbid", "sodre", "sodre-santoro", "sodresantoro", "leilaoimovel", "leilao-imovel", "vlance", "emgea", "resale", "santander", "lot"];
   var CITIES = ["rio-de-janeiro-rj", "sao-paulo-sp", "sao-goncalo-rj", "recife-pe", "fortaleza-ce"];
   var REASONS = ["rate_limited", "analysis_unavailable", "bad_domain", "too_large",
-    "upstream", "invalid_response", "network", "timeout", "unknown"];
+    "upstream", "invalid_response", "network", "timeout", "unknown", "bad_request",
+    "idempotency_conflict", "budget_exhausted", "free_limit_reached", "capacity_exhausted", "source_unavailable", "source_blocked"];
   var EVENTS = {
     page_view: [], lot_view: [], lot_outbound: ["source", "page"],
     city_switch: ["city_code"], lang_switch: ["lang"], analysis_cta_view: [],
     analyze_edital: ["stage", "cached", "reason"],
+    analysis_budget_exhausted: [], analysis_free_limit_reached: [], analysis_capacity_exhausted: [],
   };
 
   function offline() {
@@ -87,9 +89,9 @@
         if (key === "source" && includes(SOURCES, value)) safe.source = value;
         if (key === "city_code" && includes(CITIES, value)) safe.city_code = value;
         if (key === "lang" && includes(["pt", "en", "ru"], value)) safe.lang = value;
-        if (key === "stage" && includes(["start", "ok", "error"], value)) safe.stage = value;
+        if (key === "stage" && includes(["start", "pending", "ok", "error", "rate_limited", "free_limit_reached", "budget_exhausted", "unavailable"], value)) safe.stage = value;
         if (key === "cached" && (value === 0 || value === 1)) safe.cached = value;
-        if (key === "reason") safe.reason = includes(REASONS, value) ? value : "unknown";
+        if (key === "reason" && value !== undefined) safe.reason = includes(REASONS, value) ? value : "unknown";
         if (key === "page") safe.page = ctx.page;
       });
       safe.page_location = global.location.origin + ctx.page;

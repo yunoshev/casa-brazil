@@ -2,6 +2,7 @@
 // or browser runtime. Tests exercise the shipped scripts through public hooks.
 import vm from 'node:vm';
 import { readFileSync } from 'node:fs';
+import { webcrypto } from 'node:crypto';
 
 class Element {
   constructor(tag = 'div', attrs = {}) {
@@ -77,15 +78,16 @@ export function setup(options = {}) {
   const catalogue = JSON.parse(readFileSync(new URL('../i18n/' + lang + '.json', import.meta.url)));
   const translate = (key, p) => (catalogue[key] || '[' + key + ']').replace(/\{(\w+)\}/g, (m, k) => p?.[k] ?? m);
   const sandbox = {
-    URL, Date, Promise,
+    URL, Date, Promise, crypto: webcrypto, TextEncoder, Uint8Array, AbortController,
     document, navigator: { webdriver: false },
-    location: new URL(options.url || 'https://example.org/casa-brazil/leilao-de-imoveis/rj/rio-de-janeiro/lote/apartment-123/'),
+    location: new URL(options.url || 'https://precodemartelo.com/casa-brazil/leilao-de-imoveis/rj/rio-de-janeiro/lote/apartment-123/'),
     LANG: options.noLang ? undefined : { code: lang, t: translate },
     __ANALYTICS__: options.analyticsConfig ?? { ga4: 'G-TEST123', enhancedMeasurementDisabled: true },
+    __ANALYSIS__: Object.hasOwn(options, 'analysisConfig') ? options.analysisConfig : { enabled: true },
     localStorage: { getItem(k) { if (options.storageBlocked) throw Error('blocked'); return data.get(k) ?? null; }, setItem(k, v) { if (options.storageBlocked) throw Error('blocked'); data.set(k, v); } },
     setTimeout(fn, ms) { const id = ++timerID; timers.set(id, { fn, ms }); return id; },
     clearTimeout(id) { timers.delete(id); },
-    fetch: async (url, init) => { requests.push({ url, ...init, json: JSON.parse(init.body) }); return options.fetch ? options.fetch(requests.at(-1), requests.length) : response(503, { error: 'analysis_unavailable' }); },
+    fetch: async (url, init) => { requests.push({ url, ...init, json: init.body === undefined ? null : JSON.parse(init.body) }); return options.fetch ? options.fetch(requests.at(-1), requests.length) : response(503, { error: 'analysis_unavailable' }); },
     track(name, params) { if (options.trackThrows) throw Error('blocked'); events.push({ name, params }); },
     MutationObserver: class {
       constructor(fn) { sandbox.notifyMutation = fn; }

@@ -5,6 +5,235 @@ import { setup, response, until } from './dom.mjs';
 
 const emitted = s => (s.window.dataLayer || []).filter(e => e[0] === 'event');
 const count = (s, name) => emitted(s).filter(e => e[1] === name).length;
+const validAnalysis = { resumo: 'Valid analysis', dividas: { iptu: 'unknown', condominio: 'unknown', outras: [] },
+  ocupado: 'incerto', confianca: 'baixa', aviso: 'Verify the original document.', riscos: [],
+  fase: 'Unknown', source_scope: 'lot_specific' };
+const jobTicket = '00000000-0000-4000-8000-000000000001.1790000000.' + 'a'.repeat(64);
+const stages = s => Array.from(emitted(s).filter(e => e[1] === 'analyze_edital'), e => e[2].stage);
+
+test('definitive pre-dispatch budget failure allows manual same-key POST instead of terminal polling', async () => {
+  const s = setup({ fetch: (r, n) => n === 1 ? response(202, { status: 'pending', analysis_id: 'job', job_ticket: jobTicket, retry_after_seconds: 1 }) :
+    n === 2 ? response(429, { error: 'budget_exhausted' }) : response(200, validAnalysis) });
+  s.load('analyze'); const task = s.analyze();
+  await until(() => s.requests.length === 1 && [...s.timers.values()].some(t => t.ms === 1000));
+  s.runTimers(1000); await task;
+  assert.equal(s.requests.length, 2, 'no automatic retry after a budget denial');
+  assert.equal(s.requests[1].method, 'GET');
+  await s.analyze();
+  assert.equal(s.requests[2].method, 'POST');
+  assert.equal(s.requests[2].body, s.requests[0].body, 'backend controls retry admission; identity never rotates');
+  assert.equal(s.box.getAttribute('data-az-state'), 'result');
+});
+
+test('analysis is disabled by default and accepts only explicit enablement and exact HTTPS site origins', () => {
+  const disabled = [
+    { analysisConfig: undefined }, { analysisConfig: {} }, { analysisConfig: { enabled: false } },
+    { analysisConfig: { enabled: 'true' } },
+    ...['https://dashboard.example', 'https://www.caixa.gov.br', 'https://generativelanguage.googleapis.com',
+      'https://preco-real-analyze.preco-real.workers.dev/other'].map(apiBase => ({ analysisConfig: { enabled: true, apiBase } })),
+    ...['http://precodemartelo.com/', 'https://precodemartelo.com:444/',
+      'https://other.precodemartelo.com/', 'https://precodemartelo.com.evil.example/',
+      'https://evilprecodemartelo.com/', 'https://example.org/'].map(url => ({ url })),
+  ];
+  for (const options of disabled) {
+    const s = setup(options); s.load('analyze'); s.window.ANALYZE.wire(); s.runTimers();
+    assert.equal(s.form(), null);
+    assert.equal(s.box.getAttribute('data-az-state'), 'unavailable');
+    assert.ok(s.box.textContent.includes(s.translate('az.disabled')));
+    assert.equal(s.requests.length, 0);
+    assert.equal(s.data.size, 0);
+    assert.equal(s.events.length, 0);
+  }
+  for (const url of ['https://precodemartelo.com/', 'https://www.precodemartelo.com/']) {
+    const s = setup({ url }); s.load('analyze'); assert.ok(s.form());
+  }
+});
+
+test('strict result schema rejects omitted fields, unknown scopes, error envelopes and malformed metadata', async () => {
+  const missing = Object.keys(validAnalysis).map(key => {
+    const body = { ...validAnalysis }; delete body[key]; return body;
+  });
+  const cases = [...missing, null, [], 'not JSON analysis',
+    { ...validAnalysis, error: 'source_unavailable' }, { ...validAnalysis, status: 'pending' },
+    { ...validAnalysis, source_scope: 'unknown' }, { ...validAnalysis, source_scope: null },
+    { ...validAnalysis, dividas: { ...validAnalysis.dividas, outras: undefined } },
+    { ...validAnalysis, dividas: { ...validAnalysis.dividas, iptu: '' } },
+    { ...validAnalysis, riscos: [42] }, { ...validAnalysis, fase: null },
+    ...[null, [], {}, { cached: 'true', analyzed_at: '2026-09-15T12:00:00Z' },
+      { cached: true, analyzed_at: 'yesterday' }].map(_meta => ({ ...validAnalysis, _meta })),
+  ];
+  for (const body of cases) {
+    const s = setup({ fetch: () => response(200, body) });
+    s.load('analytics'); s.window.ANALYTICS.setConsent('accepted'); s.load('analyze'); await s.analyze();
+    assert.deepEqual(stages(s), ['start', 'error']);
+    assert.equal(s.box.querySelector('.azout').innerHTML, '');
+    assert.equal([...s.data.values()].some(value => value.includes('"ok":true')), false);
+  }
+});
+
+for (const lang of ['pt', 'en', 'ru']) test(`generic rules never render lot-specific fact cards: ${lang}`, async () => {
+  const body = { ...validAnalysis, source_scope: 'generic_rules', resumo: '<script>general rules</script>',
+    ocupado: 'sim', fase: 'UNVERIFIED_PHASE', riscos: ['UNVERIFIED_RISK'],
+    dividas: { iptu: 'UNVERIFIED_TAX', condominio: 'UNVERIFIED_CONDO', outras: ['UNVERIFIED_DEBT'] },
+    _meta: { cached: true, analyzed_at: '2026-09-15T12:00:00Z' } };
+  const s = setup({ lang, fetch: () => response(200, body) });
+  s.load('analytics'); s.window.ANALYTICS.setConsent('accepted'); s.load('analyze'); await s.analyze();
+  const html = s.box.querySelector('.azout').innerHTML;
+  assert.ok(html.includes(s.translate('az.generic.title')));
+  assert.ok(html.includes(s.translate('az.generic.note')));
+  assert.ok(html.includes(s.translate('az.cache')));
+  assert.match(html, /&lt;script&gt;/);
+  assert.doesNotMatch(html, /class="facts"|UNVERIFIED_|<script>/);
+  assert.deepEqual(stages(s), ['start', 'ok']);
+});
+
+test('typed backend errors determine stages; status alone never invents a reason', async () => {
+  const cases = [
+    [503, 'budget_exhausted', 'budget_exhausted', 'az.budget'],
+    [403, 'free_limit_reached', 'free_limit_reached', 'az.allowance'],
+    [503, 'capacity_exhausted', 'unavailable', 'az.capacity'],
+    [503, 'analysis_unavailable', 'unavailable', 'az.err.unavailable'],
+    [502, 'source_unavailable', 'unavailable', 'az.err.source'],
+    [403, 'source_blocked', 'unavailable', 'az.err.source'],
+    [409, 'idempotency_conflict', 'error', 'az.err.conflict'],
+    [429, 'rate_limited', 'rate_limited', 'az.err.limit'],
+    ...[403, 429, 503].map(status => [status, 'secret@example.org', 'error', 'az.err.fail']),
+  ];
+  for (const [status, error, stage, key] of cases) {
+    const s = setup({ fetch: () => response(status, { error }) });
+    s.load('analytics'); s.window.ANALYTICS.setConsent('accepted'); s.load('analyze'); await s.analyze();
+    assert.deepEqual(stages(s), ['start', stage]);
+    assert.equal(s.box.querySelector('.azmsg').textContent, s.translate(key));
+    assert.equal(s.box.querySelector('.azout').innerHTML, '');
+    assert.doesNotMatch(JSON.stringify(emitted(s)), /secret@example/);
+  }
+});
+
+test('polling is bounded and manual retry keeps the ticket at the fixed Worker', async () => {
+  const s = setup({ fetch: () => response(202, { status: 'pending', analysis_id: 'job', job_ticket: jobTicket, retry_after_seconds: 1 }) });
+  s.load('analytics'); s.window.ANALYTICS.setConsent('accepted'); s.load('analyze');
+  const task = s.analyze();
+  for (let n = 1; n <= 3; n++) {
+    await until(() => s.requests.length === n && [...s.timers.values()].some(t => t.ms === 1000));
+    s.runTimers(1000);
+  }
+  await task;
+  assert.equal(s.requests.length, 4);
+  assert.deepEqual(stages(s), ['start', 'pending']);
+  assert.equal(s.box.getAttribute('data-az-state'), 'pending');
+  assert.equal(s.box.querySelector('button').disabled, false);
+  assert.equal(s.timers.size, 0);
+  const retry = s.analyze();
+  await until(() => s.requests.length === 5 && [...s.timers.values()].some(t => t.ms === 1000));
+  s.box.isConnected = false;
+  s.runTimers(1000); await retry;
+  for (const [i, request] of s.requests.entries()) {
+    assert.equal(new URL(request.url).origin, 'https://preco-real-analyze.preco-real.workers.dev');
+    assert.equal(request.redirect, 'error');
+    assert.equal(request.credentials, 'omit');
+    assert.equal(request.referrerPolicy, 'no-referrer');
+    assert.equal(request.method, i === 0 ? 'POST' : 'GET');
+  }
+});
+
+test('network timeout aborts the request; late results and navigation cannot emit success', async () => {
+  let finish;
+  const s = setup({ fetch: () => new Promise(resolve => { finish = resolve; }) });
+  s.load('analytics'); s.window.ANALYTICS.setConsent('accepted'); s.load('analyze');
+  const task = s.analyze(); await until(() => s.requests.length === 1);
+  s.runTimers(115000); await task;
+  assert.equal(s.requests[0].signal.aborted, true);
+  assert.deepEqual(stages(s), ['start', 'error']);
+  finish(response(200, validAnalysis)); await new Promise(resolve => setImmediate(resolve));
+  assert.deepEqual(stages(s), ['start', 'error']);
+  assert.equal(s.box.querySelector('.azout').innerHTML, '');
+
+  const next = setup({ fetch: () => new Promise(resolve => { finish = resolve; }) });
+  next.load('analytics'); next.window.ANALYTICS.setConsent('accepted'); next.load('analyze');
+  const pending = next.analyze(); await until(() => next.requests.length === 1);
+  next.box.isConnected = false; finish(response(200, validAnalysis)); await pending;
+  assert.deepEqual(stages(next), ['start']);
+});
+
+test('every analysis runtime key exists in all three actual public catalogues', () => {
+  const script = readFileSync(new URL('../parts/analyze.js', import.meta.url), 'utf8');
+  const keys = [...script.matchAll(/["'](az\.[a-z0-9_.]+)["']/g)].map(m => m[1]).filter(k => !k.endsWith('.'));
+  for (const lang of ['pt', 'en', 'ru']) {
+    const catalog = JSON.parse(readFileSync(new URL('../i18n/' + lang + '.json', import.meta.url)));
+    for (const key of keys) assert.equal(typeof catalog[key], 'string', lang + ':' + key);
+    assert.notEqual(catalog['az.budget'], catalog['az.allowance']);
+    assert.notEqual(catalog['az.allowance'], catalog['az.err.limit']);
+  }
+});
+
+for (const lang of ['pt', 'en', 'ru']) test(`public pending polls never count as success; one pending and one valid success: ${lang}`, async () => {
+  const s = setup({ lang, fetch: (r, n) => n <= 3 ? response(202, { status: 'pending', analysis_id: 'job', job_ticket: jobTicket, retry_after_seconds: 1 }) : response(200, validAnalysis) });
+  s.load('analytics'); s.window.ANALYTICS.setConsent('accepted'); s.load('analyze');
+  const task = s.analyze();
+  for (let n = 1; n <= 3; n++) {
+    await until(() => s.requests.length === n && [...s.timers.values()].some(t => t.ms === 1000));
+    assert.deepEqual(stages(s), ['start', 'pending']);
+    assert.equal(s.box.querySelector('.azmsg').textContent, s.translate('az.pending'));
+    assert.equal(s.box.querySelector('.azout').innerHTML, '');
+    s.runTimers(1000);
+  }
+  await task;
+  assert.deepEqual(stages(s), ['start', 'pending', 'ok']);
+  assert.equal(s.requests[0].method, 'POST');
+  assert.deepEqual(Object.keys(s.requests[0].json).sort(), ['id', 'idempotency_key', 'lang', 'url', 'visitor_id']);
+  assert.equal(s.requests[0].json.lang, lang);
+  assert.ok(s.requests.slice(1).every(r => r.method === 'GET' && r.body === undefined && r.url.endsWith('/analyze/' + jobTicket)));
+  await s.analyze();
+  assert.equal(stages(s).filter(x => x === 'ok').length, 1);
+  assert.equal(count(s, 'analysis_started'), 0);
+  assert.equal(count(s, 'analysis_success'), 0);
+  assert.doesNotMatch(JSON.stringify([...s.data]), /1790000000|caixa\.gov|Valid analysis/);
+  assert.doesNotMatch(JSON.stringify(s.window.dataLayer.map(e => Array.from(e))), /1790000000|caixa\.gov|visitor_id|idempotency_key/);
+});
+
+test('202 malformed envelopes and malformed 200 are never completed analyses', async () => {
+  const cases = [[202, {}], [202, { status: 'pending', analysis_id: 'job', job_ticket: '../admin' }],
+    [200, {}], [200, { ...validAnalysis, aviso: '' }], [200, { ...validAnalysis, ocupado: 'maybe' }],
+    [200, { ...validAnalysis, riscos: 'bad' }], [200, { ...validAnalysis, dividas: {} }]];
+  for (const [status, body] of cases) {
+    const s = setup({ fetch: () => response(status, body) }); s.load('analytics');
+    s.window.ANALYTICS.setConsent('accepted'); s.load('analyze'); await s.analyze();
+    assert.deepEqual(stages(s), ['start', 'error']);
+    assert.equal(s.box.querySelector('.azout').innerHTML, '');
+    assert.equal(s.requests.length, 1);
+  }
+});
+
+for (const [reason, event, key] of [
+  ['budget_exhausted', 'analysis_budget_exhausted', 'az.budget'],
+  ['free_limit_reached', 'analysis_free_limit_reached', 'az.allowance'],
+  ['capacity_exhausted', 'analysis_capacity_exhausted', 'az.capacity'],
+  ['rate_limited', null, 'az.err.limit'],
+]) test(`typed 429 ${reason} remains distinct; no public waitlist or email`, async () => {
+  const s = setup({ fetch: () => response(429, { error: reason, waitlist_available: true, waitlist_token: 'private-ticket' }) });
+  s.load('analytics'); s.window.ANALYTICS.setConsent('accepted'); s.load('analyze'); await s.analyze();
+  assert.equal(s.box.querySelector('.azmsg').textContent, s.translate(key));
+  assert.equal(stages(s).includes('ok'), false);
+  for (const name of ['analysis_budget_exhausted', 'analysis_free_limit_reached', 'analysis_capacity_exhausted']) assert.equal(count(s, name), name === event ? 1 : 0);
+  assert.deepEqual(stages(s), ['start', reason === 'capacity_exhausted' ? 'unavailable' : reason]);
+  assert.equal(emitted(s).find(e => e[1] === 'analyze_edital' && e[2].reason)[2].reason, reason);
+  assert.equal(s.document.querySelectorAll('form').length, 1);
+  assert.equal(s.document.querySelectorAll('input').length, 1);
+  assert.equal(s.requests.length, 1);
+  assert.equal(count(s, 'generate_lead'), 0);
+  assert.doesNotMatch(JSON.stringify(emitted(s)), /private-ticket|waitlist/);
+});
+
+test('same-key retries survive reload; no requests when storage unavailable or URL unsafe', async () => {
+  const s = setup(); s.load('analyze'); await s.analyze(); await s.analyze();
+  assert.equal(s.requests[0].body, s.requests[1].body);
+  const next = setup({ storage: s.data }); next.load('analyze'); await next.analyze();
+  assert.equal(next.requests[0].body, s.requests[0].body);
+  const blocked = setup({ storageBlocked: true }); blocked.load('analyze'); await blocked.analyze();
+  assert.equal(blocked.requests.length, 0);
+  for (const url of ['http://www.caixa.gov.br/a.pdf', 'https://evil.example/a.pdf', 'https://u:p@www.caixa.gov.br/a.pdf', 'https://www.caixa.gov.br/a.pdf#secret']) await next.analyze(url);
+  assert.equal(next.requests.length, 1);
+});
 
 for (const lang of ['pt', 'en', 'ru']) test(`consent labels and no Google before acceptance: ${lang}`, async () => {
   const s = setup({ lang, loading: true, noLang: true });
@@ -59,17 +288,17 @@ test('event and config payloads redact URLs, query, fragments, addresses and arb
   assert.equal(count(s, 'unknown'), 0);
 });
 
-test('unchanged analysis POST works without consent; old start/ok/error events are sanitized', async () => {
+test('shared-core analysis POST works without consent; start/ok/error events are sanitized', async () => {
   let fail = false;
-  const s = setup({ fetch: () => fail ? response(503, { error: 'private@example.org' }) : response(200, { resumo: 'Test result', dividas: {}, ocupado: 'incerto', confianca: 'baixa' }) });
+  const s = setup({ fetch: () => fail ? response(503, { error: 'private@example.org' }) : response(200, { ...validAnalysis, resumo: 'Test result' }) });
   s.load('analytics'); s.load('analyze');
   await s.analyze();
   await until(() => s.box.querySelector('.azout').innerHTML.includes('Test result'));
-  assert.deepEqual(Object.keys(s.requests[0].json).sort(), ['id', 'url']);
+  assert.deepEqual(Object.keys(s.requests[0].json).sort(), ['id', 'idempotency_key', 'lang', 'url', 'visitor_id']);
   assert.equal(s.requests[0].url, 'https://preco-real-analyze.preco-real.workers.dev/analyze');
   assert.equal(s.window.dataLayer, undefined);
   s.window.ANALYTICS.setConsent('accepted');
-  await s.analyze(); await until(() => emitted(s).some(e => e[1] === 'analyze_edital' && e[2].stage === 'ok'));
+  await s.analyze('https://www.caixa.gov.br/another.pdf'); await until(() => emitted(s).some(e => e[1] === 'analyze_edital' && e[2].stage === 'ok'));
   fail = true;
   await s.analyze(); await until(() => emitted(s).some(e => e[1] === 'analyze_edital' && e[2].stage === 'error'));
   assert.doesNotMatch(JSON.stringify(s.window.dataLayer.map(e => Array.from(e))), /private@|public\.pdf/);

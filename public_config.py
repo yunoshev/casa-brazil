@@ -33,13 +33,21 @@ def settings(env=None) -> dict:
 
 
 def snippet(env=None) -> str:
+    env = os.environ if env is None else env
+    # Separate public build switch: never infer readiness from server or GA flags.
+    # The browser uses a fixed Worker URL and never receives core configuration.
+    analysis = json.dumps(
+        {"enabled": env.get("BRAZIL_PUBLIC_ANALYSIS_ENABLED") == "true"},
+        separators=(",", ":"),
+    )
+    bootstrap = '<script>window.__ANALYSIS__=' + analysis + ';</script>\n'
     cfg = settings(env)
     if not cfg["ga4"]:
-        return ""
+        return bootstrap
     encoded = json.dumps(cfg, separators=(",", ":")).replace("<", "\\u003c")
     script = Path(__file__).parent / "site/parts/analytics.js"
     version = hashlib.sha256(script.read_bytes()).hexdigest()[:12]
-    return ('<script>window.__ANALYTICS__=' + encoded + ';</script>\n'
+    return (bootstrap + '<script>window.__ANALYTICS__=' + encoded + ';</script>\n'
             f'<script src="/parts/analytics.js?v={version}" defer></script>\n')
 
 

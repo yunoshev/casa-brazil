@@ -24,14 +24,40 @@ with mock.patch.dict(os.environ, {"CHROME_BIN": sys.executable}), mock.patch.dic
 
 class PublicConfigTests(unittest.TestCase):
     def test_explicit_gate_and_no_implicit_tracker(self):
-        self.assertEqual(snippet({}), "")
-        self.assertEqual(snippet({"CF_BEACON": "unused"}), "")
+        self.assertEqual(snippet({}), '<script>window.__ANALYSIS__={"enabled":false};</script>\n')
+        self.assertEqual(snippet({"CF_BEACON": "unused"}), snippet({}))
         self.assertFalse(settings({"GA4_ID": "G-TEST1234"})["enhancedMeasurementDisabled"])
         env = {"GA4_ID": "G-TEST1234", "GA4_ENHANCED_MEASUREMENT_DISABLED": "true"}
         self.assertTrue(settings(env)["enhancedMeasurementDisabled"])
         self.assertNotIn("googletagmanager", snippet(env))
         with self.assertRaises(ValueError):
             settings({"GA4_ID": "</script>"})
+
+    def test_public_analysis_gate_is_explicit_independent_and_never_exports_secrets(self):
+        for value in (None, "", "false", "TRUE", "1", True):
+            output = snippet({"BRAZIL_PUBLIC_ANALYSIS_ENABLED": value,
+                              "BRAZIL_ANALYSIS_ENABLED": "true", "ANALYSIS_ENABLED": "true"})
+            self.assertIn('window.__ANALYSIS__={"enabled":false}', output)
+        output = snippet({"BRAZIL_PUBLIC_ANALYSIS_ENABLED": "true",
+                          "BRAZIL_PROXY_SECRET": "private-secret", "BRAZIL_API_ORIGIN": "private-core",
+                          "PUBLIC_OPERATOR_NAME": "private-name", "PUBLIC_OPERATOR_CONTACT": "private-contact"})
+        self.assertIn('window.__ANALYSIS__={"enabled":true}', output)
+        self.assertNotIn("private-", output)
+        self.assertNotIn("analytics.js", output)
+        self.assertNotIn("__ANALYTICS__", output)
+        self.assertNotIn("waitlist", output)
+
+    def test_analysis_gate_precedes_runtime_for_root_subpath_with_or_without_ga(self):
+        template = (ROOT / "site/v2/page.tpl.html").read_text()
+        for base in ("", "/casa-brazil"):
+            for ga4 in ("", "G-TEST1234"):
+                env = {"BRAZIL_PUBLIC_ANALYSIS_ENABLED": "true", "GA4_ID": ga4}
+                with mock.patch.object(prerender, "BASE", base), mock.patch.object(prerender, "ANALYTICS", snippet(env)):
+                    page = prerender.shell(template, {"title": "Lot", "desc": "Lot", "canonical": "https://example.test"}, "", False, [], {"i18n": {}, "cities": [], "here": {}})
+                    page = prerender.rebase(page)
+                self.assertLess(page.index('window.__ANALYSIS__={"enabled":true}'), page.index(base + '/parts/analyze.js'))
+        workflow = (ROOT / ".github/workflows/pages.yml").read_text()
+        self.assertIn("BRAZIL_PUBLIC_ANALYSIS_ENABLED: ${{ vars.BRAZIL_PUBLIC_ANALYSIS_ENABLED || 'false' }}", workflow)
 
     def test_script_version_matches_content_and_rebases(self):
         env = {"GA4_ID": "G-TEST1234"}
