@@ -5,6 +5,19 @@ import vm from 'node:vm';
 const source = readFileSync(new URL('../site/v2/app.js', import.meta.url), 'utf8').split('/* ---- boot ')[0];
 const catalog = JSON.parse(readFileSync(new URL('../site/i18n/en.json', import.meta.url), 'utf8'));
 catalog['foot.note'] = catalog['foot.note.unknown'];
+const catalogs = Object.fromEntries(['pt', 'en', 'ru'].map(lang => [lang, JSON.parse(readFileSync(new URL(`../site/i18n/${lang}.json`, import.meta.url), 'utf8'))]));
+const placeholders = value => [...String(value).matchAll(/\{([a-z_]+)\}/g)].map(match => match[1]).sort();
+for (const [lang, cat] of Object.entries(catalogs)) {
+  assert.deepEqual(placeholders(cat['head.city.desc']), ['below', 'city', 'lots'], `${lang}: city description placeholders`);
+  assert.deepEqual(placeholders(cat['lot.say']), ['deals', 'n', 'ring'], `${lang}: lot explanation placeholders`);
+  assert.deepEqual(placeholders(cat['lot.note.promised']), ['margin', 'promised'], `${lang}: lot note placeholders`);
+  assert.doesNotMatch(cat['head.city.desc'], /\{deals\}/, `${lang}: city description must not require an unpassed deals value`);
+  assert.doesNotMatch(cat['lot.fact.deals'], /vendas por perto|sales nearby|сделок рядом/i, `${lang}: comparable count must not claim sales`);
+  assert.doesNotMatch(cat['lot.say'], /de fato arrematados|actually go|реально уходят/i, `${lang}: lot explanation must not claim realized auction prices`);
+  assert.doesNotMatch(cat['lot.price.hammer'], /preço real|real price|реальная цена/i, `${lang}: hammer label must be estimated`);
+}
+assert.doesNotMatch(catalogs.ru['home.lede'], /реально уходят|сопоставимых сделок/i, 'ru: home estimate must use listing comparables');
+assert.doesNotMatch(catalogs.ru['honest.basis'], /Мы не оцениваем лот по объявлениям|реально заканчиваются/i, 'ru: basis must not claim realized auctions');
 const cols = ['id', 'src', 'bairro', 'end', 'tipo', 'area', 'quartos', 'preco', 'hammer', 'margin', 'mkt', 'aval', 'avalpct', 'n', 'ring', 'conf', 'jud', 'mod', 'data', 'promised', 'prec', 'm2', 'lat', 'lon', 'link', 'why'];
 const row = fields => cols.map(key => fields[key] ?? null);
 const city = { slug: 'teste-sp', uf: 'sp', cslug: 'teste', nome: 'Teste', cidade: 'TESTE', stats: {}, chain: { hammer_over_asking: 1 }, shapes: null, market: {}, streets: {}, lifecycle: {}, rows: [] };
@@ -25,6 +38,7 @@ vm.runInContext(source, ctx);
 ctx.indexCity(city);
 
 const html = ctx.screenFor(ctx.href('/l/estimate-1'));
+assert.match(html, /<h1 class="lot-address">/);
 assert.match(html, new RegExp(catalog['valuation.notice'].replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
 assert.doesNotMatch(html, /never-render/);
 assert.doesNotMatch(html, /actual auction result[^<]*calculated_at/);
@@ -33,6 +47,7 @@ assert.doesNotMatch(ctx.screenFor(ctx.href('/l/withheld-1')), /actual auction re
 assert.match(ctx.screenFor(ctx.href('/l/appraisal-gap-1')), new RegExp(catalog['valuation.notice.generic'].replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
 assert.match(ctx.screenFor(ctx.href('/l/wide-1')), new RegExp(catalog['valuation.notice.generic'].replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
 assert.doesNotMatch(ctx.screenFor(ctx.href('/l/archived-1')), /Recalculated from archived listing comparables/);
+assert.match(ctx.screenFor(ctx.href('/l/archived-1')), /<h1 class="lot-address">/);
 assert.match(ctx.screenFor(ctx.href('/l/estimate-1')), /Source-data freshness is unknown\./);
 assert.doesNotMatch(ctx.screenCity(), /0 of 0/);
 console.log('valuation UI: translated provenance notice, abstention reason, non-estimate, and empty catch cohort passed');

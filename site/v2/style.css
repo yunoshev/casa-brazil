@@ -141,6 +141,9 @@ a{color:inherit}
 .hero{padding:22px 0 6px}
 h1{font-size:30px; font-weight:800; line-height:1.08}
 h1 .q{color:var(--bad)}
+/* Addresses need room for their identifying detail without competing with the
+ * home-page headline scale. */
+h1.lot-address{font-size:24px; line-height:1.2; max-width:none; text-wrap:pretty}
 .mark{
   background:var(--mark); color:#0F1310;
   padding:0 .2em; border-radius:5px;
@@ -400,6 +403,10 @@ svg.map.shapes{max-height:62vh}
   :root{--pad:28px}
   .wrap{max-width:1120px}
   h1{font-size:44px; max-width:16ch}
+  /* An address is an identifier, not a display slogan.  Lot pages may use the
+   * full reading column and a slightly more compact scale; natural wrapping
+   * remains the safe fallback for genuinely long addresses. */
+  h1.lot-address{font-size:clamp(22px,2vw,28px); max-width:none; text-wrap:pretty}
   .kicker{font-size:12px}
   .cbtn b{font-size:16px}
   .lede{font-size:18.5px; max-width:52ch}

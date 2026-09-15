@@ -104,7 +104,7 @@ function lifecycleBanner(r) {
 function screenHistoricalLot(r) {
   var key = areaOf(r), price = lastAdvertisedPrice(r);
   return '<div class="hero">' + back(key ? href("/a/" + encodeURIComponent(key)) : href(), key ? areaName(key) : city.nome) +
-    '<h1>' + esc(title(r[C.end] || r[C.tipo] || t("lot.fallback"))) + '</h1><p class="lede">' + lotLine(r) + '</p></div>' +
+    '<h1 class="lot-address">' + esc(title(r[C.end] || r[C.tipo] || t("lot.fallback"))) + '</h1><p class="lede">' + lotLine(r) + '</p></div>' +
     lifecycleBanner(r) + '<section class="mkt"><h2>Registro histórico</h2><p>Preço anunciado mais recente — não é preço de venda.</p><div class="facts">' +
     fact('Último preço anunciado', price == null ? 'Não registrado' : money(price)) +
     fact('Avaliação registrada', r[C.aval] == null ? '—' : money(r[C.aval])) + '</div></section>' + footer();
@@ -1233,7 +1233,7 @@ function screenLot(id) {
     '<div class="hero">' + (key
       ? back(href("/a/" + encodeURIComponent(key)), areaName(key))
       : back(href(), city.nome)) +
-      "<h1>" + esc(title(r[C.end] || r[C.tipo] || t("lot.fallback"))) + "</h1>" +
+      '<h1 class="lot-address">' + esc(title(r[C.end] || r[C.tipo] || t("lot.fallback"))) + "</h1>" +
       '<p class="lede">' + lotLine(r) + " · " +
         esc(title(r[C.bairro] || (key ? areaName(key) : city.nome))) + "</p></div>" +
     lifecycleBanner(r) +
@@ -1250,7 +1250,7 @@ function screenLot(id) {
             pct(r[C.margin]) + "</div>" +
           '<p class="word ' + vd[1] + '">' + t(vd[2]) + "</p>" +
           '<p class="say">' + t("lot.say", {
-            n: r[C.n], deals: plur("unit.deal", r[C.n]), ring: num(r[C.ring]),
+            n: r[C.n], deals: plur("unit.comparable", r[C.n]), ring: num(r[C.ring]),
           }) + "</p>"
         : '<p class="word mute">' + t("lot.verdict.none") + "</p>" +
           whyBlock(r)) +
