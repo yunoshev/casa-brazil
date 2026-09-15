@@ -45,6 +45,71 @@ function $(id) { return document.getElementById(id); }
  * far away, describe a district rather than an address. */
 function reliable(r) { return r[C.conf] === "ok" && r[C.ring] <= 1000; }
 
+/* Lifecycle is source observation, not an inferred auction outcome.  A record
+ * missing from an incomplete source remains a historical record; only an
+ * explicit outcome may ever describe a sale. */
+function lifecycle(r, c) { return ((c || city).lifecycle || {})[String(r[C.id])] || {}; }
+function lotStatus(r, c) {
+  var s = lifecycle(r, c).status;
+  return ["active", "unverified", "missing", "archived"].indexOf(s) >= 0 ? s : "unverified";
+}
+function isCurrent(r, c) { return ["missing", "archived"].indexOf(lotStatus(r, c)) < 0; }
+function currentRows(c) {
+  c = c || city;
+  return c.rows.filter(function (r) { return isCurrent(r, c); });
+}
+function offerRows(c) {
+  c = c || city;
+  return c.rows.filter(function (r) { return lotStatus(r, c) === "active"; });
+}
+function archiveRows() {
+  return city.rows.filter(function (r) { return !isCurrent(r); }).sort(function (a, b) {
+    var x = lifecycle(a), y = lifecycle(b);
+    return String(y.archived_at || y.missing_since || "").localeCompare(String(x.archived_at || x.missing_since || "")) ||
+      String(a[C.id]).localeCompare(String(b[C.id]));
+  });
+}
+function refreshStats(c) {
+  var known = currentRows(c), rows = offerRows(c), rel = rows.filter(reliable), promised = rel.map(function (r) { return r[C.promised]; }).filter(function (v) { return v != null; });
+  var loud = rel.filter(function (r) { return (r[C.promised] || 0) >= 45; });
+  var s = c.stats = c.stats || {};
+  s.lots = rows.length; s.known_lots = known.length; s.unverified_lots = known.length - rows.length; s.reliable = rel.length;
+  s.below = rel.filter(function (r) { return r[C.margin] > 0; }).length;
+  s.promised_med = median(promised);
+  s.real_med = rel.length ? -median(rel.map(function (r) { return r[C.margin]; })) : null;
+  s.promised_hi_n = loud.length;
+  s.above_hammer = loud.filter(function (r) { return r[C.margin] < 0; }).length;
+  s.loud_below = loud.filter(function (r) { return r[C.margin] > 0; }).length;
+}
+function statusText(r) {
+  var s = lotStatus(r);
+  return s === "active" ? "Disponível na última verificação" : s === "unverified" ? "Disponibilidade não confirmada" :
+    s === "missing" ? "Ausente da fonte na última verificação" : "Arquivado do catálogo atual";
+}
+function lastAdvertisedPrice(r) {
+  var p = lifecycle(r).last_price_brl;
+  return typeof p === "number" && isFinite(p) && p >= 0 ? p : r[C.preco];
+}
+function inventoryNotice() { return '<p class="note inventory-note">Ofertas ativas verificadas: ' + num(city.stats.lots) + '. Registros conhecidos sem confirmação: ' + num(city.stats.unverified_lots || 0) + '. Disponibilidade não confirmada não é oferta ativa.</p>'; }
+function lifecycleBanner(r) {
+  var lc = lifecycle(r), s = lotStatus(r);
+  return '<section class="mkt lifecycle-banner ' + s + '"><h2>' + esc(statusText(r)) + '</h2><p>' +
+    (isCurrent(r) ? 'Este registro não confirma que o imóvel continue disponível.' : 'Removido das listas atuais; ausência não significa venda.') +
+    '</p><div class="facts">' +
+    fact('Última observação', lc.last_seen_at || 'Não registrada') +
+    fact('Última verificação', lc.last_checked_at || 'Não registrada') +
+    (lc.missing_since ? fact('Ausente desde', lc.missing_since) : '') +
+    (lc.archived_at ? fact('Arquivado em', lc.archived_at) : '') + '</div></section>';
+}
+function screenHistoricalLot(r) {
+  var key = areaOf(r), price = lastAdvertisedPrice(r);
+  return '<div class="hero">' + back(key ? href("/a/" + encodeURIComponent(key)) : href(), key ? areaName(key) : city.nome) +
+    '<h1>' + esc(title(r[C.end] || r[C.tipo] || t("lot.fallback"))) + '</h1><p class="lede">' + lotLine(r) + '</p></div>' +
+    lifecycleBanner(r) + '<section class="mkt"><h2>Registro histórico</h2><p>Preço anunciado mais recente — não é preço de venda.</p><div class="facts">' +
+    fact('Último preço anunciado', price == null ? 'Não registrado' : money(price)) +
+    fact('Avaliação registrada', r[C.aval] == null ? '—' : money(r[C.aval])) + '</div></section>' + footer();
+}
+
 /* A city we carry for its paid side only: no comps pipeline, no hammer chain,
  * every verdict withheld. The screens say what the city *does* have — the
  * register — instead of printing zeros against a promise we never made. */
@@ -231,9 +296,12 @@ function median(a) {
 var DEFAULT_CITY = D.cities.filter(function (c) { return c.slug === "sao-paulo-sp"; })[0] || D.cities[0];
 var city = DEFAULT_CITY;
 var byArea = {};
+var historyByArea = {};
 var slugToKey = { fwd: {}, rev: {} };
 var streetBySlug = {};
 var lotById = {};
+var lotBySlug = {};
+D.cities.forEach(refreshStats);
 
 /* Which area a lot sits in is decided at build time by its coordinates, not by
  * its address text: the auction feeds write GUAIANAZES where São Paulo writes
@@ -262,11 +330,16 @@ function lots(n) { return num(n) + " " + plur("unit.lot", n); }
 function indexCity(c) {
   city = c;
   byArea = {};
+  historyByArea = {};
   lotById = {};
+  lotBySlug = {};
+  refreshStats(c);
   c.rows.forEach(function (r) {
     lotById[String(r[C.id])] = r;
+    lotBySlug[lotSlug(r)] = r;
     var k = areaOf(r);
-    if (k) (byArea[k] = byArea[k] || []).push(r);
+    if (k && lotStatus(r) === "active") (byArea[k] = byArea[k] || []).push(r);
+    if (k && !isCurrent(r)) (historyByArea[k] = historyByArea[k] || []).push(r);
   });
   // Both directions: the URL carries a slug, the data is keyed by the raster
   // key, and a reader arriving from outside has only the slug.
@@ -659,7 +732,7 @@ function national() {
     n.lots += c.stats.lots || 0;
     n.deals += c.stats.paid_deals || 0;
     n.listings += c.stats.listings || 0;
-    c.rows.forEach(function (r) { if (reliable(r)) rel.push(r); });
+    offerRows(c).forEach(function (r) { if (reliable(r)) rel.push(r); });
   });
   var loud = rel.filter(function (r) { return (r[C.promised] || 0) >= 45; });
   var promised = rel.map(function (r) { return r[C.promised]; })
@@ -694,7 +767,7 @@ function screenCity() {
   var best = areas.filter(function (a) { return a.rel >= 5; })
     .sort(function (x, y) { return y.share - x.share || y.below - x.below; })
     .slice(0, 8);
-  var top = city.rows.filter(reliable).slice(0, 3);
+  var top = offerRows().filter(reliable).slice(0, 3);
 
   return '' +
     '<section class="hero">' +
@@ -709,7 +782,8 @@ function screenCity() {
         city: '<span class="mark">' + esc(city.nome) + "</span>",
       }) +
         "</h1>" +
-      '<p class="lede">' + t(marketOnly() ? "city.lede.market" : "city.lede") + "</p>" +
+      '<p class="lede">' + t(marketOnly() ? "city.lede.market" : "city.lede") + "</p>" + inventoryNotice() +
+      '<p class="foot">' + link("/archive", "Arquivo de registros") + '</p>' +
       '<div class="strip">' + cityList("strip") + "</div>" +
     "</section>" +
 
@@ -873,12 +947,13 @@ function screenArea(key) {
     '<div class="hero">' + back(href(), city.nome) +
       "<h1>" + esc(areaName(key)) + "</h1>" +
       '<p class="lede">' + (!a.n
-        ? t("area.lede.nolots", { all: link("/all", t("area.nolots.cta")) })
+        ? t("area.lede.nolots", { all: link("/all", t("area.nolots.cta")) }) +
+          ((historyByArea[key] || []).length ? ' Registros históricos permanecem no arquivo.' : '')
         : a.rel
           ? t("area.lede", { lots: lots(a.n), rel: a.rel, below: b(a.below) })
           : t(marketOnly() ? "area.lede.market" : "area.lede.nodata",
               { lots: lots(a.n) })) + "</p></div>" + mini +
-    marketCard(key) + upkeepCard(key) + streetList(key) +
+    inventoryNotice() + marketCard(key) + upkeepCard(key) + streetList(key) +
     (a.n ? '<section class="sec"><div class="rowlist">' +
       a.rows.slice().sort(function (x, y) {
         var rx = reliable(x), ry = reliable(y);
@@ -887,7 +962,8 @@ function screenArea(key) {
       // No cap. This is the only page that lists a district in full, and a lot
       // that is on no page is a lot that does not exist.
       }).map(lotRow).join("") + "</div></section>" : "") +
-    footer();
+    ((historyByArea[key] || []).length ? '<section class="sec"><h2>Registros históricos</h2><p>Estes imóveis não entram nos resumos atuais.</p><div class="rowlist">' +
+      historyByArea[key].slice(0, 20).map(lotRow).join('') + '</div><p class="foot">' + link("/archive", "Ver arquivo") + '</p></section>' : '') + footer();
 }
 
 /* What winning actually costs. The advertised price is never the cheque: the
@@ -963,7 +1039,8 @@ function lotLine(r) {
  * paint instead of saving anything — so the two rows that open above the fold
  * on a phone stay eager and everything below them waits. */
 function lotRow(r, i) {
-  var vd = verdict(r);
+  var historical = !isCurrent(r);
+  var vd = historical ? null : verdict(r);
   var ph = photo(r);
   var eager = !i || i < 2;
   return '<a class="row lot" href="' + href("/l/" + encodeURIComponent(r[C.id])) + '">' +
@@ -979,13 +1056,13 @@ function lotRow(r, i) {
     '<div class="body">' +
       '<div class="r1"><div class="ttl">' + lotLine(r) + "</div>" +
         '<span class="pill ' + (vd ? vd[1] : "mute") + '">' +
-          (vd ? pct(r[C.margin]) : "?") + "</span></div>" +
+          (historical ? esc(statusText(r)) : vd ? pct(r[C.margin]) : "?") + "</span></div>" +
       '<div class="meta">' + esc(title(r[C.end] || r[C.bairro] || "")) + "</div>" +
       // One line, not two columns: on a phone the two labelled prices sat in
       // 70px each and broke "R$ 33 635" across lines.
       '<div class="nums"><div class="k">' +
-        t(vd ? "lot.nums.both" : "lot.nums.open") + "</div>" +
-        '<div class="v">' + money(r[C.preco]) +
+        (historical ? 'Último preço anunciado' : t(vd ? "lot.nums.both" : "lot.nums.open")) + "</div>" +
+        '<div class="v">' + money(historical ? lastAdvertisedPrice(r) : r[C.preco]) +
         (vd ? " <em>→</em> " + b(money(r[C.hammer])) : "") +
         "</div></div>" +
     "</div></a>";
@@ -994,6 +1071,7 @@ function lotRow(r, i) {
 /* "apartamento-64m2-penha-circular-0e2af7f775f1e45c" -> the id at the end.
    Falls through unchanged for a bare id, so both forms resolve. */
 function idFromSlug(sl) {
+  if (lotBySlug[sl]) return String(lotBySlug[sl][C.id]);
   if (lotById[sl]) return sl;
   var tail = String(sl).split("-").pop();
   return lotById[tail] ? tail : sl;
@@ -1080,7 +1158,8 @@ function screenLot(id) {
   for (var i = 0; i < city.rows.length; i++) {
     if (String(city.rows[i][C.id]) === String(id)) { r = city.rows[i]; break; }
   }
-  if (!r) return screenCity();
+  if (!r) return null;
+  if (!isCurrent(r)) return screenHistoricalLot(r);
   var vd = verdict(r);
   var ph = photo(r);
   var key = areaOf(r);
@@ -1107,6 +1186,7 @@ function screenLot(id) {
       "<h1>" + esc(title(r[C.end] || r[C.tipo] || t("lot.fallback"))) + "</h1>" +
       '<p class="lede">' + lotLine(r) + " · " +
         esc(title(r[C.bairro] || (key ? areaName(key) : city.nome))) + "</p></div>" +
+    lifecycleBanner(r) +
 
     // The one photo on a lot page is the reader's first impression and very
     // often the largest thing painted, so it stays eager and says so.
@@ -1180,13 +1260,45 @@ function fact(k, val) {
     esc(val) + "</span></div>";
 }
 
-function screenAll() {
+var ALL_PAGE_SIZE = 200;
+function allPageCount() { return Math.max(1, Math.ceil(currentRows().length / ALL_PAGE_SIZE)); }
+function archivePageCount() { return Math.max(1, Math.ceil(archiveRows().length / ALL_PAGE_SIZE)); }
+function pageHref(kind, page) { return href(kind) + (page > 1 ? "pagina/" + page + "/" : ""); }
+function pageNumber(kind, path, count) {
+  if (path === pageHref(kind, 1)) return 1;
+  var wire = kind === "/all" ? SEG.all : SEG.archive;
+  var m = new RegExp("/" + wire + "/pagina/([1-9][0-9]*)/$").exec(path), n = m ? Number(m[1]) : 0;
+  return Number.isSafeInteger(n) && n >= 2 && n <= count && path === pageHref(kind, n) ? n : 0;
+}
+function pagination(kind, page, count) {
+  if (count < 2) return "";
+  return '<nav class="foot" aria-label="Paginação">' +
+    (page > 1 ? '<a rel="prev" href="' + pageHref(kind, page - 1) + '">Anterior</a> · ' : '') +
+    '<span>Página ' + page + ' de ' + count + '</span>' +
+    (page < count ? ' · <a rel="next" href="' + pageHref(kind, page + 1) + '">Próxima</a>' : '') + '</nav>';
+}
+function screenAll(page) {
+  page = page == null ? 1 : page;
+  var count = allPageCount();
+  if (!Number.isSafeInteger(page) || page < 1 || page > count) return null;
   var mo = marketOnly();
   return '<div class="hero">' + back(href(), city.nome) +
     "<h1>" + t(mo ? "all.h1.market" : "all.h1") + "</h1>" +
-    '<p class="lede">' + t(mo ? "all.lede.market" : "all.lede") + "</p></div>" +
+    '<p class="lede">' + t(mo ? "all.lede.market" : "all.lede") + "</p>" + inventoryNotice() +
+    '<p class="foot">' + link("/archive", "Arquivo de registros") + '</p></div>' + pagination("/all", page, count) +
     '<section class="sec"><div class="rowlist">' +
-    city.rows.slice(0, 80).map(lotRow).join("") + "</div></section>" + footer();
+    currentRows().slice((page - 1) * ALL_PAGE_SIZE, page * ALL_PAGE_SIZE).map(lotRow).join("") + "</div></section>" + pagination("/all", page, count) + footer();
+}
+
+function screenArchive(page) {
+  page = page == null ? 1 : page;
+  var rows = archiveRows(), count = archivePageCount();
+  if (!Number.isSafeInteger(page) || page < 1 || page > count) return null;
+  return '<div class="hero">' + back(href("/all"), "Listas atuais") +
+    '<h1>Arquivo de registros</h1><p class="lede">Registros ausentes ou arquivados, mantidos para que URLs publicados não desapareçam.</p></div>' +
+    pagination("/archive", page, count) + '<section class="sec"><div class="rowlist">' +
+    rows.slice((page - 1) * ALL_PAGE_SIZE, page * ALL_PAGE_SIZE).map(lotRow).join("") + "</div></section>" +
+    pagination("/archive", page, count) + footer();
 }
 
 function screenHonest() {
@@ -1257,7 +1369,7 @@ function ladder() {
 
 function footer() {
   return '<p class="foot">' +
-    link("/all", t("nav.all")) + " · " + link("/honest", t("nav.honest")) + "<br>" +
+    link("/all", t("nav.all")) + " · " + link("/archive", "Arquivo") + " · " + link("/honest", t("nav.honest")) + "<br>" +
     footNote() + "</p>" + langbar();
 }
 
@@ -1311,7 +1423,7 @@ function back(url, label) {
  * Call sites still pass the short internal forms ("/a/COPACABANA", "/all") and
  * this is the single place that knows what they look like on the wire. */
 var ROOT = "/leilao-de-imoveis";
-var SEG = { all: "todos-os-lotes", honest: "como-calculamos", lot: "lote", rua: "rua" };
+var SEG = { all: "todos-os-lotes", archive: "arquivo", honest: "como-calculamos", lot: "lote", rua: "rua" };
 
 /* A lot's URL carries what the lot is, not what the database calls it:
  *   /lote/apartamento-64m2-penha-circular-0e2af7f775f1e45c/
@@ -1323,6 +1435,8 @@ var SEG = { all: "todos-os-lotes", honest: "como-calculamos", lot: "lote", rua: 
  * These URLs are permanent. When the auction ends the page does not go away —
  * what happened to a lot is the one thing nobody in this market publishes. */
 function lotSlug(r) {
+  var stable = lifecycle(r).slug;
+  if (typeof stable === "string" && /^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(stable)) return stable;
   var bits = [];
   if (r[C.tipo]) bits.push(slugify(String(r[C.tipo]).replace(/s$/, "")));
   if (r[C.area]) bits.push(Math.round(r[C.area]) + "m2");
@@ -1348,6 +1462,7 @@ function href(path) {
   if (p === "/home") return "/";
   if (p === "/" || p === "") return base;
   if (p === "/all") return base + SEG.all + "/";
+  if (p === "/archive") return base + SEG.archive + "/";
   if (p === "/honest") return base + SEG.honest + "/";
   var m = /^\/a\/(.*)$/.exec(p);
   if (m) return base + slugOf(decodeURIComponent(m[1])) + "/";
@@ -1379,7 +1494,9 @@ var atCity = true;
 
 function screenFor(path) {
   var p = String(path || "/").replace(/^\/+|\/+$/g, "").split("/").filter(Boolean);
-  if (p[0] === ROOT.replace(/^\//, "")) p = p.slice(1);
+  if (p[0] === ROOT.replace(/^\//, "")) {
+    p = p.slice(1);
+  }
 
   // <uf>/<cidade>, with the old glued form still understood so a link that is
   // already out in the world does not break.
@@ -1399,15 +1516,26 @@ function screenFor(path) {
   p = p.slice(1);
 
   if (!p.length) return screenCity();
-  if (p[0] === SEG.all) return screenAll();
-  if (p[0] === SEG.honest) return screenHonest();
-  if (p[0] === SEG.lot) return screenLot(idFromSlug(decodeURIComponent(p[1] || "")));
-  if (p[0] === SEG.rua) {
+  if (p[0] === SEG.all) {
+    var allPage = pageNumber("/all", path, allPageCount());
+    return allPage ? screenAll(allPage) : null;
+  }
+  if (p[0] === SEG.archive) {
+    var archivePage = pageNumber("/archive", path, archivePageCount());
+    return archivePage ? screenArchive(archivePage) : null;
+  }
+  if (p.length === 1 && p[0] === SEG.honest) return screenHonest();
+  if (p.length === 2 && p[0] === SEG.lot) {
+    var id = idFromSlug(decodeURIComponent(p[1] || ""));
+    var lot = lotById[id];
+    return lot && lotSlug(lot) === p[1] ? screenLot(id) : null;
+  }
+  if (p.length === 2 && p[0] === SEG.rua) {
     var sc = streetBySlug[decodeURIComponent(p[1] || "")];
-    return sc ? screenStreet(sc) : screenCity();
+    return sc ? screenStreet(sc) : null;
   }
   var key = slugToKey.fwd[p[0]];
-  return key ? screenArea(key) : screenCity();
+  return p.length === 1 && key ? screenArea(key) : null;
 }
 
 /* The build's only entry point. Loads once with the whole dataset, is then
@@ -1471,7 +1599,18 @@ function headFor(path) {
   }
   if (!city) return base;
   var name = city.nome;
-  if (p[p.length - 2] === SEG.rua && streetBySlug[last]) {
+  var allPage = pageNumber("/all", path, allPageCount());
+  var archivePage = pageNumber("/archive", path, archivePageCount());
+  if (archivePage) {
+    base.title = "Arquivo de registros — " + name + (archivePage > 1 ? " · página " + archivePage : "");
+    base.desc = "Registros ausentes ou arquivados: " + archiveRows().length + ". Ausência da fonte não confirma venda." +
+      (archivePage > 1 ? " Página " + archivePage + " de " + archivePageCount() + "." : "");
+  } else if (allPage) {
+    base.title = "Registros conhecidos — " + name + (allPage > 1 ? " · página " + allPage : "");
+    base.desc = currentRows().length + " registros conhecidos; " + city.stats.lots + " ofertas ativas verificadas e " +
+      (city.stats.unverified_lots || 0) + " sem disponibilidade confirmada." +
+      (allPage > 1 ? " Página " + allPage + " de " + allPageCount() + "." : "");
+  } else if (p[p.length - 2] === SEG.rua && streetBySlug[last]) {
     var stx = city.streets.d[streetBySlug[last]];
     var main = stx.f || stx.h;
     base.title = t("head.street.title", { street: title(stx.name), city: name });
@@ -1493,11 +1632,17 @@ function headFor(path) {
     var r = lotById[idFromSlug(last)];
     var what = r ? title(r[C.end] || r[C.tipo] || t("lot.fallback")) : t("lot.fallback");
     var where = r && r[C.bairro] ? title(r[C.bairro]) : name;
-    base.title = t("head.lot.title", { what: what, where: where });
-    base.desc = t("head.lot.desc", { what: what, where: where, city: name });
-  } else if (last === SEG.all) {
-    base.title = t("head.all.title", { city: name });
-    base.desc = t("head.all.desc", { city: name, lots: lots(city.stats.lots) });
+    if (r && !isCurrent(r)) {
+      base.title = "Registro histórico — " + what + ", " + where;
+      base.desc = "Registro ausente da lista atual; a ausência não confirma venda. Último preço anunciado: " +
+        (lastAdvertisedPrice(r) == null ? "não registrado" : money(lastAdvertisedPrice(r))) + ".";
+    } else if (r && lotStatus(r) === "unverified") {
+      base.title = "Disponibilidade não confirmada — " + what + ", " + where;
+      base.desc = "Registro conhecido em " + name + "; a disponibilidade atual não foi confirmada.";
+    } else {
+      base.title = t("head.lot.title", { what: what, where: where });
+      base.desc = t("head.lot.desc", { what: what, where: where, city: name });
+    }
   } else {
     base.title = t("head.city.title", { prep: cityPrep(), city: name });
     base.desc = marketOnly()

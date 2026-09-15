@@ -26,6 +26,7 @@ import sqlite3
 import statistics
 import sys
 import unicodedata
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
@@ -37,6 +38,96 @@ import shapes
 HERE = Path(__file__).parent
 SITE = HERE / "site" / "v2"
 DATA = HERE / "data" / "site.json"
+
+
+def _valid_source_freshness(value: Any) -> str | None:
+    """Validate a documented ISO source date/timestamp without changing it."""
+    if value is None or value == "":
+        return None
+    if not isinstance(value, str):
+        raise ValueError("generated source metadata must be an ISO date or timestamp")
+    if re.fullmatch(r"\d{4}-\d{2}-\d{2}", value):
+        observed = date.fromisoformat(value)
+    elif re.fullmatch(
+        r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2}(?:\.\d{1,6})?)?(?:Z|[+-]\d{2}:\d{2})?",
+        value,
+    ):
+        observed = datetime.fromisoformat(value.replace("Z", "+00:00")).date()
+    else:
+        raise ValueError("generated source metadata must be an ISO date or timestamp")
+    if observed > date.today():
+        raise ValueError("generated source metadata cannot be in the future")
+    return value
+
+
+def source_freshness(source: dict[str, Any]) -> str | None:
+    """Return only freshness explicitly carried by the public projection.
+
+    The projection is the public export's authority.  Do not substitute a city
+    date, file timestamp, git date, or this build's clock: none says when the
+    underlying whole dataset was observed.  A source timestamp is deliberately
+    returned verbatim so its precision is not silently changed for the reader.
+    """
+    projection = source.get("site_projection")
+    projection_generated = projection.get("generated") if isinstance(projection, dict) else projection
+    generated = source.get("generated")
+    candidates = (
+        projection_generated,
+        generated.get("source") if isinstance(generated, dict) else None,
+        generated,
+    )
+    for value in candidates:
+        if value is not None and value != "":
+            return _valid_source_freshness(value)
+    return None
+
+
+def projected_lifecycle(lifecycle: dict, *, as_of: datetime | None = None) -> dict:
+    """Copy lifecycle state and age only stale active availability in UTC.
+
+    This is a display-time policy for a committed snapshot, not source
+    freshness. It never changes the export: missing and archived are retained,
+    while an active record without a recent, non-future observation becomes
+    unverified after three days.
+    """
+    as_of = as_of or datetime.now(timezone.utc)
+    if as_of.tzinfo is None:
+        raise ValueError("as_of must be an explicit UTC timestamp")
+    as_of = as_of.astimezone(timezone.utc)
+    copied = {key: dict(value) if isinstance(value, dict) else value for key, value in lifecycle.items()}
+    for value in copied.values():
+        if not isinstance(value, dict) or value.get("status") != "active":
+            continue
+        seen = value.get("last_seen_at")
+        try:
+            if not isinstance(seen, str):
+                raise ValueError
+            observed = datetime.fromisoformat(seen.replace("Z", "+00:00"))
+            if observed.tzinfo is None:
+                raise ValueError
+            observed = observed.astimezone(timezone.utc)
+            if observed > as_of or as_of - observed > timedelta(days=3):
+                value["status"] = "unverified"
+        except ValueError:
+            value["status"] = "unverified"
+    return copied
+
+
+def catalogue_for_freshness(catalogues: dict[str, dict], generated: str | None) -> dict[str, dict]:
+    """Use the localized unknown-state footer when the export has no source date."""
+    if generated is not None:
+        return catalogues
+    return {
+        lang: {**catalogue, "foot.note": catalogue["foot.note.unknown"]}
+        for lang, catalogue in catalogues.items()
+    }
+
+
+def copy_top_metadata(payload: dict, source: dict) -> None:
+    """Pass renderer contracts through exactly when the export supplies them."""
+    for key in ("provenance", "lifecycle_schema_version"):
+        if key in source:
+            payload[key] = source[key]
 
 #: Same reliability gate the page draws with, so the headline counts and the
 #: per-lot verdicts can never disagree.
@@ -400,19 +491,24 @@ def borrowed(c: dict) -> dict[str, str]:
     return out
 
 
-def build_city(c: dict, cols: dict[str, int]) -> dict:
+def build_city(c: dict, cols: dict[str, int], *, as_of: datetime | None = None) -> dict:
     rows = c["rows"]
+    lifecycle = projected_lifecycle(c.get("lifecycle") or {}, as_of=as_of)
+    current = [r for r in rows if lifecycle.get(str(r[cols["id"]]), {}).get("status") == "active"]
+    unverified = [r for r in rows if lifecycle.get(str(r[cols["id"]]), {}).get("status")
+                  not in {"active", "missing", "archived"}]
 
     def reliable(r):
         return r[cols["conf"]] == "ok" and (r[cols["ring"]] or 0) <= TIGHT_RING_M
 
-    rel = [r for r in rows if reliable(r)]
+    rel = [r for r in current if reliable(r)]
 
     promised = [r[cols["promised"]] for r in rel if r[cols["promised"]] is not None]
     loud = [r for r in rel if (r[cols["promised"]] or 0) >= LOUD_PROMISE]
 
     stats = {
-        "lots": len(rows),
+        "lots": len(current),
+        "unverified": len(unverified),
         "reliable": len(rel),
         "below": sum(1 for r in rel if r[cols["margin"]] > 0),
         "paid_deals": c.get("paid_deals") or 0,
@@ -459,6 +555,9 @@ def build_city(c: dict, cols: dict[str, int]) -> dict:
         "upkeep": upkeep(norm(c["cidade"]), set((shp or {}).get("nice") or ())),
         "streets": streets(norm(c["cidade"]), set((shp or {}).get("nice") or ())),
         "rows": rows,
+        # Rows remain addressable in history; current statistics count active
+        # records only, with aged availability reported separately.
+        "lifecycle": lifecycle,
     }
 
 
@@ -488,18 +587,16 @@ def main() -> None:
     cols = {name: i for i, name in enumerate(src["cols"])}
 
     payload = {
-        "generated": src.get("generated")
-        or max((c.get("generated") or "") for c in src["cities"])
-        or "",
+        "generated": source_freshness(src),
         "cols": src["cols"],
         "cities": [build_city(c, cols) for c in src["cities"]],
     }
+    copy_top_metadata(payload, src)
     save_shape_cache()
-    if not payload["generated"]:
-        payload["generated"] = __import__("datetime").date.today().isoformat()
 
     cats = classic.load_catalogues()
     classic.check("v2", cats)
+    cats = catalogue_for_freshness(cats, payload["generated"])
     check_prepositions(payload, cats)
     ref = cats[DEFAULT_LANG]
 

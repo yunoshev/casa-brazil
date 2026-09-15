@@ -25,6 +25,8 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+from datetime import date
+from html import escape
 import json
 import os
 import re
@@ -411,7 +413,18 @@ def kind_of(path: str) -> str:
     return "ruas" if "rua" in parts else "areas"
 
 
-def write_sitemap(out: Path, paths: list[str], site: str, when: str) -> None:
+def sitemap_date(value: str | None) -> str | None:
+    """A source date is optional; unknown freshness is honest sitemap metadata."""
+    if not isinstance(value, str) or not re.fullmatch(r"\d{4}-\d{2}-\d{2}", value):
+        return None
+    try:
+        date.fromisoformat(value)
+    except ValueError:
+        return None
+    return value
+
+
+def write_sitemap(out: Path, paths: list[str], site: str, when: str | None) -> None:
     """An index and two files: the districts, and the lots.
 
     lastmod is the day the data was cut, on every URL, because that is the
@@ -419,6 +432,8 @@ def write_sitemap(out: Path, paths: list[str], site: str, when: str) -> None:
     say 2022-02-18, which tells a crawler nothing except that nobody is
     watching.
     """
+    when = sitemap_date(when)
+    lastmod = f"<lastmod>{escape(when)}</lastmod>" if when else ""
     groups: dict[str, list[str]] = {}
     for p in paths:
         groups.setdefault(kind_of(p), []).append(p)
@@ -432,9 +447,7 @@ def write_sitemap(out: Path, paths: list[str], site: str, when: str) -> None:
                 if len(urls) <= SITEMAP_MAX
                 else (f"sitemap-{kind}-{n // SITEMAP_MAX + 1}.xml")
             )
-            body = "".join(
-                f"<url><loc>{site}{u}</loc><lastmod>{when}</lastmod></url>" for u in chunk
-            )
+            body = "".join(f"<url><loc>{escape(site + u)}</loc>{lastmod}</url>" for u in chunk)
             (out / name).write_text(
                 '<?xml version="1.0" encoding="UTF-8"?>'
                 '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">'
@@ -442,9 +455,7 @@ def write_sitemap(out: Path, paths: list[str], site: str, when: str) -> None:
             )
             files.append(name)
 
-    index = "".join(
-        f"<sitemap><loc>{site}/{f}</loc><lastmod>{when}</lastmod></sitemap>" for f in files
-    )
+    index = "".join(f"<sitemap><loc>{escape(site + '/' + f)}</loc>{lastmod}</sitemap>" for f in files)
     (out / "sitemap.xml").write_text(
         '<?xml version="1.0" encoding="UTF-8"?>'
         '<sitemapindex xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">'
@@ -551,7 +562,7 @@ async def run(a, ws_url: str, tpl: str, out: Path) -> None:
                 a.generated = await tab.js("__D__.generated") or ""
 
             queue += list(FLAT)
-            seen, written, t0 = set(queue), 0, time.time()
+            seen, emitted, written, t0 = set(queue), set(), 0, time.time()
 
             while queue:
                 path = queue.pop(0)
@@ -585,6 +596,7 @@ async def run(a, ws_url: str, tpl: str, out: Path) -> None:
                 target = out / rel
                 target.parent.mkdir(parents=True, exist_ok=True)
                 target.write_text(rebase(html))
+                emitted.add(path)
                 written += 1
                 if written % 250 == 0:
                     rate = written / max(time.time() - t0, 1e-6)
@@ -620,7 +632,11 @@ async def run(a, ws_url: str, tpl: str, out: Path) -> None:
                     f"  добавьте их в EXTRA в fonts_build.py и пересоберите шрифты",
                     flush=True,
                 )
-            write_sitemap(out, sorted(p for p in seen if p not in FLAT), a.site, a.generated)
+            if not a.limit:
+                missing_pages = sorted(seen - emitted)
+                if missing_pages:
+                    raise SystemExit(f"páginas descobertas mas não geradas: {missing_pages[:10]}")
+            write_sitemap(out, sorted(p for p in emitted if p not in FLAT), a.site, a.generated)
             write_robots(out, a.site)
 
             for rel in ASSETS:

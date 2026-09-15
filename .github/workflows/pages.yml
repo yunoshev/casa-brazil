@@ -19,6 +19,10 @@ on:
     branches: [main]
   # Data changes without the code changing; this is how a refresh ships.
   workflow_dispatch:
+  # Rebuilds age availability from the committed snapshot only: no Caixa
+  # fetch, database pull, or paid call runs in this workflow.
+  schedule:
+    - cron: '37 3 * * *'
 
 # The default 10-builds-an-hour ceiling does not apply to a workflow that
 # publishes with actions/deploy-pages, which is one of the reasons to use one.
@@ -49,6 +53,12 @@ jobs:
 
       - name: Build the payload
         run: python proto_build.py
+
+      - name: Check freshness and archive regressions
+        run: |
+          python test/test_freshness.py
+          python test/test_sitemap_freshness.py
+          node test/archive_refresh.mjs site/v2/index.html
 
       - name: Check homepage geoselection
         run: node --test site/test/geo.test.mjs
