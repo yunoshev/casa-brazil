@@ -469,6 +469,28 @@ function cityOrder(first) {
   });
 }
 
+/* The national list is an editorial comparison, not the city picker. Put the
+ * places where a measured share is strongest first, keep places without a
+ * measured share neutral in the middle, and leave the weaker measured shares
+ * last.  Do not reuse this for navigation: the picker deliberately preserves
+ * its own stable order. */
+function countryCityRank(c) {
+  var s = c.stats || {};
+  var share = s.reliable > 0 ? s.below / s.reliable : null;
+  return { tier: share == null ? 1 : share >= 0.3 ? 0 : 2, share: share };
+}
+
+function countryCityComparator(a, b) {
+  var x = countryCityRank(a), y = countryCityRank(b);
+  return x.tier - y.tier ||
+    (x.share == null ? 0 : y.share - x.share) ||
+    String(a.nome).localeCompare(String(b.nome), "pt-BR");
+}
+
+function countryCityOrder(cities) {
+  return cities.slice().sort(countryCityComparator);
+}
+
 function cityList(kind) {
   return cityOrder(DEFAULT_CITY).map(function (c) {
     var on = c.slug === city.slug;
@@ -571,7 +593,7 @@ function screenHome() {
     '<section class="sec"><div class="sechead"><h2>' + t("home.cities.h2") +
       '</h2><span class="n">' + t("home.cities.note") + "</span></div>" +
       '<div class="rowlist">' +
-        cityOrder(main).filter(function (c) { return !marketOnly(c); }).map(cityRow).join("") +
+        countryCityOrder(D.cities.filter(function (c) { return !marketOnly(c); })).map(cityRow).join("") +
       "</div>" +
       (D.cities.some(marketOnly)
         ? '<p class="foot" style="margin-top:10px">' + t("home.more", {

@@ -63,6 +63,9 @@ jobs:
       - name: Check homepage geoselection
         run: node --test site/test/geo.test.mjs
 
+      - name: Check country city order
+        run: node test/country_city_order.mjs
+
       - name: Check lifecycle and inventory translations
         run: node test/lifecycle_i18n.mjs
 
