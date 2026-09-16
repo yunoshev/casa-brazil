@@ -21,6 +21,7 @@ Run: .venv/bin/python -u experiments/brazil/proto_build.py
 from __future__ import annotations
 
 import json
+import ipaddress
 import re
 import sqlite3
 import statistics
@@ -39,6 +40,57 @@ from public_config import snippet
 HERE = Path(__file__).parent
 SITE = HERE / "site" / "v2"
 DATA = HERE / "data" / "site.json"
+MEDIA = HERE / "data" / "lot-media.json"
+
+
+def load_lot_media(path: Path = MEDIA) -> dict[str, dict[str, dict[str, Any]]]:
+    """Load the additive, snapshot-scoped media projection if present."""
+    if not path.exists():
+        return {}
+    value = json.loads(path.read_text(encoding="utf-8"))
+    if not isinstance(value, dict) or value.get("version") != 1 or not isinstance(value.get("cities"), dict):
+        raise ValueError("lot-media.json must have version 1 and a cities map")
+    out: dict[str, dict[str, dict[str, Any]]] = {}
+    for slug, lots in value["cities"].items():
+        if not isinstance(slug, str) or not isinstance(lots, dict):
+            raise ValueError("lot-media.json has invalid city map")
+        out[slug] = {}
+        for lot_id, media in lots.items():
+            if not isinstance(lot_id, str) or not isinstance(media, dict):
+                raise ValueError("lot-media.json has invalid lot media")
+            if set(media) != {"photos", "scope"} or media["scope"] != "source_snapshot":
+                raise ValueError("lot media must be source_snapshot scoped")
+            photos = media["photos"]
+            def safe_photo(photo: object) -> bool:
+                if not isinstance(photo, str) or len(photo) > 2048:
+                    return False
+                try:
+                    parsed = __import__("urllib.parse", fromlist=["urlsplit"]).urlsplit(photo)
+                    if parsed.scheme != "https" or not parsed.hostname or parsed.username or parsed.password:
+                        return False
+                    if parsed.query or parsed.fragment:
+                        return False
+                    try:
+                        address = ipaddress.ip_address(parsed.hostname)
+                        if address.is_private or address.is_loopback or address.is_link_local or address.is_reserved or address.is_multicast:
+                            return False
+                    except ValueError:
+                        if parsed.hostname in {"localhost", "localhost.localdomain"} or parsed.hostname.endswith(".local"):
+                            return False
+                    return True
+                except ValueError:
+                    return False
+            if not isinstance(photos, list) or len(photos) > 24 or any(not safe_photo(photo) for photo in photos):
+                raise ValueError("lot media photos must be bounded HTTPS URLs")
+            if len(set(photos)) != len(photos):
+                raise ValueError("lot media photos must be deduplicated")
+            out[slug][lot_id] = {"photos": list(photos), "scope": "source_snapshot"}
+    return out
+
+
+def merge_lot_media(city: dict[str, Any], media: dict[str, dict[str, dict[str, Any]]]) -> None:
+    """Attach additive media without changing rows, lifecycle, or valuation."""
+    city["media"] = media.get(city["slug"], {})
 
 
 def _valid_source_freshness(value: Any) -> str | None:
@@ -594,12 +646,15 @@ def check_prepositions(payload: dict, cats: dict[str, dict]) -> None:
 def main() -> None:
     src = json.loads(DATA.read_text())
     cols = {name: i for i, name in enumerate(src["cols"])}
+    media = load_lot_media()
 
     payload = {
         "generated": source_freshness(src),
         "cols": src["cols"],
         "cities": [build_city(c, cols) for c in src["cities"]],
     }
+    for city in payload["cities"]:
+        merge_lot_media(city, media)
     copy_top_metadata(payload, src)
     save_shape_cache()
 

@@ -24,7 +24,8 @@ with mock.patch.dict(os.environ, {"CHROME_BIN": sys.executable}), mock.patch.dic
 
 class PublicConfigTests(unittest.TestCase):
     def test_explicit_gate_and_no_implicit_tracker(self):
-        self.assertEqual(snippet({}), '<script>window.__ANALYSIS__={"enabled":false,"reportsEnabled":false};</script>\n')
+        self.assertEqual(snippet({}), '<script>window.__ANALYSIS__={"enabled":false,"reportsEnabled":false};</script>\n'
+                         '<script>window.__MAPS__={"embedKey":""};</script>\n')
         self.assertEqual(snippet({"CF_BEACON": "unused"}), snippet({}))
         self.assertFalse(settings({"GA4_ID": "G-TEST1234"})["enhancedMeasurementDisabled"])
         env = {"GA4_ID": "G-TEST1234", "GA4_ENHANCED_MEASUREMENT_DISABLED": "true"}
@@ -32,6 +33,19 @@ class PublicConfigTests(unittest.TestCase):
         self.assertNotIn("googletagmanager", snippet(env))
         with self.assertRaises(ValueError):
             settings({"GA4_ID": "</script>"})
+
+    def test_local_consent_and_maps_are_explicit_public_contracts(self):
+        output = snippet({})
+        self.assertEqual(sorted(settings({})), ["enhancedMeasurementDisabled", "ga4", "mapsEmbedKey"])
+        self.assertIn('window.__MAPS__={"embedKey":""}', output)
+
+        key = "AIza" + "A" * 35
+        maps = snippet({"MAPS_EMBED_API_KEY": key})
+        self.assertIn('window.__MAPS__={"embedKey":"' + key + '"}', maps)
+        self.assertNotIn("analytics.js", maps)
+        for invalid in ("AIza-short", "x" * 39, "AIza" + "<" * 35):
+            with self.assertRaises(ValueError):
+                settings({"MAPS_EMBED_API_KEY": invalid})
 
     def test_public_analysis_gate_is_explicit_independent_and_never_exports_secrets(self):
         for value in (None, "", "false", "TRUE", "1", True):

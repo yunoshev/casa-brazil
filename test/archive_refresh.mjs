@@ -23,8 +23,49 @@ for (let i = 0; i < 9218; i++) {
     missing_since: status === 'missing' ? '2026-09-15' : null };
 }
 
+const PT = {
+  'lifecycle.status.active': 'Disponível na última verificação',
+  'lifecycle.status.unverified': 'Disponibilidade não confirmada',
+  'lifecycle.status.missing': 'Ausente da fonte na última verificação',
+  'lifecycle.status.archived': 'Arquivado do catálogo atual',
+  'lifecycle.inventory': 'Ofertas ativas verificadas: {active}. Registros conhecidos sem confirmação: {unverified}. Disponibilidade não confirmada não é oferta ativa.',
+  'lifecycle.notice.current': 'Este registro não confirma que o imóvel continue disponível.',
+  'lifecycle.notice.removed': 'Removido das listas atuais; ausência não significa venda.',
+  'lifecycle.fact.last_seen': 'Última observação',
+  'lifecycle.fact.last_checked': 'Última verificação',
+  'lifecycle.fact.missing_since': 'Ausente desde',
+  'lifecycle.fact.archived_at': 'Arquivado em',
+  'lifecycle.fact.last_price': 'Último preço anunciado',
+  'lifecycle.fact.appraisal': 'Avaliação registrada',
+  'lifecycle.date.unknown': 'Não informada',
+  'lifecycle.historical.title': 'Registro histórico',
+  'lifecycle.historical.body': 'Preço anunciado mais recente — não é preço de venda.',
+  'lifecycle.archive.link': 'Arquivo de registros',
+  'lifecycle.archive.title': 'Arquivo de registros',
+  'lifecycle.archive.body': 'Registros ausentes ou arquivados, mantidos para que URLs publicados não desapareçam.',
+  'lifecycle.archive.view': 'Ver arquivo',
+  'lifecycle.archive.short': 'Arquivo',
+  'lifecycle.pagination.label': 'Paginação',
+  'lifecycle.pagination.previous': 'Anterior',
+  'lifecycle.pagination.next': 'Próxima',
+  'lifecycle.pagination.page': 'Página {page} de {pages}',
+  'lifecycle.area.archive_note': 'Registros históricos permanecem no arquivo.',
+  'lifecycle.area.archive_body': 'Estes imóveis não entram nos resumos atuais.',
+  'lifecycle.current_lists': 'Listas atuais',
+  'head.page': ' · página {page}',
+  'head.page.of': ' Página {page} de {pages}.',
+  'head.archive.title': 'Arquivo de registros — {city}{page}',
+  'head.archive.desc': 'Registros ausentes ou arquivados: {count}. Ausência da fonte não confirma venda.{page}',
+  'head.all.lifecycle.title': 'Registros conhecidos — {city}{page}',
+  'head.all.lifecycle.desc': '{known} registros conhecidos; {active} ofertas ativas verificadas e {unverified} sem disponibilidade confirmada.{page}',
+  'head.lot.historical.title': 'Registro histórico — {what}, {where}',
+  'head.lot.historical.desc': 'Registro ausente da lista atual; a ausência não confirma venda. Último preço anunciado: {price}.',
+  'head.lot.unverified.title': 'Disponibilidade não confirmada — {what}, {where}',
+  'head.lot.unverified.desc': 'Registro conhecido em {city}; a disponibilidade atual não foi confirmada.',
+};
+const interpolate = (template, vars) => template.replace(/\{(\w+)\}/g, (_, key) => vars?.[key] ?? '');
 const LANG = { code: 'pt', langs: ['pt'], names: { pt: 'Português' }, num: String, money: String,
-  pct: String, plur: key => key, t: (key, vars, fallback) => fallback || key };
+  pct: String, plur: key => key, t: (key, vars, fallback) => interpolate(PT[key] || fallback || key, vars) };
 const window = { __D__: { cols, cities: [city], generated: null }, __SHIP_LANGS__: ['pt'] };
 const ctx = vm.createContext({ window, LANG, URL });
 vm.runInContext(source, ctx);

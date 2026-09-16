@@ -25,10 +25,14 @@ def settings(env=None) -> dict:
     ga4 = (env.get("GA4_ID") or "").strip()
     if ga4 and not re.fullmatch(r"G-[A-Z0-9]{4,32}", ga4):
         raise ValueError("GA4_ID must be a GA4 measurement ID")
+    maps_embed_key = (env.get("MAPS_EMBED_API_KEY") or "").strip()
+    if maps_embed_key and not re.fullmatch(r"AIza[A-Za-z0-9_-]{35}", maps_embed_key):
+        raise ValueError("MAPS_EMBED_API_KEY must be a Google API key")
     return {
         "ga4": ga4,
         # Assertion supplied by the release owner after configuring the stream.
         "enhancedMeasurementDisabled": env.get("GA4_ENHANCED_MEASUREMENT_DISABLED") == "true",
+        "mapsEmbedKey": maps_embed_key,
     }
 
 
@@ -45,8 +49,11 @@ def snippet(env=None) -> str:
         },
         separators=(",", ":"),
     )
-    bootstrap = '<script>window.__ANALYSIS__=' + analysis + ';</script>\n'
     cfg = settings(env)
+    # Map consumers have a stable, public contract independent of Analytics.
+    maps = json.dumps({"embedKey": cfg["mapsEmbedKey"]}, separators=(",", ":"))
+    bootstrap = ('<script>window.__ANALYSIS__=' + analysis + ';</script>\n'
+                 '<script>window.__MAPS__=' + maps.replace("<", "\\u003c") + ';</script>\n')
     if not cfg["ga4"]:
         return bootstrap
     encoded = json.dumps(cfg, separators=(",", ":")).replace("<", "\\u003c")
@@ -75,6 +82,13 @@ usar cookies de análise. A escolha fica no navegador; o botão de preferências
 permite alterá-la. Não enviamos email, links digitados de PDF, endereço do imóvel,
 identificadores de lote ou texto do documento nos eventos de Analytics.
 A medição Cloudflare não é ativada nesta versão.</p>
+<p>O site usa a própria janela de preferências para esta escolha em todos os
+países. Ela não é um aviso de anúncios: esta versão não exibe anúncios.</p>
+<h2>Mapa sob demanda</h2>
+<p>Quando o mapa estiver configurado, ele só carrega depois de um clique no botão
+da página do imóvel. Esse clique envia ao Google a localização exibida do imóvel e
+o endereço IP; não há geolocalização automática, e abrir o mapa não implica aceitar
+estatísticas.</p>
 <h2>Análise de edital</h2>
 <p>Ao enviar o formulário, o identificador do lote e o link público do PDF da Caixa
 são enviados ao serviço de análise. O servidor busca o documento e usa Google Gemini

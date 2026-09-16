@@ -88,6 +88,7 @@ ASSETS = (
     "parts/chrome.js",
     "parts/geo.js",
     "parts/analyze.js",
+    "parts/lot-media.js",
     "parts/analytics.js",
 )
 

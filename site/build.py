@@ -75,6 +75,7 @@ FRONTENDS = {
             "parts/lang.js",
             "parts/chrome.js",
             "parts/analyze.js",
+            "parts/lot-media.js",
         ),
         # Which of the three geometries a city has decides all of these. Named
         # exactly, not by prefix: `map.source.` alone would also claim the

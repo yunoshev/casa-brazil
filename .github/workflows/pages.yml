@@ -63,6 +63,9 @@ jobs:
       - name: Check homepage geoselection
         run: node --test site/test/geo.test.mjs
 
+      - name: Check lifecycle and inventory translations
+        run: node test/lifecycle_i18n.mjs
+
       - name: Check valuation provenance UI
         run: node test/valuation_ui.mjs
 
@@ -71,6 +74,10 @@ jobs:
           node --test site/test/analytics.test.mjs
           node --test site/test/lot-reports.test.mjs
           python test/test_public_config.py
+          # Owned by the maps/media agents. Run automatically when their
+          # concurrently delivered files land; keep this baseline green first.
+          if test -f test/lot_media.mjs; then node --test test/lot_media.mjs; fi
+          if test -f test/test_lot_media_projection.py; then python test/test_lot_media_projection.py; fi
 
       - name: Check stylesheet cache versioning
         run: python test/test_asset_versioning.py
@@ -92,6 +99,9 @@ jobs:
           # Visitors must also accept statistics before any Google tag loads.
           GA4_ID: ${{ vars.GA4_ID }}
           GA4_ENHANCED_MEASUREMENT_DISABLED: ${{ vars.GA4_ENHANCED_MEASUREMENT_DISABLED }}
+          # Optional public Maps Embed API key. Maps remain button-triggered
+          # by page code; this variable alone loads no map.
+          MAPS_EMBED_API_KEY: ${{ vars.MAPS_EMBED_API_KEY }}
           # Default-off browser gate; Main enables only after shared-core readiness.
           BRAZIL_PUBLIC_ANALYSIS_ENABLED: ${{ vars.BRAZIL_PUBLIC_ANALYSIS_ENABLED || 'false' }}
           # Separate default-off gate for already-cached historical reports.

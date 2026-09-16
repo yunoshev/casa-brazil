@@ -83,31 +83,33 @@ function refreshStats(c) {
 }
 function statusText(r) {
   var s = lotStatus(r);
-  return s === "active" ? "Disponível na última verificação" : s === "unverified" ? "Disponibilidade não confirmada" :
-    s === "missing" ? "Ausente da fonte na última verificação" : "Arquivado do catálogo atual";
+  return t("lifecycle.status." + s);
 }
 function lastAdvertisedPrice(r) {
   var p = lifecycle(r).last_price_brl;
   return typeof p === "number" && isFinite(p) && p >= 0 ? p : r[C.preco];
 }
-function inventoryNotice() { return '<p class="note inventory-note">Ofertas ativas verificadas: ' + num(city.stats.lots) + '. Registros conhecidos sem confirmação: ' + num(city.stats.unverified_lots || 0) + '. Disponibilidade não confirmada não é oferta ativa.</p>'; }
+function inventoryNotice() { return '<p class="note inventory-note">' + t("lifecycle.inventory", {
+  active: num(city.stats.lots), unverified: num(city.stats.unverified_lots || 0),
+}) + '</p>'; }
 function lifecycleBanner(r) {
   var lc = lifecycle(r), s = lotStatus(r);
   return '<section class="mkt lifecycle-banner ' + s + '"><h2>' + esc(statusText(r)) + '</h2><p>' +
-    (isCurrent(r) ? 'Este registro não confirma que o imóvel continue disponível.' : 'Removido das listas atuais; ausência não significa venda.') +
+    t(isCurrent(r) ? "lifecycle.notice.current" : "lifecycle.notice.removed") +
     '</p><div class="facts">' +
-    fact('Última observação', lc.last_seen_at || 'Não registrada') +
-    fact('Última verificação', lc.last_checked_at || 'Não registrada') +
-    (lc.missing_since ? fact('Ausente desde', lc.missing_since) : '') +
-    (lc.archived_at ? fact('Arquivado em', lc.archived_at) : '') + '</div></section>';
+    fact(t("lifecycle.fact.last_seen"), lc.last_seen_at || t("lifecycle.date.unknown")) +
+    fact(t("lifecycle.fact.last_checked"), lc.last_checked_at || t("lifecycle.date.unknown")) +
+    (lc.missing_since ? fact(t("lifecycle.fact.missing_since"), lc.missing_since) : '') +
+    (lc.archived_at ? fact(t("lifecycle.fact.archived_at"), lc.archived_at) : '') + '</div></section>';
 }
 function screenHistoricalLot(r) {
   var key = areaOf(r), price = lastAdvertisedPrice(r);
   return '<div class="hero">' + back(key ? href("/a/" + encodeURIComponent(key)) : href(), key ? areaName(key) : city.nome) +
     '<h1 class="lot-address">' + esc(title(r[C.end] || r[C.tipo] || t("lot.fallback"))) + '</h1><p class="lede">' + lotLine(r) + '</p></div>' +
-    lifecycleBanner(r) + '<section class="mkt"><h2>Registro histórico</h2><p>Preço anunciado mais recente — não é preço de venda.</p><div class="facts">' +
-    fact('Último preço anunciado', price == null ? 'Não registrado' : money(price)) +
-    fact('Avaliação registrada', r[C.aval] == null ? '—' : money(r[C.aval])) + '</div></section>' +
+    lifecycleBanner(r) + '<section class="mkt"><h2>' + t("lifecycle.historical.title") + '</h2><p>' + t("lifecycle.historical.body") + '</p><div class="facts">' +
+    fact(t("lifecycle.fact.last_price"), price == null ? t("lifecycle.date.unknown") : money(price)) +
+    fact(t("lifecycle.fact.appraisal"), r[C.aval] == null ? '—' : money(r[C.aval])) + '</div></section>' +
+    gallery(r) + lotMap(r) +
     '<section class="mkt" data-lot-report="' + esc(r[C.id]) + '"></section>' + footer();
 }
 
@@ -131,12 +133,71 @@ function verdict(r) {
   return [-999, "bad", "lot.verdict.much_dearer"];
 }
 
-/* Caixa serves a photo for every lot at a URL derived from the listing id.
- * Nothing else in the registry carries images yet, so the slot stays empty and
- * says so rather than showing a stand-in that pretends to be the building. */
-function photo(r) {
-  var m = /hdnimovel=(\d+)/.exec(r[C.link] || "");
-  return m ? "https://venda-imoveis.caixa.gov.br/fotos/F" + m[1] + "21.jpg" : null;
+/* Media is deliberately additive: city.media[lotId] = { photos: [https URL] }.
+ * The current public payload has no media projection, so its coverage is zero
+ * until the export supplies source-backed URLs. Do not manufacture a gallery
+ * by probing numbered Caixa filenames. */
+
+function safeHttpsURL(value) {
+  if (typeof value !== "string") return null;
+  try {
+    var u = new URL(value);
+    return u.protocol === "https:" && !u.username && !u.password ? u.href : null;
+  } catch (e) { return null; }
+}
+
+/* Caixa's listing metadata identifies its one cover photograph by hdnimovel.
+ * This is a single known fallback, not evidence that any numbered siblings
+ * exist. It remains separate from the media projection so a future feed never inherits
+ * invented "all photos". */
+function caixaCover(r) {
+  var m = /[?&]hdnimovel=(\d+)(?:&|$)/.exec(r[C.link] || "");
+  return r[C.src] === "caixa" && m
+    ? safeHttpsURL("https://venda-imoveis.caixa.gov.br/fotos/F" + m[1] + "21.jpg") : null;
+}
+function mediaForLot(r) {
+  var item = (city.media || {})[String(r[C.id])] || {};
+  var listed = Array.isArray(item.photos) ? item.photos.map(safeHttpsURL).filter(Boolean) : [];
+  var cover = caixaCover(r);
+  if (cover && listed.indexOf(cover) < 0) listed.unshift(cover);
+  return listed.filter(function (url, i) { return listed.indexOf(url) === i; });
+}
+function photo(r) { return mediaForLot(r)[0] || null; }
+
+function mapQueryForLot(r) {
+  var address = String(r[C.end] || "").trim();
+  /* An ellipsis is a feed truncation, not an address. Coordinates are never a
+   * replacement: a district centroid must not become a claimed building. */
+  if (!address || /[…]/.test(address) || !/[A-Za-zÀ-ÿ]/.test(address) || !/(\d|\bs\/?n\b)/i.test(address)) return null;
+  return address + ", " + city.nome + " - " + city.uf + ", Brasil";
+}
+function lotMap(r) {
+  var query = mapQueryForLot(r);
+  if (!query) return "";
+  var external = "https://www.google.com/maps/search/?api=1&query=" + encodeURIComponent(query);
+  return '<section class="lot-map mkt" data-lot-map data-map-query="' + esc(query) + '" hidden>' +
+    '<div class="sechead"><h2>' + t("lot.map.h2") + '</h2></div>' +
+    '<p class="foot lot-map-note">' + t("lot.map.note") + "</p>" +
+    '<div class="lot-map-actions"><button class="map-load" type="button">' + t("lot.map.load") +
+      '</button><a class="map-external" href="' + esc(external) + '" target="_blank" rel="noopener">' +
+      t("lot.map.external") + "</a></div>" +
+    '<div class="lot-map-frame" aria-live="polite"></div></section>';
+}
+
+function gallery(r) {
+  var media = mediaForLot(r);
+  if (!media.length) return "";
+  var alt = t("lot.photo.alt", { what: title(r[C.tipo] || t("lot.fallback")) });
+  return '<section class="gallery" data-gallery data-gallery-count="' + media.length + '">' +
+    '<div class="gallery-stage">' + media.map(function (url, i) {
+      return '<img class="shot gallery-image' + (i ? " hid" : "") + '" src="' + esc(url) + '" alt="' + esc(alt) +
+        '" decoding="async" width="640" height="480" data-gallery-index="' + i + '"' +
+        (i ? ' loading="lazy"' : ' fetchpriority="high"') + ">";
+    }).join("") + "</div><p class=\"foot gallery-note\">" + t("lot.gallery.note") + "</p>" +
+    (media.length > 1 ? '<div class="gallery-controls"><button type="button" class="gallery-prev" aria-label="' + esc(t("lot.gallery.prev")) + '">' +
+      t("lot.gallery.prev") + '</button><span class="gallery-count" aria-live="polite">1 / ' + media.length +
+      '</span><button type="button" class="gallery-next" aria-label="' + esc(t("lot.gallery.next")) + '">' + t("lot.gallery.next") + "</button></div>" : "") +
+    '</section>';
 }
 
 /* ---- colour ---------------------------------------------------- */
@@ -784,7 +845,7 @@ function screenCity() {
       }) +
         "</h1>" +
       '<p class="lede">' + t(marketOnly() ? "city.lede.market" : "city.lede") + "</p>" + inventoryNotice() +
-      '<p class="foot">' + link("/archive", "Arquivo de registros") + '</p>' +
+      '<p class="foot">' + link("/archive", t("lifecycle.archive.link")) + '</p>' +
       '<div class="strip">' + cityList("strip") + "</div>" +
     "</section>" +
 
@@ -951,7 +1012,7 @@ function screenArea(key) {
       "<h1>" + esc(areaName(key)) + "</h1>" +
       '<p class="lede">' + (!a.n
         ? t("area.lede.nolots", { all: link("/all", t("area.nolots.cta")) }) +
-          ((historyByArea[key] || []).length ? ' Registros históricos permanecem no arquivo.' : '')
+          ((historyByArea[key] || []).length ? ' ' + t("lifecycle.area.archive_note") : '')
         : a.rel
           ? t("area.lede", { lots: lots(a.n), rel: a.rel, below: b(a.below) })
           : t(marketOnly() ? "area.lede.market" : "area.lede.nodata",
@@ -965,8 +1026,8 @@ function screenArea(key) {
       // No cap. This is the only page that lists a district in full, and a lot
       // that is on no page is a lot that does not exist.
       }).map(lotRow).join("") + "</div></section>" : "") +
-    ((historyByArea[key] || []).length ? '<section class="sec"><h2>Registros históricos</h2><p>Estes imóveis não entram nos resumos atuais.</p><div class="rowlist">' +
-      historyByArea[key].slice(0, 20).map(lotRow).join('') + '</div><p class="foot">' + link("/archive", "Ver arquivo") + '</p></section>' : '') + footer();
+    ((historyByArea[key] || []).length ? '<section class="sec"><h2>' + t("lifecycle.archive.title") + '</h2><p>' + t("lifecycle.area.archive_body") + '</p><div class="rowlist">' +
+      historyByArea[key].slice(0, 20).map(lotRow).join('') + '</div><p class="foot">' + link("/archive", t("lifecycle.archive.view")) + '</p></section>' : '') + footer();
 }
 
 /* What winning actually costs. The advertised price is never the cheque: the
@@ -1054,7 +1115,7 @@ function lotRow(r, i) {
     // size is stated so the row does not jump when the picture lands.
     '<div class="ph">' + (ph
       ? '<img src="' + esc(ph) + '" alt="" decoding="async" width="82" height="82"' +
-        (eager ? "" : ' loading="lazy"') + ' onerror="this.remove()">'
+        (eager ? "" : ' loading="lazy"') + ' data-lot-thumb>'
       : "<span>" + t("lot.nophoto") + "</span>") + "</div>" +
     '<div class="body">' +
       '<div class="r1"><div class="ttl">' + lotLine(r) + "</div>" +
@@ -1064,7 +1125,7 @@ function lotRow(r, i) {
       // One line, not two columns: on a phone the two labelled prices sat in
       // 70px each and broke "R$ 33 635" across lines.
       '<div class="nums"><div class="k">' +
-        (historical ? 'Último preço anunciado' : t(vd ? "lot.nums.both" : "lot.nums.open")) + "</div>" +
+        (historical ? t("lifecycle.fact.last_price") : t(vd ? "lot.nums.both" : "lot.nums.open")) + "</div>" +
         '<div class="v">' + money(historical ? lastAdvertisedPrice(r) : r[C.preco]) +
         (vd ? " <em>→</em> " + b(money(r[C.hammer])) : "") +
         "</div></div>" +
@@ -1212,7 +1273,6 @@ function screenLot(id) {
   if (!r) return null;
   if (!isCurrent(r)) return screenHistoricalLot(r);
   var vd = verdict(r);
-  var ph = photo(r);
   var key = areaOf(r);
 
   // Two of these four are ours and two are published facts. Where the verdict
@@ -1239,11 +1299,7 @@ function screenLot(id) {
         esc(title(r[C.bairro] || (key ? areaName(key) : city.nome))) + "</p></div>" +
     lifecycleBanner(r) +
 
-    // The one photo on a lot page is the reader's first impression and very
-    // often the largest thing painted, so it stays eager and says so.
-    (ph ? '<img class="shot" src="' + esc(ph) + '" alt="" decoding="async"' +
-      ' fetchpriority="high" width="640" height="480"' +
-      " onerror=\"this.style.display='none'\">" : "") +
+    gallery(r) + lotMap(r) +
 
     '<div class="verdict">' +
       (vd
@@ -1327,10 +1383,10 @@ function pageNumber(kind, path, count) {
 }
 function pagination(kind, page, count) {
   if (count < 2) return "";
-  return '<nav class="foot" aria-label="Paginação">' +
-    (page > 1 ? '<a rel="prev" href="' + pageHref(kind, page - 1) + '">Anterior</a> · ' : '') +
-    '<span>Página ' + page + ' de ' + count + '</span>' +
-    (page < count ? ' · <a rel="next" href="' + pageHref(kind, page + 1) + '">Próxima</a>' : '') + '</nav>';
+  return '<nav class="foot" aria-label="' + t("lifecycle.pagination.label") + '">' +
+    (page > 1 ? '<a rel="prev" href="' + pageHref(kind, page - 1) + '">' + t("lifecycle.pagination.previous") + '</a> · ' : '') +
+    '<span>' + t("lifecycle.pagination.page", { page: page, pages: count }) + '</span>' +
+    (page < count ? ' · <a rel="next" href="' + pageHref(kind, page + 1) + '">' + t("lifecycle.pagination.next") + '</a>' : '') + '</nav>';
 }
 function screenAll(page) {
   page = page == null ? 1 : page;
@@ -1340,7 +1396,7 @@ function screenAll(page) {
   return '<div class="hero">' + back(href(), city.nome) +
     "<h1>" + t(mo ? "all.h1.market" : "all.h1") + "</h1>" +
     '<p class="lede">' + t(mo ? "all.lede.market" : "all.lede") + "</p>" + inventoryNotice() +
-    '<p class="foot">' + link("/archive", "Arquivo de registros") + '</p></div>' + pagination("/all", page, count) +
+      '<p class="foot">' + link("/archive", t("lifecycle.archive.link")) + '</p></div>' + pagination("/all", page, count) +
     '<section class="sec"><div class="rowlist">' +
     currentRows().slice((page - 1) * ALL_PAGE_SIZE, page * ALL_PAGE_SIZE).map(lotRow).join("") + "</div></section>" + pagination("/all", page, count) + footer();
 }
@@ -1349,8 +1405,8 @@ function screenArchive(page) {
   page = page == null ? 1 : page;
   var rows = archiveRows(), count = archivePageCount();
   if (!Number.isSafeInteger(page) || page < 1 || page > count) return null;
-  return '<div class="hero">' + back(href("/all"), "Listas atuais") +
-    '<h1>Arquivo de registros</h1><p class="lede">Registros ausentes ou arquivados, mantidos para que URLs publicados não desapareçam.</p></div>' +
+  return '<div class="hero">' + back(href("/all"), t("lifecycle.current_lists")) +
+    '<h1>' + t("lifecycle.archive.title") + '</h1><p class="lede">' + t("lifecycle.archive.body") + '</p></div>' +
     pagination("/archive", page, count) + '<section class="sec"><div class="rowlist">' +
     rows.slice((page - 1) * ALL_PAGE_SIZE, page * ALL_PAGE_SIZE).map(lotRow).join("") + "</div></section>" +
     pagination("/archive", page, count) + footer();
@@ -1424,7 +1480,7 @@ function ladder() {
 
 function footer() {
   return '<p class="foot">' +
-    link("/all", t("nav.all")) + " · " + link("/archive", "Arquivo") + " · " + link("/honest", t("nav.honest")) + "<br>" +
+    link("/all", t("nav.all")) + " · " + link("/archive", t("lifecycle.archive.short")) + " · " + link("/honest", t("nav.honest")) + "<br>" +
     footNote() + "</p>" + langbar();
 }
 
@@ -1615,7 +1671,7 @@ window.__render__ = function (path) {
   return {
     body: html,
     city: atCity ? city.slug : "",
-    split: !!box.querySelector(".side, .mapcard:not(.maparea), .shot"),
+    split: !!box.querySelector(".side, .mapcard:not(.maparea), .shot, .gallery"),
     head: headFor(path),
     links: links,
   };
@@ -1657,14 +1713,11 @@ function headFor(path) {
   var allPage = pageNumber("/all", path, allPageCount());
   var archivePage = pageNumber("/archive", path, archivePageCount());
   if (archivePage) {
-    base.title = "Arquivo de registros — " + name + (archivePage > 1 ? " · página " + archivePage : "");
-    base.desc = "Registros ausentes ou arquivados: " + archiveRows().length + ". Ausência da fonte não confirma venda." +
-      (archivePage > 1 ? " Página " + archivePage + " de " + archivePageCount() + "." : "");
+    base.title = t("head.archive.title", { city: name, page: archivePage > 1 ? t("head.page", { page: archivePage }) : "" });
+    base.desc = t("head.archive.desc", { count: num(archiveRows().length), page: archivePage > 1 ? t("head.page.of", { page: archivePage, pages: archivePageCount() }) : "" });
   } else if (allPage) {
-    base.title = "Registros conhecidos — " + name + (allPage > 1 ? " · página " + allPage : "");
-    base.desc = currentRows().length + " registros conhecidos; " + city.stats.lots + " ofertas ativas verificadas e " +
-      (city.stats.unverified_lots || 0) + " sem disponibilidade confirmada." +
-      (allPage > 1 ? " Página " + allPage + " de " + allPageCount() + "." : "");
+    base.title = t("head.all.lifecycle.title", { city: name, page: allPage > 1 ? t("head.page", { page: allPage }) : "" });
+    base.desc = t("head.all.lifecycle.desc", { known: num(currentRows().length), active: num(city.stats.lots), unverified: num(city.stats.unverified_lots || 0), page: allPage > 1 ? t("head.page.of", { page: allPage, pages: allPageCount() }) : "" });
   } else if (p[p.length - 2] === SEG.rua && streetBySlug[last]) {
     var stx = city.streets.d[streetBySlug[last]];
     var main = stx.f || stx.h;
@@ -1688,12 +1741,11 @@ function headFor(path) {
     var what = r ? title(r[C.end] || r[C.tipo] || t("lot.fallback")) : t("lot.fallback");
     var where = r && r[C.bairro] ? title(r[C.bairro]) : name;
     if (r && !isCurrent(r)) {
-      base.title = "Registro histórico — " + what + ", " + where;
-      base.desc = "Registro ausente da lista atual; a ausência não confirma venda. Último preço anunciado: " +
-        (lastAdvertisedPrice(r) == null ? "não registrado" : money(lastAdvertisedPrice(r))) + ".";
+      base.title = t("head.lot.historical.title", { what: what, where: where });
+      base.desc = t("head.lot.historical.desc", { price: lastAdvertisedPrice(r) == null ? t("lifecycle.date.unknown") : money(lastAdvertisedPrice(r)) });
     } else if (r && lotStatus(r) === "unverified") {
-      base.title = "Disponibilidade não confirmada — " + what + ", " + where;
-      base.desc = "Registro conhecido em " + name + "; a disponibilidade atual não foi confirmada.";
+      base.title = t("head.lot.unverified.title", { what: what, where: where });
+      base.desc = t("head.lot.unverified.desc", { city: name });
     } else {
       base.title = t("head.lot.title", { what: what, where: where });
       base.desc = t("head.lot.desc", { what: what, where: where, city: name });
@@ -1723,7 +1775,7 @@ function render() {
   view.innerHTML = html;
   // Two columns only when there is something to put in the second one; a lot
   // list has no map, and an empty sticky column is just a wide margin.
-  view.className = "wrap" + (view.querySelector(".side, .mapcard:not(.maparea), .shot") ? " split" : "");
+  view.className = "wrap" + (view.querySelector(".side, .mapcard:not(.maparea), .shot, .gallery") ? " split" : "");
   window.scrollTo(0, 0);
   wire();
 }
