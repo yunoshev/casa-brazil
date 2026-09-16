@@ -26,6 +26,7 @@
     page_view: [], lot_view: [], lot_outbound: ["source", "page"],
     city_switch: ["city_code"], lang_switch: ["lang"], analysis_cta_view: [],
     analyze_edital: ["stage", "cached", "reason"],
+    lot_report_displayed: ["source_scope"],
     analysis_budget_exhausted: [], analysis_free_limit_reached: [], analysis_capacity_exhausted: [],
   };
 
@@ -91,6 +92,7 @@
         if (key === "lang" && includes(["pt", "en", "ru"], value)) safe.lang = value;
         if (key === "stage" && includes(["start", "pending", "ok", "error", "rate_limited", "free_limit_reached", "budget_exhausted", "unavailable"], value)) safe.stage = value;
         if (key === "cached" && (value === 0 || value === 1)) safe.cached = value;
+        if (key === "source_scope" && value === "historical_document") safe.source_scope = value;
         if (key === "reason" && value !== undefined) safe.reason = includes(REASONS, value) ? value : "unknown";
         if (key === "page") safe.page = ctx.page;
       });

@@ -37,7 +37,12 @@ def snippet(env=None) -> str:
     # Separate public build switch: never infer readiness from server or GA flags.
     # The browser uses a fixed Worker URL and never receives core configuration.
     analysis = json.dumps(
-        {"enabled": env.get("BRAZIL_PUBLIC_ANALYSIS_ENABLED") == "true"},
+        {
+            "enabled": env.get("BRAZIL_PUBLIC_ANALYSIS_ENABLED") == "true",
+            # A cached historical report is a separate, read-only feature.
+            # It remains off until both its Worker and report-quality gate are ready.
+            "reportsEnabled": env.get("LOT_REPORTS_ENABLED") == "true",
+        },
         separators=(",", ":"),
     )
     bootstrap = '<script>window.__ANALYSIS__=' + analysis + ';</script>\n'
@@ -76,6 +81,15 @@ são enviados ao serviço de análise. O servidor busca o documento e usa Google
 para a leitura automática; pode reutilizar uma resposta em cache e aplicar limites.
 Não envie documentos privados. A leitura automática não substitui orientação profissional.
 Este site não oferece cadastro por email nem lista de espera nesta versão.</p>
+<h2>Relatórios históricos armazenados</h2>
+<p>Quando houver um relatório já armazenado, ele se refere apenas ao documento
+histórico e aos trechos revisados desse documento. Os PDFs, relatórios e registros
+operacionais ficam no backend Casa Radar. O Cloudflare atua como transporte e pode
+usar cache técnico de curta duração; não mantém uma base própria de relatórios nem
+executa o modelo de IA.</p>
+<p>Consultar esse relatório não inicia nova análise nem busca de PDF. O relatório
+não confirma disponibilidade, ocupação, dívidas, preço, condição atual ou resultado
+do leilão. Esta versão não coleta nomes ou emails e não oferece lista de espera.</p>
 <h2>Preferências e localização</h2>
 <p>O navegador guarda idioma, cidade escolhida, tema e escolha de estatísticas.
 A aproximação de cidade pela rede não pede GPS nem envia ou salva coordenadas.

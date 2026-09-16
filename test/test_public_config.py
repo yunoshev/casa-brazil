@@ -24,7 +24,7 @@ with mock.patch.dict(os.environ, {"CHROME_BIN": sys.executable}), mock.patch.dic
 
 class PublicConfigTests(unittest.TestCase):
     def test_explicit_gate_and_no_implicit_tracker(self):
-        self.assertEqual(snippet({}), '<script>window.__ANALYSIS__={"enabled":false};</script>\n')
+        self.assertEqual(snippet({}), '<script>window.__ANALYSIS__={"enabled":false,"reportsEnabled":false};</script>\n')
         self.assertEqual(snippet({"CF_BEACON": "unused"}), snippet({}))
         self.assertFalse(settings({"GA4_ID": "G-TEST1234"})["enhancedMeasurementDisabled"])
         env = {"GA4_ID": "G-TEST1234", "GA4_ENHANCED_MEASUREMENT_DISABLED": "true"}
@@ -37,11 +37,11 @@ class PublicConfigTests(unittest.TestCase):
         for value in (None, "", "false", "TRUE", "1", True):
             output = snippet({"BRAZIL_PUBLIC_ANALYSIS_ENABLED": value,
                               "BRAZIL_ANALYSIS_ENABLED": "true", "ANALYSIS_ENABLED": "true"})
-            self.assertIn('window.__ANALYSIS__={"enabled":false}', output)
+            self.assertIn('window.__ANALYSIS__={"enabled":false,"reportsEnabled":false}', output)
         output = snippet({"BRAZIL_PUBLIC_ANALYSIS_ENABLED": "true",
                           "BRAZIL_PROXY_SECRET": "private-secret", "BRAZIL_API_ORIGIN": "private-core",
                           "PUBLIC_OPERATOR_NAME": "private-name", "PUBLIC_OPERATOR_CONTACT": "private-contact"})
-        self.assertIn('window.__ANALYSIS__={"enabled":true}', output)
+        self.assertIn('window.__ANALYSIS__={"enabled":true,"reportsEnabled":false}', output)
         self.assertNotIn("private-", output)
         self.assertNotIn("analytics.js", output)
         self.assertNotIn("__ANALYTICS__", output)
@@ -55,7 +55,7 @@ class PublicConfigTests(unittest.TestCase):
                 with mock.patch.object(prerender, "BASE", base), mock.patch.object(prerender, "ANALYTICS", snippet(env)):
                     page = prerender.shell(template, {"title": "Lot", "desc": "Lot", "canonical": "https://example.test"}, "", False, [], {"i18n": {}, "cities": [], "here": {}})
                     page = prerender.rebase(page)
-                self.assertLess(page.index('window.__ANALYSIS__={"enabled":true}'), page.index(base + '/parts/analyze.js'))
+                self.assertLess(page.index('window.__ANALYSIS__={"enabled":true,"reportsEnabled":false}'), page.index(base + '/parts/analyze.js'))
         workflow = (ROOT / ".github/workflows/pages.yml").read_text()
         self.assertIn("BRAZIL_PUBLIC_ANALYSIS_ENABLED: ${{ vars.BRAZIL_PUBLIC_ANALYSIS_ENABLED || 'false' }}", workflow)
 
@@ -82,7 +82,9 @@ class PublicConfigTests(unittest.TestCase):
                 self.assertIn(f'href="{base}/"', page)
                 self.assertNotIn("gtag/js", page)
                 self.assertNotIn("__COUNTERS__", page)
-                self.assertIn("não oferece cadastro por email", page)
+        self.assertIn("não oferece cadastro por email", page)
+        self.assertIn("Casa Radar", page)
+        self.assertIn("cache técnico de curta duração", page)
 
     def test_no_operator_or_contact_is_published(self):
         page = privacy_page("https://example.test", {"PUBLIC_OPERATOR_NAME": "secret-operator", "PUBLIC_OPERATOR_CONTACT": "secret@example.test"})

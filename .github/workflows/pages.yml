@@ -69,6 +69,7 @@ jobs:
       - name: Check consent and public analytics configuration
         run: |
           node --test site/test/analytics.test.mjs
+          node --test site/test/lot-reports.test.mjs
           python test/test_public_config.py
 
       - name: Check stylesheet cache versioning
@@ -93,6 +94,9 @@ jobs:
           GA4_ENHANCED_MEASUREMENT_DISABLED: ${{ vars.GA4_ENHANCED_MEASUREMENT_DISABLED }}
           # Default-off browser gate; Main enables only after shared-core readiness.
           BRAZIL_PUBLIC_ANALYSIS_ENABLED: ${{ vars.BRAZIL_PUBLIC_ANALYSIS_ENABLED || 'false' }}
+          # Separate default-off gate for already-cached historical reports.
+          # It does not authorize new PDF fetches or model calls.
+          LOT_REPORTS_ENABLED: ${{ vars.LOT_REPORTS_ENABLED || 'false' }}
         run: |
           set -o pipefail
           python -u serve.py --port 8899 &

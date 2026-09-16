@@ -107,7 +107,8 @@ function screenHistoricalLot(r) {
     '<h1 class="lot-address">' + esc(title(r[C.end] || r[C.tipo] || t("lot.fallback"))) + '</h1><p class="lede">' + lotLine(r) + '</p></div>' +
     lifecycleBanner(r) + '<section class="mkt"><h2>Registro histórico</h2><p>Preço anunciado mais recente — não é preço de venda.</p><div class="facts">' +
     fact('Último preço anunciado', price == null ? 'Não registrado' : money(price)) +
-    fact('Avaliação registrada', r[C.aval] == null ? '—' : money(r[C.aval])) + '</div></section>' + footer();
+    fact('Avaliação registrada', r[C.aval] == null ? '—' : money(r[C.aval])) + '</div></section>' +
+    '<section class="mkt" data-lot-report="' + esc(r[C.id]) + '"></section>' + footer();
 }
 
 /* A city we carry for its paid side only: no comps pipeline, no hammer chain,
@@ -1293,6 +1294,8 @@ function screenLot(id) {
       valuationNotice(r) +
 
       entryCard(r) +
+
+      '<section class="mkt" data-lot-report="' + esc(r[C.id]) + '"></section>' +
 
       // Caixa publishes an edital PDF for every sale; the worker only trusts
       // Caixa's own domains, so the reader pastes that link and gets the

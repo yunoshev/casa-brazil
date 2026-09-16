@@ -13,9 +13,11 @@
   var BASE = "https://preco-real-analyze.preco-real.workers.dev";
   // This is a browser guard, not server CORS enforcement. Fail closed on
   // arbitrary endpoint overrides; redirects must not bypass this boundary.
-  var enabled = CFG.enabled === true &&
+  var trustedEndpoint =
     (CFG.apiBase === undefined || CFG.apiBase === BASE) &&
     ["https://precodemartelo.com", "https://www.precodemartelo.com"].indexOf(global.location.origin) !== -1;
+  var enabled = CFG.enabled === true && trustedEndpoint;
+  var reportsEnabled = CFG.reportsEnabled === true && trustedEndpoint;
   // Client-side mirror of the worker's PDF_ALLOWED_HOSTS — not security
   // (the worker enforces its own), just a better error before a round trip.
   // Assembled from halves because the build's key scanner reads any dotted
@@ -194,6 +196,89 @@
       '<p class="foot">' + esc(a.aviso || "") + (hit ? " · " + t("az.cache") : "") + "</p>";
   }
 
+  function validReport(a, id) {
+    function time(value) {
+      return typeof value === "string" && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?(Z|[+-]\d{2}:\d{2})$/.test(value) && !isNaN(Date.parse(value));
+    }
+    function safe(value) {
+      return typeof value === "string" && !!value.trim() && value.length <= 12000 &&
+        !/\b\d{3}\.?\d{3}\.?\d{3}-?\d{2}\b|[\w.+-]+@[\w.-]+\.[A-Za-z]{2,}/.test(value);
+    }
+    function date(value) {
+      return value === null || (typeof value === "string" && /^\d{4}-\d{2}-\d{2}$/.test(value) &&
+        !isNaN(Date.parse(value)) && new Date(value).toISOString().slice(0, 10) === value);
+    }
+    function keys(value, allowed) { return value && typeof value === "object" && !Array.isArray(value) && Object.keys(value).every(function (key) { return allowed.indexOf(key) !== -1; }); }
+    function event(value) {
+      return keys(value, ["date", "page", "time", "timezone"]) && date(value.date) &&
+        Number.isInteger(value.page) && value.page > 0 && value.page <= 150 &&
+        (value.time === null || (typeof value.time === "string" && /^[0-2]\d:[0-5]\d$/.test(value.time))) &&
+        ["unknown", "America/Sao_Paulo"].indexOf(value.timezone) !== -1;
+    }
+    function finding(value) {
+      return keys(value, ["kind", "statement", "page", "quote"]) &&
+        ["occupancy", "commission", "charges", "servitude", "auction_date"].indexOf(value.kind) !== -1 &&
+        Number.isInteger(value.page) && value.page > 0 && value.page <= 150 && safe(value.statement) && value.statement.length <= 360 &&
+        safe(value.quote) && value.quote.length <= 360;
+    }
+    function strings(value, min, max) { return Array.isArray(value) && value.length >= min && value.length <= max && value.every(safe); }
+    var doc = a && a.document, match = a && a.match, report = a && a.report;
+    return a && a.status === "historical_document" && a.source_scope === "historical_document" && a.lot_id === id &&
+      time(a.analyzed_at) && doc && time(doc.captured_at) && /^[a-f0-9]{64}$/.test(doc.sha256) &&
+      /^[a-f0-9]{64}$/.test(doc.evidence_hash) && Number.isInteger(doc.page) && doc.page > 0 && doc.page <= 10000 &&
+      keys(match, ["address", "matricula", "auction_dates"]) && match.address === true && match.matricula === true && match.auction_dates === true &&
+      keys(report, ["language", "summary", "findings", "auction_events", "document_date"]) && report.language === "pt" && safe(report.summary) && report.summary.length <= 900 &&
+      Array.isArray(report.findings) && report.findings.length >= 1 && report.findings.length <= 6 && report.findings.every(finding) &&
+      Array.isArray(report.auction_events) && report.auction_events.length >= 1 && report.auction_events.length <= 3 && report.auction_events.every(event) &&
+      date(report.document_date) && strings(a.limitations, 1, 1);
+  }
+
+  function renderReport(a) {
+    function event(value) {
+      return esc(value.date || t("archive.date.unknown")) + (value.time ? " · " + esc(value.time) : "") + " · " +
+        esc(value.timezone === "unknown" ? t("archive.date.unknown") : value.timezone) + " · " +
+        esc(t("az.report.page", { page: value.page }));
+    }
+    function finding(value) {
+      var stated = value.statement.toLocaleLowerCase().indexOf(value.quote.toLocaleLowerCase()) !== -1;
+      return '<li><p>' + esc(value.statement) + ' <span class="foot">' + esc(t("az.report.page", { page: value.page })) +
+        '</span></p>' + (stated ? '' : '<blockquote class="foot">' + esc(value.quote) + '</blockquote>') + '</li>';
+    }
+    return '<h2>' + esc(t("az.report.title")) + '</h2>' +
+      '<p class="foot">' + esc(t("az.report.notice")) + '</p>' +
+      '<p class="foot">' + esc(t("az.report.scope")) + ' · ' + esc(t("az.report.language")) + '</p>' +
+      '<p>' + esc(t("az.report.date", { date: a.report.document_date || t("archive.date.unknown") })) + '</p>' +
+      '<p class="foot">' + esc(t("az.report.auctions")) + '</p><ul class="azlist">' + a.report.auction_events.map(event).map(function (x) { return "<li>" + x + "</li>"; }).join("") + '</ul>' +
+      '<div lang="pt"><p class="say">' + esc(a.report.summary) + '</p>' +
+        '<p class="foot">' + esc(t("az.report.findings")) + '</p><ul class="azlist">' + a.report.findings.map(finding).join("") + '</ul>' +
+        '<ul class="foot">' + items(a.limitations) + '</ul></div>' +
+      '<p class="foot">' + esc(t("az.report.captured", { date: a.document.captured_at })) + '</p>' +
+      '<p class="foot">' + esc(t("az.analyzed", { date: a.analyzed_at })) + '</p>' +
+      '<p class="foot">' + esc(t("az.report.page", { page: a.document.page })) + '</p>';
+  }
+
+  async function bootReport(box) {
+    if (!reportsEnabled) return;
+    var id = box.getAttribute("data-lot-report");
+    if (!/^[a-f0-9]{16}$/.test(id || "")) return;
+    box.setAttribute("data-report-state", "loading");
+    box.innerHTML = '<p class="foot" role="status">' + esc(t("az.report.loading")) + '</p>';
+    try {
+      // Read-only cache lookup: no visitor ID, local storage, POST, polling or fallback.
+      var r = await post("/api/brazil-lot-reports/" + id, null, 15000);
+      if (box.isConnected === false || box.getAttribute("data-lot-report") !== id) return;
+      if (r.status === 200 && validReport(r.body, id)) {
+        box.innerHTML = renderReport(r.body);
+        box.setAttribute("data-report-state", "displayed");
+        // This is a display, not a new analysis conversion or a button click.
+        track("lot_report_displayed", { source_scope: "historical_document" });
+        return;
+      }
+    } catch (e) { if (box.isConnected === false) return; }
+    box.setAttribute("data-report-state", "unavailable");
+    box.innerHTML = '<p class="foot" role="status">' + esc(t("az.report.unavailable")) + '</p>';
+  }
+
   function boot(box) {
     if (!enabled) {
       box.setAttribute("data-az-state", "unavailable");
@@ -330,6 +415,13 @@
   }
 
   function wire(root) {
+    var reports = (root || document).querySelectorAll("[data-lot-report]");
+    for (var j = 0; j < reports.length; j++) {
+      if (reportsEnabled && !reports[j].getAttribute("data-report-on")) {
+        reports[j].setAttribute("data-report-on", "1");
+        bootReport(reports[j]);
+      }
+    }
     var boxes = (root || document).querySelectorAll("[data-az]");
     for (var i = 0; i < boxes.length; i++) {
       if (!boxes[i].getAttribute("data-az-on")) {
