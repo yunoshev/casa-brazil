@@ -542,7 +542,8 @@ svg.map.shapes{max-height:62vh}
   .lot-page > .hero h1{max-width:none}
   .lot-above{display:grid; grid-template-columns:minmax(0,1fr) minmax(440px,1fr); column-gap:34px; row-gap:14px; align-items:start; margin-top:14px}
   .lot-intro,.lot-above > .verdict{grid-column:1; min-width:0}
-  .lot-above > .lot-gallery{grid-column:2; grid-row:1 / span 2; margin:0; min-width:0}
+  .lot-above > .lot-gallery{grid-column:2; grid-row:1; margin:0; min-width:0}
+  .lot-above > .lot-map{grid-column:2; grid-row:2; margin:0; min-width:0}
   .lot-above > .lot-gallery .gallery-open{height:100%}
   .lot-above > .lot-gallery .shot{width:100%; height:min(590px,calc(100vh - 150px)); min-height:430px; object-fit:cover}
   .lot-intro .hero{padding-top:0}
@@ -558,7 +559,6 @@ svg.map.shapes{max-height:62vh}
   .hero-actions{margin-top:16px}
   .source-link{font-size:15px}
   .lot-page .rowlist{max-width:none}
-  .lot-page > .lot-map{margin-top:26px}
   .lot-page > .lot-history,.lot-page > .same-street-lots,.lot-page > .related-lots{margin-top:30px}
 }
 

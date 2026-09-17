@@ -1864,6 +1864,7 @@ function screenLot(id) {
     // On a phone the image belongs immediately after the decision summary;
     // desktop CSS moves this same node into the right-hand hero column.
     lotGallery(r) +
+    lotMapsBlock(r) +
 
     '<div class="verdict">' +
       (vd
@@ -1924,7 +1925,7 @@ function screenLot(id) {
       (r[C.src] === "caixa"
         ? '<section class="mkt azbox" data-az="' + esc(r[C.id]) + '" data-az-source="' +
           esc(r[C.link] || "") + '"></section>' : "") +
-    "</div>" + lotMapsBlock(r) + lotHistory(r) + sameStreetLots(r) + relatedLots(r) + footer();
+    "</div>" + lotHistory(r) + sameStreetLots(r) + relatedLots(r) + footer();
 }
 
 function fact(k, val) {
