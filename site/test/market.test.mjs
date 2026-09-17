@@ -10,7 +10,8 @@ const valid = {
   rent_monthly: { min: 1800, max: 2300 }, yield_pct: 7.8,
   condo_monthly: { min: 350, max: 520 },
   sample: { count: 28, radius_m: 1000, freshness_days: 3, confidence: 'medium' },
-  disclaimer: 'A amostra usa anúncios de venda e não confirma preços pagos.'
+  disclaimer: 'A amostra usa anúncios de venda e não confirma preços pagos.',
+  comparables: [{ source: 'ZAP Imóveis', url: 'https://www.zapimoveis.com.br/imovel/apartamento-123', observed_at: '2026-09-16T12:00:00Z', price_brl: 300000, area_m2: 50, price_per_m2: 6000, distance_m: 220 }]
 };
 
 function browser(lang = 'pt') {
@@ -51,6 +52,9 @@ for (const lang of ['pt', 'en', 'ru']) test(`${lang}: renders facts with text no
   assert.match(report.textContent, /3/);
   assert.match(report.textContent, /anúncios|listings|объявлен/i);
   assert.match(report.textContent, /não confirma preços pagos|not completed sale prices|не подтверждает цены сделок/i);
+  assert.equal(report.querySelectorAll('.market-listing-link').length, 1);
+  assert.equal(report.querySelector('.market-listing-link').getAttribute('href'), valid.comparables[0].url);
+  assert.equal(report.querySelector('.market-listing-link').getAttribute('rel'), 'noopener noreferrer nofollow');
   assert.equal(report.querySelectorAll('script').length, 0);
   assert.equal(report.querySelectorAll('img').length, 0);
 });
@@ -82,6 +86,12 @@ test('renderer is inert without a valid report and never calls network APIs', ()
   const root = s.document.createElement('div');
   assert.equal(s.window.MARKET.mount(root, { ...valid, sample: null }, s.document), false);
   assert.equal(root.children.length, 0);
+});
+
+test('source links are rejected unless they are direct, public portal listing URLs', () => {
+  const s = browser();
+  assert.equal(s.window.MARKET.validateReport({ ...valid, comparables: [{ ...valid.comparables[0], url: 'https://evil.example/imovel/a' }] }), false);
+  assert.equal(s.window.MARKET.validateReport({ ...valid, comparables: [{ ...valid.comparables[0], url: 'https://www.zapimoveis.com.br/imovel/a?token=x' }] }), false);
 });
 
 test('all market runtime keys exist in all public catalogues and JSON parses', () => {

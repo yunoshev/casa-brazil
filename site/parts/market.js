@@ -16,7 +16,7 @@
 
   var ALLOWED_ROOT = [
     "schema", "currency", "sale_asking", "discount_pct", "rent_monthly",
-    "yield_pct", "condo_monthly", "sample", "disclaimer"
+    "yield_pct", "condo_monthly", "sample", "disclaimer", "comparables"
   ];
   var ALLOWED_RANGE = ["min", "max"];
   var ALLOWED_SAMPLE = ["count", "radius_m", "freshness_days", "confidence"];
@@ -55,6 +55,14 @@
     return value === null || validRange(value, maxValue);
   }
 
+  function validComparable(value) {
+    if (!onlyKeys(value, ["source", "url", "observed_at", "price_brl", "area_m2", "price_per_m2", "distance_m"])) return false;
+    if (value.source !== "ZAP Imóveis" && value.source !== "Viva Real") return false;
+    if (typeof value.url !== "string" || !/^https:\/\/(?:www\.)?(?:zapimoveis\.com\.br|vivareal\.com\.br)\/imove/i.test(value.url) || /[?#\s]/.test(value.url)) return false;
+    if (typeof value.observed_at !== "string" || !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2}(?:\.\d{1,6})?)?Z$/.test(value.observed_at)) return false;
+    return finiteNumber(value.price_brl) && value.price_brl > 0 && finiteNumber(value.area_m2) && value.area_m2 > 0 && finiteNumber(value.price_per_m2) && value.price_per_m2 > 0 && finiteNumber(value.distance_m) && value.distance_m >= 0;
+  }
+
   function validReport(report) {
     if (!onlyKeys(report, ALLOWED_ROOT) || report.schema !== "market-v1" ||
         report.currency !== "BRL") return false;
@@ -73,7 +81,8 @@
         !integer(report.sample.freshness_days, 0, 3650) ||
         CONFIDENCE.indexOf(report.sample.confidence) === -1) return false;
 
-    return typeof report.disclaimer === "string" &&
+    return Array.isArray(report.comparables) && report.comparables.length <= 20 && report.comparables.every(validComparable) &&
+      typeof report.disclaimer === "string" &&
       report.disclaimer.trim().length > 0 && report.disclaimer.length <= 2000;
   }
 
@@ -117,6 +126,11 @@
 
   function range(value) {
     return money(value.min) + "–" + money(value.max);
+  }
+
+  function number(value) {
+    try { return new Intl.NumberFormat(locale(), { maximumFractionDigits: 0 }).format(value); }
+    catch (e) { return String(Math.round(value)); }
   }
 
   function node(document, tag, className, value) {
@@ -185,6 +199,22 @@
     sample.appendChild(node(document, "span", "market-sample-confidence",
       translate("market.confidence", { level: confidenceLabel(report.sample.confidence) })));
     section.appendChild(sample);
+
+    if (report.comparables.length) {
+      section.appendChild(node(document, "h3", "market-listings-title", translate("market.listings.title")));
+      var listings = node(document, "ul", "market-listings");
+      report.comparables.forEach(function (item) {
+        var entry = node(document, "li", "market-listing");
+        var link = node(document, "a", "market-listing-link", item.source);
+        link.setAttribute("href", item.url);
+        link.setAttribute("target", "_blank");
+        link.setAttribute("rel", "noopener noreferrer nofollow");
+        entry.appendChild(link);
+        entry.appendChild(node(document, "span", "market-listing-detail", " · " + money(item.price_brl) + " · " + number(item.area_m2) + " m² · " + money(item.price_per_m2) + "/m² · " + number(item.distance_m) + " m · " + item.observed_at.slice(0, 10)));
+        listings.appendChild(entry);
+      });
+      section.appendChild(listings);
+    }
 
     var disclaimer = node(document, "p", "market-disclaimer");
     disclaimer.appendChild(node(document, "strong", "market-disclaimer-title",

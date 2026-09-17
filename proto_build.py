@@ -73,6 +73,7 @@ MARKET_KEYS = {
     "condo_monthly",
     "sample",
     "disclaimer",
+    "comparables",
 }
 MARKET_RANGE_KEYS = {"min", "max"}
 MARKET_SAMPLE_KEYS = {"count", "radius_m", "freshness_days", "confidence"}
@@ -212,7 +213,10 @@ def _market_range(value: Any, maximum: float, label: str) -> None:
 
 
 def _validate_market_report(value: Any, label: str) -> None:
-    if not isinstance(value, dict) or set(value) != MARKET_KEYS:
+    if not isinstance(value, dict) or set(value) not in (
+        MARKET_KEYS,
+        MARKET_KEYS - {"comparables"},
+    ):
         raise ValueError(f"{label} has unsupported or missing market fields")
     if value["schema"] != "market-v1" or value["currency"] != "BRL":
         raise ValueError(f"{label} must be market-v1 in BRL")
@@ -241,6 +245,34 @@ def _validate_market_report(value: Any, label: str) -> None:
     disclaimer = value["disclaimer"]
     if not isinstance(disclaimer, str) or not disclaimer.strip() or len(disclaimer) > 2000:
         raise ValueError(f"{label}.disclaimer is invalid")
+    comparables = value.get("comparables")
+    if comparables is None:
+        return
+    if not isinstance(comparables, list) or len(comparables) > 20:
+        raise ValueError(f"{label}.comparables is invalid")
+    for number, comparable in enumerate(comparables, 1):
+        if not isinstance(comparable, dict) or set(comparable) != {
+            "source", "url", "observed_at", "price_brl", "area_m2", "price_per_m2", "distance_m"
+        }:
+            raise ValueError(f"{label}.comparables[{number}] has invalid fields")
+        if not isinstance(comparable["source"], str) or comparable["source"] not in {"ZAP Imóveis", "Viva Real"}:
+            raise ValueError(f"{label}.comparables[{number}].source is invalid")
+        url = comparable["url"]
+        parsed = urlsplit(url) if isinstance(url, str) else None
+        if (
+            not isinstance(url, str)
+            or not parsed
+            or parsed.scheme != "https"
+            or parsed.hostname not in {"zapimoveis.com.br", "www.zapimoveis.com.br", "vivareal.com.br", "www.vivareal.com.br"}
+            or parsed.query or parsed.fragment or parsed.username or parsed.password
+            or not parsed.path.startswith("/imove")
+        ):
+            raise ValueError(f"{label}.comparables[{number}].url is invalid")
+        for key, maximum in (("price_brl", 100_000_000_000), ("area_m2", 10_000_000), ("price_per_m2", 100_000_000_000), ("distance_m", 100_000)):
+            if not _market_number(comparable[key]) or comparable[key] < 0 or comparable[key] > maximum:
+                raise ValueError(f"{label}.comparables[{number}].{key} is invalid")
+        if not isinstance(comparable["observed_at"], str) or not re.fullmatch(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2}(?:\.\d{1,6})?)?Z", comparable["observed_at"]):
+            raise ValueError(f"{label}.comparables[{number}].observed_at is invalid")
 
 
 def market_release_binding(data_path: Path, receipt_path: Path) -> dict[str, str]:

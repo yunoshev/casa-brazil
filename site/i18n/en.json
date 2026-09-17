@@ -414,6 +414,7 @@
  "why.wide.h": "We had to widen the search to {km} km",
  "market.title": "Market around this lot",
  "market.intro": "Nearby comparables to put the lot in context.",
+ "market.listings.title": "Comparable listings with direct links",
  "market.sale_asking": "Sale asking prices",
  "market.discount": "Difference from the lot",
  "market.rent": "Monthly asking rent",

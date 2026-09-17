@@ -15,6 +15,7 @@ import re
 from collections.abc import Callable
 from datetime import datetime
 from typing import Any
+from urllib.parse import urlsplit, urlunsplit
 
 EXPORT_SCHEMA = "brazil-market-reports-v2"
 PUBLIC_SCHEMA = "brazil-market-reports-public-v1"
@@ -40,6 +41,9 @@ _EVIDENCE = frozenset(
         "area_m2",
         "distance_m",
     }
+)
+_PUBLIC_SOURCE_HOSTS = frozenset(
+    {"zapimoveis.com.br", "www.zapimoveis.com.br", "vivareal.com.br", "www.vivareal.com.br"}
 )
 _ISO_Z = re.compile(
     r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2}(?:\.\d{1,6})?)?(?:Z|[+-]\d{2}:\d{2})$"
@@ -178,6 +182,66 @@ def _safe_public_market_text(market: Any) -> None:
         raise ValueError("market report disclaimer contains a private reference")
 
 
+def _public_comparables(evidence: list[Any]) -> list[dict[str, Any]]:
+    """Expose only independently safe, direct portal evidence.
+
+    Older database rows may have no source URL. They remain valid aggregate
+    evidence, but are not turned into guessed portal links.
+    """
+    output: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for row in evidence:
+        if not isinstance(row, dict):
+            continue
+        raw_url = row.get("source_url")
+        if not isinstance(raw_url, str):
+            continue
+        try:
+            parsed = urlsplit(raw_url)
+            host = (parsed.hostname or "").lower().rstrip(".")
+            port = parsed.port
+        except ValueError:
+            continue
+        if (
+            parsed.scheme.lower() != "https"
+            or host not in _PUBLIC_SOURCE_HOSTS
+            or parsed.username is not None
+            or parsed.password is not None
+            or parsed.query
+            or parsed.fragment
+            or port not in (None, 443)
+            or not parsed.path.startswith("/imove")
+        ):
+            continue
+        source_url = urlunsplit(("https", host, parsed.path, "", ""))
+        if source_url in seen:
+            continue
+        price, area, distance = row.get("price_brl"), row.get("area_m2"), row.get("distance_m")
+        if not (
+            _finite(price, maximum=100_000_000_000)
+            and _finite(area, maximum=10_000_000)
+            and _finite(distance, maximum=100_000)
+        ):
+            continue
+        observed_at = row.get("observed_at")
+        _timestamp(observed_at, "public comparable observed_at")
+        assert isinstance(price, (int, float)) and isinstance(area, (int, float))
+        output.append(
+            {
+                "source": "ZAP Imóveis" if "zapimoveis" in host else "Viva Real",
+                "url": source_url,
+                "observed_at": observed_at,
+                "price_brl": price,
+                "area_m2": area,
+                "price_per_m2": round(price / area, 2),
+                "distance_m": distance,
+            }
+        )
+        seen.add(source_url)
+    output.sort(key=lambda row: (row["distance_m"], row["url"]))
+    return output[:20]
+
+
 def public_artifact(
     source: bytes | None,
     *,
@@ -244,9 +308,9 @@ def public_artifact(
         if sample_count > evidence_count:
             raise ValueError(f"{label} has fewer evidence rows than its claimed sample")
         if lot_id in known_lot_ids:
-            # Copy through only the reviewed browser DTO. Evidence IDs/URLs
-            # and every other exporter-only field are intentionally dropped.
-            output[lot_id] = dict(market)
+            projected = dict(market)
+            projected["comparables"] = _public_comparables(item["evidence"])
+            output[lot_id] = projected
     output = dict(sorted(output.items()))
     artifact = {
         "schema": PUBLIC_SCHEMA,

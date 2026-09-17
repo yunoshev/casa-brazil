@@ -129,6 +129,17 @@ class MarketReportsBuildTest(unittest.TestCase):
         self.assertNotIn("internal.example", dumped)
         self.assertNotIn("secret", dumped)
 
+    def test_verified_portal_evidence_is_projected_as_a_bounded_direct_link(self):
+        rows = evidence()
+        rows[0]["source_url"] = "https://www.zapimoveis.com.br/imovel/apartamento-123"
+        self.write([{"lot_id": "known", "market": market(), "evidence": rows}])
+        artifact, lookup = BUILD.prepare_market_reports(self.path, {"known"}, BINDING)
+        comparable = lookup["known"]["comparables"][0]
+        self.assertEqual(comparable["source"], "ZAP Imóveis")
+        self.assertEqual(comparable["url"], "https://www.zapimoveis.com.br/imovel/apartamento-123")
+        self.assertEqual(comparable["price_per_m2"], 5600.0)
+        self.assertNotIn("private-listing", json.dumps(artifact))
+
     def test_fewer_than_five_evidence_rows_is_omitted_not_valued(self):
         self.write([{"lot_id": "known", "market": market(4), "evidence": evidence(4)}])
         artifact, lookup = BUILD.prepare_market_reports(self.path, {"known"}, BINDING)

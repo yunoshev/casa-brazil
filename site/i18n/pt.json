@@ -414,6 +414,7 @@
  "why.wide.h": "Tivemos que ampliar a busca até {km} km",
  "market.title": "Mercado ao redor",
  "market.intro": "Comparáveis próximos para dar contexto ao lote.",
+ "market.listings.title": "Anúncios comparáveis com link direto",
  "market.sale_asking": "Preços pedidos na venda",
  "market.discount": "Diferença para o lote",
  "market.rent": "Aluguel mensal anunciado",
