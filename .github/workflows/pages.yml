@@ -111,6 +111,7 @@ jobs:
           node --test site/test/lot-reports.test.mjs
           node --test site/test/matricula-upload.test.mjs
           node --test site/test/matricula-e2e.test.mjs
+          node --test site/test/one-click-e2e.test.mjs
           node --test site/test/geo.test.mjs
           node --test site/test/gallery.test.mjs
           node --test site/test/related-lots.test.mjs

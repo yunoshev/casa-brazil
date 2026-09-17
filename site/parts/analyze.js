@@ -69,13 +69,13 @@
     if (global.localStorage.getItem(key) !== value) throw new Error("storage");
   }
 
-  async function requestState(id, url) {
+  async function requestState(id, source) {
     var visitor = global.localStorage.getItem(PREFIX + "visitor");
     if (!UUID.test(visitor || "")) {
       visitor = randomID();
       write(PREFIX + "visitor", visitor);
     }
-    var hash = await global.crypto.subtle.digest("SHA-256", new TextEncoder().encode(JSON.stringify([id, url, visitor, lang])));
+    var hash = await global.crypto.subtle.digest("SHA-256", new TextEncoder().encode(JSON.stringify([id, source, visitor, lang])));
     var slot = PREFIX + Array.prototype.map.call(new Uint8Array(hash), function (n) {
       return (n + 256).toString(16).slice(1);
     }).join("");
@@ -87,7 +87,7 @@
     };
     write(slot, JSON.stringify(record));
     return { slot: slot, record: record, payload: {
-      id: id, url: url, visitor_id: visitor, idempotency_key: record.key, lang: lang,
+      id: id, source_url: source, visitor_id: visitor, idempotency_key: record.key, lang: lang,
     } };
   }
 
@@ -169,6 +169,7 @@
     if (code === "free_limit_reached") return t("az.allowance");
     if (code === "capacity_exhausted") return t("az.capacity");
     if (code === "idempotency_conflict") return t("az.err.conflict");
+    if (code === "source_mismatch" || code === "source_not_allowed" || code === "document_not_available") return t("az.err.source");
     return t("az.err.fail");
   }
 
@@ -278,7 +279,9 @@
   function caixaSource(value) {
     try {
       var u = new URL(value);
-      return u.protocol === "https:" && HOSTS[u.hostname] && !u.username && !u.password && !u.port ? u.href : null;
+      return u.protocol === "https:" && u.hostname === "venda-imoveis.caixa.gov.br" &&
+        !u.username && !u.password && !u.port && !u.hash &&
+        u.pathname === "/sistema/detalhe-imovel.asp" && /^\?hdnimovel=[0-9]{1,20}$/.test(u.search) ? u.href : null;
     } catch (e) { return null; }
   }
 
@@ -445,36 +448,38 @@
   }
 
   function boot(box) {
-    if (uploadEnabled) { bootUpload(box); return; }
+    if (!enabled && uploadEnabled) { bootUpload(box); return; }
     if (!enabled) {
       box.setAttribute("data-az-state", "unavailable");
       box.innerHTML = '<div class="sechead"><h2>' + t("az.h2") + '</h2></div>' +
         '<p class="foot" role="status">' + t("az.disabled") + '</p>';
       return;
     }
+    var id = box.getAttribute("data-az");
+    var source = caixaSource(box.getAttribute("data-az-source") || "");
+    if (!/^[a-f0-9]{16}$/.test(id || "") || !source) {
+      box.setAttribute("data-az-state", "unavailable");
+      box.innerHTML = '<div class="sechead"><h2>' + t("az.h2") + '</h2></div>' +
+        '<p class="foot" role="status">' + t("az.err.source") + '</p>';
+      return;
+    }
     box.innerHTML =
       '<div class="sechead"><h2>' + t("az.h2") + '</h2><span class="n">' +
         t("az.free") + "</span></div>" +
       '<p class="foot">' + t("az.lede") + "</p>" +
-      '<form class="azform"><input type="url" required inputmode="url" placeholder="' +
-        esc(t("az.ph")) + '" aria-label="' + esc(t("az.ph")) + '">' +
-      '<button type="submit" class="cta">' + t("az.go") + "</button></form>" +
+      '<form class="azform"><button type="submit" class="cta">' + t("az.go") + "</button></form>" +
       '<p class="foot azmsg" role="status" aria-live="polite" hidden></p><div class="azout"></div>';
     var form = box.querySelector("form");
-    var input = box.querySelector("input");
     var btn = box.querySelector("button");
     var msg = box.querySelector(".azmsg");
     var out = box.querySelector(".azout");
-    var busy = false, state = null, stateURL = null;
-    var prefill = pdf(box.getAttribute("data-az-pdf") || "");
-    if (prefill) input.value = prefill;
+    var busy = false, state = null;
 
     function say(s) { msg.hidden = false; msg.textContent = s; }
     function mode(value) { box.setAttribute("data-az-state", value); }
     function lock(value) {
       busy = value;
       btn.disabled = value;
-      input.disabled = value;
       form.setAttribute("aria-busy", String(value));
     }
     function failure(reason) {
@@ -489,21 +494,12 @@
     form.addEventListener("submit", async function (ev) {
       ev.preventDefault();
       if (busy) return;
-      var url = pdf(input.value.trim());
-      if (!url) {
-        say(errText("bad_domain"));
-        track("analyze_edital", { stage: "error", reason: "bad_domain" });
-        return;
-      }
       lock(true);
       mode("submitting");
       out.innerHTML = "";
       say(t("az.wait"));
       try {
-        if (!state || stateURL !== url) {
-          state = await requestState(box.getAttribute("data-az"), url);
-          stateURL = url;
-        }
+        if (!state) state = await requestState(id, source);
       } catch (e) {
         mode("error");
         say(t("az.err.storage"));
@@ -515,12 +511,14 @@
       try {
         for (var attempt = 0; attempt < 4; attempt++) {
           // Tickets live only in memory, never storage, analytics or page links.
-          var r = await post(state.ticket ? "/analyze/" + state.ticket : "/analyze", state.ticket ? null : state.payload,
+          var r = await post(state.ticket ? "/analyze/" + state.ticket : "/analyze/lots/" + id + "/one-click", state.ticket ? null : state.payload,
             Math.max(1, Math.min(115000, deadline - Date.now())));
           // Navigation must not attribute an old request's success to a new lot.
           if (box.isConnected === false) return;
           var body = r.body && typeof r.body === "object" && !Array.isArray(r.body) ? r.body : {};
-          if (r.status === 202 && !body.error && body.status === "pending" && typeof body.analysis_id === "string" && !!body.analysis_id.trim() &&
+          if (r.status === 202 && !body.error && ["pending", "waiting_document"].indexOf(body.status) !== -1 &&
+              ["queued", "running", "waiting_for_cached_pdf"].indexOf(body.reason) !== -1 &&
+              typeof body.analysis_id === "string" && !!body.analysis_id.trim() &&
               typeof body.job_ticket === "string" && TICKET.test(body.job_ticket)) {
             state.ticket = body.job_ticket;
             if (!state.pending) {
@@ -536,6 +534,11 @@
             await new Promise(function (resolve) { global.setTimeout(resolve, delay); });
             if (box.isConnected === false) return;
             continue;
+          }
+          if (r.status === 200 && validReport(body, id)) {
+            out.innerHTML = renderReport(body); msg.hidden = true; mode("result");
+            if (!state.record.ok) { state.record.ok = true; remember(state); track("analyze_edital", { stage: "ok", cached: 1 }); }
+            btn.textContent = t("az.again"); return;
           }
           if (r.status === 200 && validResult(body)) {
             var hit = body._meta ? body._meta.cached === true : r.hit;
@@ -561,7 +564,7 @@
           // capacity, source blocking and ordinary throttling.
           var errors = ["rate_limited", "free_limit_reached", "budget_exhausted", "capacity_exhausted",
             "analysis_unavailable", "source_unavailable", "source_blocked", "bad_domain", "bad_request",
-            "idempotency_conflict", "too_large", "upstream"];
+            "idempotency_conflict", "source_mismatch", "source_not_allowed", "document_not_available", "too_large", "upstream"];
           var reason = r.status >= 400 && r.status <= 599 && errors.indexOf(body.error) !== -1 ? body.error : "invalid_response";
           // These typed 429s guarantee no dispatch. A manual retry must reach
           // core admission via POST, not poll a terminal job forever. Keep the

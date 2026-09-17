@@ -7,6 +7,7 @@ const IDENTIFIER = /^[A-Za-z0-9_.:-]{16,120}$/;
 const LOT = /^[A-Za-z0-9_.:-]{1,120}$/;
 const PATH = "/api/brazil-analysis";
 const UPLOAD_PATH = "/analyze/lots/";
+const ONE_CLICK_SUFFIX = "/one-click";
 const UPLOAD_CONSENT = "brazil-matricula-paid-ai-v1";
 const MAX_UPLOAD_BYTES = 5 * 1024 * 1024;
 // Versioned server-owned contract. The browser mirrors this exact value and
@@ -97,6 +98,23 @@ function payload(value) {
   }
   // Discard extra client fields (subject/model/budget/email/auth are never trusted).
   return { id: value.id, url: url.href, visitor_id: value.visitor_id,
+    idempotency_key: value.idempotency_key, lang: value.lang || "pt" };
+}
+
+function lotPayload(value, id) {
+  if (!value || typeof value !== "object" || Array.isArray(value) || value.id !== id ||
+      typeof value.visitor_id !== "string" || !IDENTIFIER.test(value.visitor_id) ||
+      typeof value.idempotency_key !== "string" || !IDENTIFIER.test(value.idempotency_key) ||
+      !["pt", "en", "ru"].includes(value.lang || "pt")) fail(400, "bad_request");
+  let source;
+  try { source = new URL(value.source_url); } catch { fail(400, "bad_request"); }
+  if (source.protocol !== "https:" || source.hostname !== "venda-imoveis.caixa.gov.br" ||
+      source.port || source.username || source.password || source.hash ||
+      source.pathname !== "/sistema/detalhe-imovel.asp" ||
+      !/^\?hdnimovel=[0-9]{1,20}$/.test(source.search) || source.href.length > 2048) {
+    fail(400, "bad_request");
+  }
+  return { id, source_url: source.href, visitor_id: value.visitor_id,
     idempotency_key: value.idempotency_key, lang: value.lang || "pt" };
 }
 
@@ -246,7 +264,7 @@ function publicReport(status, body, id) {
   };
 }
 
-function publicResponse(status, body) {
+function publicResponse(status, body, typedPending = false) {
   if (!body || typeof body !== "object" || Array.isArray(body)) fail(502, "invalid_response");
   if (status === 200) {
     if (body.contract !== undefined) return publicMatricula(body);
@@ -271,16 +289,22 @@ function publicResponse(status, body) {
     return result;
   }
   if (status === 202) {
-    if (body.status !== "pending" || typeof body.analysis_id !== "string" || !LOT.test(body.analysis_id) ||
+    const reasons = body.status === "waiting_document" ? ["waiting_for_cached_pdf"] : ["queued", "running"];
+    const reasonValid = reasons.includes(body.reason) ||
+      (!typedPending && body.status === "pending" && body.reason === undefined);
+    if (!["pending", "waiting_document"].includes(body.status) || !reasonValid ||
+        typeof body.analysis_id !== "string" || !LOT.test(body.analysis_id) ||
         typeof body.job_ticket !== "string" || !TICKET.test(body.job_ticket)) fail(502, "invalid_response");
-    const result = { status: "pending", analysis_id: body.analysis_id,
+    const result = { status: body.status, analysis_id: body.analysis_id,
       retry_after_seconds: Math.max(1, Math.min(15, Number(body.retry_after_seconds) || 5)) };
+    if (body.reason !== undefined) result.reason = body.reason;
     if (typeof body.job_ticket === "string") result.job_ticket = text(body.job_ticket, 4096);
     return result;
   }
   const codes = {
-    400: ["bad_request"], 403: ["bad_domain"], 404: ["lot_not_found"], 409: ["idempotency_conflict"],
-    413: ["too_large"], 422: ["invalid_pdf", "document_mismatch"],
+    400: ["bad_request"], 403: ["bad_domain"], 404: ["lot_not_found", "document_not_available"],
+    409: ["idempotency_conflict", "source_mismatch"],
+    413: ["too_large"], 422: ["invalid_pdf", "document_mismatch", "source_not_allowed"],
     429: ["budget_exhausted", "free_limit_reached", "capacity_exhausted", "rate_limited",
       "daily_limit_reached", "monthly_limit_reached"],
     502: ["fetch_failed", "invalid_response", "upstream", "source_unavailable", "source_blocked"],
@@ -288,6 +312,9 @@ function publicResponse(status, body) {
   };
   if (!codes[status]?.includes(body.error)) fail(503, "analysis_unavailable");
   // No upstream message/debug/PII, and never enable a public email form.
+  if (["source_unavailable", "source_blocked", "document_not_available"].includes(body.error)) {
+    return { status: "unavailable", reason: body.error, error: body.error, waitlist_available: false };
+  }
   return { error: body.error, waitlist_available: false };
 }
 
@@ -300,12 +327,15 @@ export default {
       const reportID = url.pathname.startsWith(REPORT_PATH) ? url.pathname.slice(REPORT_PATH.length) : null;
       const pollCandidate = url.pathname.startsWith("/analyze/") ? url.pathname.slice(9) : null;
       const pollTicket = pollCandidate && TICKET.test(pollCandidate) ? pollCandidate : null;
-      const upload = url.pathname.startsWith(UPLOAD_PATH) ? url.pathname.slice(UPLOAD_PATH.length) : null;
+      const lotTail = url.pathname.startsWith(UPLOAD_PATH) ? url.pathname.slice(UPLOAD_PATH.length) : null;
+      const oneClick = lotTail?.endsWith(ONE_CLICK_SUFFIX) ? lotTail.slice(0, -ONE_CLICK_SUFFIX.length) : null;
+      const upload = lotTail && REPORT_ID.test(lotTail) ? lotTail : null;
       if (url.search || (url.pathname !== "/analyze" &&
           !(pollTicket && TICKET.test(pollTicket)) && !(reportID && REPORT_ID.test(reportID)) &&
-          !(upload && REPORT_ID.test(upload)))) fail(404, "not_found");
+          !(upload && REPORT_ID.test(upload)) && !(oneClick && REPORT_ID.test(oneClick)))) fail(404, "not_found");
       const method = pollTicket || reportID ? "GET" : "POST";
-      const path = reportID ? REPORT_PATH + reportID : upload ? PATH + "/lots/" + upload + "/matricula" :
+      const path = reportID ? REPORT_PATH + reportID : oneClick ? PATH + "/lots/" + oneClick :
+        upload ? PATH + "/lots/" + upload + "/matricula" :
         PATH + (pollTicket ? "/" + pollTicket : "");
       if (request.method === "OPTIONS") {
         const allowedHeaders = upload ? ["content-type", "x-visitor-id", "x-idempotency-key", "x-analysis-lang", "x-analysis-consent"] : ["content-type"];
@@ -334,7 +364,7 @@ export default {
           let input;
           try { input = JSON.parse(await bounded(request, 8192, 10000)); }
           catch (e) { if (e instanceof PublicError) throw e; fail(400, "bad_request"); }
-          body = JSON.stringify(payload(input));
+          body = JSON.stringify(oneClick ? lotPayload(input, oneClick) : payload(input));
         }
       }
       const key = await crypto.subtle.importKey("raw", encoder.encode(env.BRAZIL_PROXY_SECRET), { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
@@ -350,7 +380,8 @@ export default {
       if (response.status >= 300 && response.status < 400) fail(503, "analysis_unavailable");
       if (response.headers.get("Content-Type")?.split(";")[0].trim().toLowerCase() !== "application/json") fail(502, "invalid_response");
       const raw = JSON.parse(await bounded(response, reportID ? 32768 : 262144, 10000));
-      const result = reportID ? publicReport(response.status, raw, reportID) : publicResponse(response.status, raw);
+      const result = reportID || (oneClick && raw?.status === "historical_document") ?
+        publicReport(response.status, raw, reportID || oneClick) : publicResponse(response.status, raw, Boolean(oneClick));
       const headers = {};
       if (reportID && response.status === 200) headers["Cache-Control"] = "public, max-age=300";
       if (["hit", "miss"].includes(response.headers.get("X-Cache"))) headers["X-Cache"] = response.headers.get("X-Cache");

@@ -48,13 +48,17 @@ test('double submit stays locked even if analytics is blocked', async () => {
   assert.equal(s.box.getAttribute('data-az-state'), 'result');
 });
 
-test('new PDF changes request key but preserves visitor and readonly config/prefill', async () => {
+test('new Caixa source changes request key but preserves visitor and readonly config', async () => {
   const cfg = Object.freeze({ enabled: true, apiBase: 'https://preco-real-analyze.preco-real.workers.dev' });
-  const s = setup({ analysisConfig: cfg, prefill: 'https://www.caixa.gov.br/first.pdf', fetch: () => response(200, result) });
-  s.load('analyze'); assert.equal(s.input().value, 'https://www.caixa.gov.br/first.pdf');
-  await s.analyze('https://www.caixa.gov.br/first.pdf'); await s.analyze('https://www.caixa.gov.br/second.pdf');
-  assert.notEqual(s.requests[0].json.idempotency_key, s.requests[1].json.idempotency_key);
-  assert.equal(s.requests[0].json.visitor_id, s.requests[1].json.visitor_id);
+  const first = setup({ analysisConfig: cfg, fetch: () => response(200, result) });
+  first.load('analyze'); await first.analyze();
+  const second = setup({ analysisConfig: cfg, storage: first.data,
+    source: 'https://venda-imoveis.caixa.gov.br/sistema/detalhe-imovel.asp?hdnimovel=1111111111111',
+    fetch: () => response(200, result) });
+  second.load('analyze'); await second.analyze();
+  assert.notEqual(first.requests[0].json.idempotency_key, second.requests[0].json.idempotency_key);
+  assert.equal(first.requests[0].json.visitor_id, second.requests[0].json.visitor_id);
+  assert.deepEqual(cfg, { enabled: true, apiBase: 'https://preco-real-analyze.preco-real.workers.dev' });
 });
 
 for (const status of [200, 201, 202, 400, 429, 503]) test('legacy ACK/ticket can never enable email or generate a lead: ' + status, async () => {
@@ -65,9 +69,9 @@ for (const status of [200, 201, 202, 400, 429, 503]) test('legacy ACK/ticket can
   s.load('analyze'); await s.analyze(); await s.analyze();
   assert.equal(s.document.querySelector('.azqueue'), null);
   assert.equal(s.document.querySelectorAll('form').length, 1);
-  assert.equal(s.document.querySelectorAll('input').length, 1);
+  assert.equal(s.document.querySelectorAll('input').length, 0);
   assert.equal(s.requests.length, 2);
-  assert.ok(s.requests.every(r => r.url.endsWith('/analyze')));
+  assert.ok(s.requests.every(r => r.url.endsWith('/analyze/lots/034aa2e652ab4905/one-click')));
   assert.equal(count(s, 'generate_lead'), 0);
   assert.equal(count(s, 'analysis_waitlist_view'), 0);
   assert.doesNotMatch(JSON.stringify([...s.data]), /private-ticket|fixture|email/);

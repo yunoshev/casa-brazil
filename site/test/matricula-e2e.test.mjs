@@ -41,12 +41,12 @@ test('offline browser -> Worker -> mock core -> poll -> rendered versioned matrÃ
     assert.equal(headers.get('X-Brazil-Signature'), createHmac('sha256', env.BRAZIL_PROXY_SECRET).update(signed).digest('hex'));
     assert.equal(nonces.has(headers.get('X-Brazil-Nonce')), false); nonces.add(headers.get('X-Brazil-Nonce'));
     coreCalls.push({ path, headers, bytes });
-    if (coreCalls.length === 1) return new Response(JSON.stringify({ status: 'pending', analysis_id: id,
+    if (coreCalls.length === 1) return new Response(JSON.stringify({ status: 'pending', reason: 'queued', analysis_id: id,
       job_ticket: ticket, retry_after_seconds: 1 }), { status: 202, headers: { 'Content-Type': 'application/json' } });
     return new Response(JSON.stringify(result), { status: 200, headers: { 'Content-Type': 'application/json', 'X-Cache': 'miss' } });
   };
   try {
-    const site = setup({ lotId: id, analysisConfig: { enabled: true, uploadEnabled: true,
+    const site = setup({ lotId: id, analysisConfig: { enabled: false, uploadEnabled: true,
       apiBase: 'https://preco-real-analyze.preco-real.workers.dev' },
     fetch: async request => {
       const publicURL = new URL(request.url);

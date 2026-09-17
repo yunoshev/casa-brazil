@@ -25,8 +25,8 @@ function pdf(name = 'matricula.pdf', overrides = {}) {
     slice() { return { arrayBuffer: async () => bytes.buffer }; }, ...overrides };
 }
 function fixture(options = {}) {
-  return setup({ lotId: id, source: 'https://venda-imoveis.caixa.gov.br/listaweb/Detalhe_imovel.aspx?hdnimovel=1',
-    analysisConfig: { apiBase: base, enabled: true, uploadEnabled: true }, ...options });
+  return setup({ lotId: id, source: 'https://venda-imoveis.caixa.gov.br/sistema/detalhe-imovel.asp?hdnimovel=1',
+    analysisConfig: { apiBase: base, enabled: false, uploadEnabled: true }, ...options });
 }
 async function select(s, file) {
   const input = s.box.querySelector('input'); input.files = file ? [file] : [];
@@ -127,12 +127,18 @@ test('uncited or mismatched responses never render a result', async () => {
 });
 
 test('untrusted origin/endpoint and disabled upload preserve the existing client', () => {
-  for (const options of [{ analysisConfig: { enabled: true, uploadEnabled: true, apiBase: 'https://evil.example' } },
-    { url: 'https://evil.example/', analysisConfig: { enabled: true, uploadEnabled: true } }]) {
+  for (const options of [{ analysisConfig: { enabled: false, uploadEnabled: true, apiBase: 'https://evil.example' } },
+    { url: 'https://evil.example/', analysisConfig: { enabled: false, uploadEnabled: true } }]) {
     const s = fixture(options); s.load('analyze'); assert.equal(s.box.getAttribute('data-az-state'), 'unavailable'); assert.equal(s.requests.length, 0);
   }
-  const legacy = fixture({ analysisConfig: { enabled: true, uploadEnabled: false } }); legacy.load('analyze');
-  assert.equal(legacy.box.querySelector('input').getAttribute('type'), 'url');
+  const disabled = fixture({ analysisConfig: { enabled: false, uploadEnabled: false } }); disabled.load('analyze');
+  assert.equal(disabled.box.querySelector('input'), null);
+});
+
+test('one-click wins when public config enables both flows', () => {
+  const s = fixture({ analysisConfig: { enabled: true, uploadEnabled: true } }); s.load('analyze');
+  assert.equal(s.box.querySelectorAll('button').length, 1);
+  assert.equal(s.box.querySelector('input'), null);
 });
 
 test('lot renderer supplies the Caixa source link to the upload client', () => {

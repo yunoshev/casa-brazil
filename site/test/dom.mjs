@@ -78,7 +78,10 @@ export function setup(options = {}) {
   document.createElement = tag => new Element(tag);
   document.getElementById = id => document.querySelectorAll('[id]').find(el => el.getAttribute('id') === id) || null;
   document.referrer = options.referrer || '';
-  const box = document.body.appendChild(new Element('section', { 'data-az': 'caixa:123' }));
+  const box = document.body.appendChild(new Element('section', {
+    'data-az': '034aa2e652ab4905',
+    'data-az-source': 'https://venda-imoveis.caixa.gov.br/sistema/detalhe-imovel.asp?hdnimovel=8444412843294',
+  }));
   if (options.prefill) box.setAttribute('data-az-pdf', options.prefill);
   if (options.lotId) box.setAttribute('data-az', options.lotId);
   if (options.source) box.setAttribute('data-az-source', options.source);
@@ -120,7 +123,7 @@ export function setup(options = {}) {
     window: sandbox, document, box, data, events, requests, timers, observers, translate,
     load(name) { vm.runInContext(readFileSync(new URL('../parts/' + name + '.js', import.meta.url), 'utf8'), ctx, { filename: name + '.js' }); },
     runTimers(max = Infinity) { for (const [id, timer] of [...timers]) if (timer.ms <= max) { timers.delete(id); timer.fn(); } },
-    form() { return box.querySelector('.azform'); }, input() { return box.querySelector('.azform').querySelector('input'); },
-    async analyze(url = 'https://www.caixa.gov.br/public.pdf') { this.input().value = url; await this.form().emit('submit'); },
+    form() { return box.querySelector('.azform'); }, input() { return box.querySelector('.azform')?.querySelector('input') || null; },
+    async analyze() { await this.form().emit('submit'); },
   };
 }

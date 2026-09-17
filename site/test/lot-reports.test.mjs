@@ -124,7 +124,8 @@ test('existing explicit analysis preserves start/ok funnel without report displa
     fetch: () => response(200, analysis) });
   s.load('analyze'); assert.equal(s.requests.length, 0);
   await s.analyze(); await s.analyze();
-  assert.equal(s.requests.length, 2); assert.ok(s.requests.every(r => r.method === 'POST' && r.url === base + '/analyze'));
+  assert.equal(s.requests.length, 2); assert.ok(s.requests.every(r => r.method === 'POST' &&
+    r.url === base + '/analyze/lots/034aa2e652ab4905/one-click'));
   assert.equal(s.events.filter(e => e.name === 'analyze_edital' && e.params.stage === 'start').length, 2);
   assert.equal(s.events.filter(e => e.name === 'analyze_edital' && e.params.stage === 'ok').length, 1);
   assert.equal(displayed(s).length, 0);

@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { setup, response, until } from './dom.mjs';
+import { setup, response, until, deferred } from './dom.mjs';
 
 const emitted = s => (s.window.dataLayer || []).filter(e => e[0] === 'event');
 const count = (s, name) => emitted(s).filter(e => e[1] === name).length;
@@ -12,7 +12,7 @@ const jobTicket = '00000000-0000-4000-8000-000000000001.1790000000.' + 'a'.repea
 const stages = s => Array.from(emitted(s).filter(e => e[1] === 'analyze_edital'), e => e[2].stage);
 
 test('definitive pre-dispatch budget failure allows manual same-key POST instead of terminal polling', async () => {
-  const s = setup({ fetch: (r, n) => n === 1 ? response(202, { status: 'pending', analysis_id: 'job', job_ticket: jobTicket, retry_after_seconds: 1 }) :
+  const s = setup({ fetch: (r, n) => n === 1 ? response(202, { status: 'pending', reason: 'queued', analysis_id: 'job', job_ticket: jobTicket, retry_after_seconds: 1 }) :
     n === 2 ? response(429, { error: 'budget_exhausted' }) : response(200, validAnalysis) });
   s.load('analyze'); const task = s.analyze();
   await until(() => s.requests.length === 1 && [...s.timers.values()].some(t => t.ms === 1000));
@@ -110,7 +110,7 @@ test('typed backend errors determine stages; status alone never invents a reason
 });
 
 test('polling is bounded and manual retry keeps the ticket at the fixed Worker', async () => {
-  const s = setup({ fetch: () => response(202, { status: 'pending', analysis_id: 'job', job_ticket: jobTicket, retry_after_seconds: 1 }) });
+  const s = setup({ fetch: () => response(202, { status: 'pending', reason: 'running', analysis_id: 'job', job_ticket: jobTicket, retry_after_seconds: 1 }) });
   s.load('analytics'); s.window.ANALYTICS.setConsent('accepted'); s.load('analyze');
   const task = s.analyze();
   for (let n = 1; n <= 3; n++) {
@@ -167,7 +167,7 @@ test('every analysis runtime key exists in all three actual public catalogues', 
 });
 
 for (const lang of ['pt', 'en', 'ru']) test(`public pending polls never count as success; one pending and one valid success: ${lang}`, async () => {
-  const s = setup({ lang, fetch: (r, n) => n <= 3 ? response(202, { status: 'pending', analysis_id: 'job', job_ticket: jobTicket, retry_after_seconds: 1 }) : response(200, validAnalysis) });
+  const s = setup({ lang, fetch: (r, n) => n <= 3 ? response(202, { status: 'pending', reason: 'queued', analysis_id: 'job', job_ticket: jobTicket, retry_after_seconds: 1 }) : response(200, validAnalysis) });
   s.load('analytics'); s.window.ANALYTICS.setConsent('accepted'); s.load('analyze');
   const task = s.analyze();
   for (let n = 1; n <= 3; n++) {
@@ -180,7 +180,7 @@ for (const lang of ['pt', 'en', 'ru']) test(`public pending polls never count as
   await task;
   assert.deepEqual(stages(s), ['start', 'pending', 'ok']);
   assert.equal(s.requests[0].method, 'POST');
-  assert.deepEqual(Object.keys(s.requests[0].json).sort(), ['id', 'idempotency_key', 'lang', 'url', 'visitor_id']);
+  assert.deepEqual(Object.keys(s.requests[0].json).sort(), ['id', 'idempotency_key', 'lang', 'source_url', 'visitor_id']);
   assert.equal(s.requests[0].json.lang, lang);
   assert.ok(s.requests.slice(1).every(r => r.method === 'GET' && r.body === undefined && r.url.endsWith('/analyze/' + jobTicket)));
   await s.analyze();
@@ -218,21 +218,31 @@ for (const [reason, event, key] of [
   assert.deepEqual(stages(s), ['start', reason === 'capacity_exhausted' ? 'unavailable' : reason]);
   assert.equal(emitted(s).find(e => e[1] === 'analyze_edital' && e[2].reason)[2].reason, reason);
   assert.equal(s.document.querySelectorAll('form').length, 1);
-  assert.equal(s.document.querySelectorAll('input').length, 1);
+  assert.equal(s.document.querySelectorAll('input').length, 0);
   assert.equal(s.requests.length, 1);
   assert.equal(count(s, 'generate_lead'), 0);
   assert.doesNotMatch(JSON.stringify(emitted(s)), /private-ticket|waitlist/);
 });
 
-test('same-key retries survive reload; no requests when storage unavailable or URL unsafe', async () => {
+test('same-key retries survive reload; repeated clicks dedupe and unsafe source never renders a button', async () => {
   const s = setup(); s.load('analyze'); await s.analyze(); await s.analyze();
   assert.equal(s.requests[0].body, s.requests[1].body);
   const next = setup({ storage: s.data }); next.load('analyze'); await next.analyze();
   assert.equal(next.requests[0].body, s.requests[0].body);
   const blocked = setup({ storageBlocked: true }); blocked.load('analyze'); await blocked.analyze();
   assert.equal(blocked.requests.length, 0);
-  for (const url of ['http://www.caixa.gov.br/a.pdf', 'https://evil.example/a.pdf', 'https://u:p@www.caixa.gov.br/a.pdf', 'https://www.caixa.gov.br/a.pdf#secret']) await next.analyze(url);
-  assert.equal(next.requests.length, 1);
+  for (const source of ['http://venda-imoveis.caixa.gov.br/sistema/detalhe-imovel.asp?hdnimovel=1',
+    'https://evil.example/sistema/detalhe-imovel.asp?hdnimovel=1',
+    'https://u:p@venda-imoveis.caixa.gov.br/sistema/detalhe-imovel.asp?hdnimovel=1',
+    'https://venda-imoveis.caixa.gov.br/sistema/detalhe-imovel.asp?hdnimovel=1#secret']) {
+    const unsafe = setup({ source }); unsafe.load('analyze');
+    assert.equal(unsafe.form(), null); assert.equal(unsafe.requests.length, 0);
+  }
+  const pending = deferred();
+  const deduped = setup({ fetch: () => pending.promise }); deduped.load('analyze');
+  const first = deduped.analyze(); await until(() => deduped.requests.length === 1);
+  await deduped.analyze(); assert.equal(deduped.requests.length, 1);
+  pending.resolve(response(200, validAnalysis)); await first;
 });
 
 for (const lang of ['pt', 'en', 'ru']) test(`consent labels and no Google before acceptance: ${lang}`, async () => {
@@ -294,14 +304,15 @@ test('shared-core analysis POST works without consent; start/ok/error events are
   s.load('analytics'); s.load('analyze');
   await s.analyze();
   await until(() => s.box.querySelector('.azout').innerHTML.includes('Test result'));
-  assert.deepEqual(Object.keys(s.requests[0].json).sort(), ['id', 'idempotency_key', 'lang', 'url', 'visitor_id']);
-  assert.equal(s.requests[0].url, 'https://preco-real-analyze.preco-real.workers.dev/analyze');
+  assert.deepEqual(Object.keys(s.requests[0].json).sort(), ['id', 'idempotency_key', 'lang', 'source_url', 'visitor_id']);
+  assert.equal(s.requests[0].url, 'https://preco-real-analyze.preco-real.workers.dev/analyze/lots/034aa2e652ab4905/one-click');
   assert.equal(s.window.dataLayer, undefined);
-  s.window.ANALYTICS.setConsent('accepted');
-  await s.analyze('https://www.caixa.gov.br/another.pdf'); await until(() => emitted(s).some(e => e[1] === 'analyze_edital' && e[2].stage === 'ok'));
+  const observed = setup({ fetch: () => fail ? response(503, { error: 'private@example.org' }) : response(200, { ...validAnalysis, resumo: 'Test result' }) });
+  observed.load('analytics'); observed.window.ANALYTICS.setConsent('accepted'); observed.load('analyze');
+  await observed.analyze(); await until(() => emitted(observed).some(e => e[1] === 'analyze_edital' && e[2].stage === 'ok'));
   fail = true;
-  await s.analyze(); await until(() => emitted(s).some(e => e[1] === 'analyze_edital' && e[2].stage === 'error'));
-  assert.doesNotMatch(JSON.stringify(s.window.dataLayer.map(e => Array.from(e))), /private@|public\.pdf/);
+  await observed.analyze(); await until(() => emitted(observed).some(e => e[1] === 'analyze_edital' && e[2].stage === 'error'));
+  assert.doesNotMatch(JSON.stringify(observed.window.dataLayer.map(e => Array.from(e))), /private@|source_url/);
 });
 
 test('late form and shell navigation are observed; CTA requires visibility and counts once', () => {
