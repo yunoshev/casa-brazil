@@ -196,7 +196,8 @@ function screenHistoricalLot(r) {
   return '<div class="hero">' + back(key ? href("/a/" + encodeURIComponent(key)) : href(), key ? areaName(key) : city.nome) +
     '<h1><span class="lot-title" title="' + esc(title(r[C.end] || r[C.tipo] || t("lot.fallback"))) + '">' + esc(title(r[C.end] || r[C.tipo] || t("lot.fallback"))) + '</span></h1><p class="lede">' + lotLine(r) + '</p>' +
     lotReferenceLine(r) +
-    lotBreadcrumb(r) + '</div>' +
+    lotBreadcrumb(r) +
+    (documentReportFor(r[C.id]) ? '<p><a class="analysis-cta" href="#document-report">' + esc(t("doc.report.view")) + '</a></p>' : '') + '</div>' +
     lifecycleBanner(r) + lotGallery(r) + lotMapsBlock(r) + '<p class="foot">' + link("/archive", esc(t("archive.nav"))) + ' · ' +
     link("/all", esc(t("archive.current"))) + '</p>' + lotHistory(r) +
     documentReportSlot(r[C.id]) +
