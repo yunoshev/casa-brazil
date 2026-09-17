@@ -208,9 +208,9 @@
         }
       });
     }, { threshold: 0.1 });
-    var nodes = scope.querySelectorAll("[data-az] .cta");
+    var nodes = scope.querySelectorAll("[data-analysis-cta], [data-az] .cta");
     for (var i = 0; i < nodes.length; i++) {
-      if (nodes[i].closest(".azform")) observer.observe(nodes[i]);
+      if (nodes[i].matches("[data-analysis-cta]") || nodes[i].closest(".azform")) observer.observe(nodes[i]);
     }
   }
 

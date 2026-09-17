@@ -317,7 +317,11 @@ test('shared-core analysis POST works without consent; start/ok/error events are
 
 test('late form and shell navigation are observed; CTA requires visibility and counts once', () => {
   const s = setup(); s.load('analytics'); s.window.ANALYTICS.setConsent('accepted');
+  const hero = s.document.body.appendChild(s.document.createElement('button'));
+  hero.setAttribute('data-analysis-cta', '');
   s.load('analyze'); s.window.notifyMutation();
+  assert.equal(s.box.querySelector('.azform .cta'), null);
+  assert.equal(s.observers[0].nodes[0], hero);
   s.observers[0].show(false); assert.equal(count(s, 'analysis_cta_view'), 0);
   s.observers[0].show(); s.window.notifyMutation(); s.observers[0].show();
   assert.equal(count(s, 'analysis_cta_view'), 1);

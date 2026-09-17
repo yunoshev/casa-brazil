@@ -125,6 +125,28 @@ test('a lot gets a compact, exact-street block only after a certain address matc
   ]);
 });
 
+test('an empty exact-street result explains the state and keeps the real catalogue link', () => {
+  const c = fixture();
+  c.rows = c.rows.slice(0, 1);
+  c.lifecycle = { origin: { status: 'active', slug: 'lot-origin', last_price_brl: 99000 } };
+  const html = runtime(c).screenLot('origin');
+  assert.match(html, /This is the only lot published on this street/);
+  assert.match(html, /class="same-street-all"/);
+  assert.doesNotMatch(html, /class="row same-street-lot"/);
+});
+
+test('an empty district result is explicit when no exact street route exists', () => {
+  const c = fixture();
+  c.rows = c.rows.slice(0, 1);
+  c.rows[0][C.end] = 'Condomínio Central, 10';
+  c.streets = { by: {}, d: {} };
+  c.lifecycle = { origin: { status: 'active', slug: 'lot-origin', last_price_brl: 99000 } };
+  const html = runtime(c).screenLot('origin');
+  assert.match(html, /No other published lots are in Centro yet/);
+  assert.match(html, /class="related-empty"/);
+  assert.doesNotMatch(html, /same-street-lots/);
+});
+
 test('a gallery does not create an empty desktop sidebar on a lot route', () => {
   const ctx = runtime(fixture());
   const lotPath = ctx.href('/l/origin');

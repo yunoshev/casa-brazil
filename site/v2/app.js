@@ -8,9 +8,11 @@
  * Visible strings come through t() from i18n/<lang>.json, including SEO
  * notices and pagination. */
 
-var D = window.__D__;
+/* Generated lot pages already contain their HTML and only need gallery wiring;
+ * keep the data-dependent index harmless when that payload is absent. */
+var D = window.__D__ || { cols: [], cities: [] };
 var C = {};
-D.cols.forEach(function (c, i) { C[c] = i; });
+if (D && Array.isArray(D.cols)) D.cols.forEach(function (c, i) { C[c] = i; });
 
 var t = LANG.t, plur = LANG.plur, num = LANG.num, money = LANG.money, pct = LANG.pct;
 
@@ -1356,82 +1358,36 @@ function screenArea(key) {
     footer();
 }
 
-/* What winning actually costs. The advertised price is never the cheque: the
- * auctioneer's commission, the transfer tax and the notary follow it, and no
- * platform prints them next to its discounts.
- *
- * Every number here is a rate the reader can check, not a valuation of ours —
- * which is why this block appears even on lots where we withhold the estimate.
- * Rates are per city (municipal ITBI) and per sale form: on a leilão the 5%
- * commission is the buyer's by law and custom; on Caixa's direct-sale forms
- * there is no auctioneer to pay. Notary and registry follow state fee tables
- * that step with value; ~1.2% is the honest middle for these price ranges, and
- * the tilde is printed, not hidden. */
-var ITBI_RATE = {
-  "rio-de-janeiro-rj": 0.03,
-  "sao-goncalo-rj": 0.02,
-  "sao-paulo-sp": 0.03,
-  "fortaleza-ce": 0.03,
-  "recife-pe": 0.03,
-};
-var NOTARY_RATE = 0.012;
-
-function saleForm(r) {
-  var mod = String(r[C.mod] || "").toLowerCase();
-  if (r[C.jud]) return "judicial";
-  if (mod.indexOf("leil\u00e3o") >= 0 || mod.indexOf("leilao") >= 0) return "auction";
-  return "direct";
-}
-
-function entryCost(r) {
-  var base = r[C.preco];
-  var rate = ITBI_RATE[city.slug];
-  if (!base || !rate) return null;
-  var form = saleForm(r);
-  var fee = form === "direct" ? 0 : 0.05;
-  return { base: base, rate: rate, fee: fee, total: base * (1 + fee + rate + NOTARY_RATE) };
-}
-
-function entryCard(r) {
-  var cost = entryCost(r);
-  if (!cost) return "";
-  var base = cost.base, rate = cost.rate, fee = cost.fee, form = saleForm(r);
-  var rows = [
-    ["entry.bid", base, null],
-    ["entry.fee", base * fee, fee ? "5%" : null],
-    ["entry.itbi", base * rate, Math.round(rate * 100) + "%"],
-    ["entry.notary", base * NOTARY_RATE, "~1,2%"],
-  ];
-  var total = cost.total;
-  return '<section class="mkt"><div class="sechead"><h2>' + t("entry.h2") +
-      '</h2><span class="n">' + t("entry.head") + "</span></div>" +
-    '<div class="mrow">' +
-      rows.map(function (x) {
-        if (!x[1]) return "";
-        return '<div class="erow"><span class="el">' + t(x[0]) +
-          (x[2] ? ' <em class="ep">' + x[2] + "</em>" : "") + "</span>" +
-          '<span class="ev">' + money(Math.round(x[1])) + "</span></div>";
-      }).join("") +
-      '<div class="erow tot"><span class="el">' + t("entry.total") + "</span>" +
-        '<span class="ev">' + money(Math.round(total)) +
-        ' <em class="ep">+' + Math.round(100 * (total / base - 1)) + "%</em></span></div>" +
-    "</div>" +
-    '<p class="foot">' + t(fee ? "entry.note" : "entry.note.direct") +
-      (form === "auction" ? " " + t("entry.note.extrajud") : "") + "</p></section>";
-}
-
 function heroFinance(r, vd) {
-  var cost = entryCost(r);
+  var own = reliable(r);
   var context = r[C.promised] != null ? pct(-Math.abs(r[C.promised]), false) : vd ? t(vd[2]) : "—";
   var facts = [
     [t("lot.price.open"), r[C.preco] ? money(r[C.preco]) : "—"],
     [t("lot.price.aval"), r[C.aval] ? money(r[C.aval]) : "—"],
-    [t("entry.total"), cost ? money(Math.round(cost.total)) : "—"],
+    [t("lot.price.hammer"), own && r[C.hammer] ? money(r[C.hammer]) : "—"],
     [t("lot.hero.context"), context],
   ];
   return '<dl class="hero-finance">' + facts.map(function (item) {
     return '<div><dt>' + esc(item[0]) + '</dt><dd>' + esc(item[1]) + '</dd></div>';
   }).join("") + "</dl>";
+}
+
+/* ITBI is a district-level record of completed deeds, not a price for this
+ * individual lot. Keep that evidence separate from both the auction facts and
+ * the listing-based market report, and omit it entirely when the district has
+ * no verified register sample. */
+function lotTransactionSummary(r) {
+  var key = areaOf(r), mk = city.market || {}, district = key && mk.d ? mk.d[key] : null;
+  if (!district || !/^\d{4}$/.test(String(mk.year || ""))) return "";
+  var type = String(r[C.tipo] || "").toLowerCase();
+  var kind = /casa|sobrado|terreno/.test(type) ? "h" : /apart|flat/.test(type) ? "f" : "r";
+  var value = district[kind] || district.r || district.f || district.h;
+  if (!Array.isArray(value) || value.length < 2 || !priceKnown(value[0]) || !value[1]) return "";
+  return '<aside class="hero-transactions" aria-label="' + esc(t("mkt.h2")) + '"><span>' +
+    esc(t("mkt.h2")) + '</span><b>' + esc(money(value[0])) + " " + esc(t("mkt.per")) +
+    '</b><small>' + esc(areaName(key)) + " · " + esc(t("mkt.kind." + kind)) + " · " +
+    esc(t("mkt.deals", { n: num(value[1]) })) + " · " +
+    esc(t("mkt.year", { year: mk.year })) + "</small></aside>";
 }
 
 /* The lot's own headline, assembled from what the registry actually knows:
@@ -1547,7 +1503,16 @@ function buildRelatedGroups() {
 }
 function relatedLots(r) {
   var rows = relatedCandidates[String(r[C.id])] || [];
-  if (!rows.length) return "";
+  var place = relatedPlace(r);
+  if (!rows.length) {
+    /* If the exact street is known, its empty state owns the explanation and
+     * the link to the street catalogue. Otherwise a valid district route is
+     * still useful navigation even when this is the only lot there. */
+    if (place.street || !place.area || !slugToKey.rev[place.area]) return "";
+    return '<section class="sec related-lots" aria-labelledby="related-lots-title">' +
+      '<div class="sechead"><h2 id="related-lots-title">' + esc(t("related.title")) + '</h2></div>' +
+      '<p class="related-empty">' + esc(t("related.empty", { area: areaName(place.area) })) + "</p></section>";
+  }
   return '<section class="sec related-lots" aria-labelledby="related-lots-title">' +
     '<div class="sechead"><h2 id="related-lots-title">' + esc(t("related.title")) + '</h2></div>' +
     '<div class="rowlist">' + rows.map(function (item) {
@@ -1581,13 +1546,12 @@ function sameStreetLots(r) {
   var rows = (relatedGroups.street[code] || []).filter(function (candidate) {
     return String(candidate[C.id]) !== String(r[C.id]);
   }).slice(0, SAME_STREET_LOT_LIMIT);
-  if (!rows.length) return "";
   var street = city.streets.d[code];
   return '<section class="sec same-street-lots" aria-labelledby="same-street-lots-title">' +
     '<div class="sechead"><h2 id="same-street-lots-title">' + esc(t("same.street.title")) +
       '</h2><a class="same-street-all" href="' + esc(href("/r/" + encodeURIComponent(code))) + '">' +
       esc(t("same.street.all", { street: title(street.name), count: num((lotsByStreet[code] || []).length) })) +
-      '</a></div><div class="rowlist">' + rows.map(function (candidate) {
+      '</a></div>' + (rows.length ? '<div class="rowlist">' + rows.map(function (candidate) {
         var historical = !isCurrent(candidate), price = relatedPrice(candidate);
         var facts = [price, candidate[C.area] ? candidate[C.area] + " " + t("unit.m2") : null].filter(Boolean);
         return '<a class="row same-street-lot" href="' + esc(href("/l/" + encodeURIComponent(candidate[C.id]))) + '">' +
@@ -1596,7 +1560,7 @@ function sameStreetLots(r) {
             esc(t(historical ? "related.archive" : "related.current")) + '</span></div>' +
           (facts.length ? '<div class="sub related-facts">' + esc(facts.join(" · ")) + '</div>' : "") +
         '</a>';
-      }).join("") + '</div></section>';
+      }).join("") + '</div>' : '<p class="related-empty">' + esc(t("same.street.empty")) + '</p>') + '</section>';
 }
 
 /* `i` arrives free from every call site's .map(lotRow). It decides one thing:
@@ -1675,6 +1639,10 @@ var CONTEXT_RING_M = 5000;
 /* What a property in this district usually is, so "no estimate" still leaves
  * the reader with a yardstick. Asking prices, and the sentence says so. */
 function askingHint(r) {
+  /* A lot with a validated market-v1 report already has a separate asking
+   * range below. Do not place the older district-average hint beside it: that
+   * would make two different samples look like one estimate. */
+  if (marketReportFor(r[C.id])) return "";
   var by = city.asking_by_district || {};
   var d = by[areaOf(r) || ""] || by[normKey(r[C.bairro])];
   if (d) {
@@ -1724,34 +1692,40 @@ function whyBlock(r) {
 /* Market reports are a separate, already-validated public payload. The AI
  * placeholder below remains owned by analyze.js; this renderer only adds the
  * synchronous human-readable market facts when the build embedded one. */
+function marketReportFor(id) {
+  var reports = D && D.market_reports;
+  return reports && typeof reports === "object" ? reports[String(id)] : null;
+}
+
 function marketHeroSummary(id) {
-  var reports = D.market_reports;
-  var report = reports && typeof reports === "object" ? reports[String(id)] : null;
+  var report = marketReportFor(id);
   var asking = report && report.sale_asking;
   var sample = report && report.sample;
   if (!asking || !sample || !Number.isFinite(asking.min) || !Number.isFinite(asking.max) ||
       !Number.isInteger(sample.count) || sample.count < 5) return "";
   var confidence = "market.confidence." + String(sample.confidence || "low");
-  return '<aside class="hero-market" aria-label="' + esc(t("market.title")) + '"><span>' +
-    esc(t("market.title")) + '</span><b>' + esc(money(asking.min)) + " – " + esc(money(asking.max)) +
+  return '<aside class="hero-market" aria-label="' + esc(t("market.sale_asking")) + '"><span>' +
+    esc(t("market.sale_asking")) + '</span><b>' + esc(money(asking.min)) + " – " + esc(money(asking.max)) +
     '</b><small>' + esc(t("market.sample", { count: sample.count })) + " · " +
-    esc(t("market.confidence", { level: t(confidence) })) + "</small></aside>";
+    esc(t("market.radius", { radius: sample.radius_m })) + " · " +
+    esc(t("market.freshness", { days: sample.freshness_days })) + " · " +
+    esc(t("market.confidence", { level: t(confidence) })) + '</small><p class="hero-market-note">' +
+    esc(t("market.disclaimer.truth")) + "</p></aside>";
 }
 
 function marketReportBlock(id) {
-  var reports = D.market_reports;
-  if (!reports || typeof reports !== "object" ||
-      !Object.prototype.hasOwnProperty.call(reports, String(id)) ||
+  var report = marketReportFor(id);
+  if (!report ||
       !window.MARKET || typeof window.MARKET.renderReport !== "function" ||
       typeof document === "undefined") return "";
-  var rendered = window.MARKET.renderReport(reports[String(id)], document);
+  var rendered = window.MARKET.renderReport(report, document);
   return rendered && typeof rendered.outerHTML === "string" ? rendered.outerHTML : "";
 }
 
 /* A count of qualified lot reports is useful navigation context.  It is not
  * an area/street valuation and never combines individual price ranges. */
 function marketAvailabilityCount(rows) {
-  var reports = D.market_reports;
+  var reports = D && D.market_reports;
   if (!reports || typeof reports !== "object" || !Array.isArray(rows)) return 0;
   var seen = {}, count = 0;
   rows.forEach(function (row) {
@@ -1783,9 +1757,9 @@ function lotBreadcrumb(r) {
   return '<nav class="lot-breadcrumb" aria-label="' + esc(t("lot.breadcrumb")) + '">' + bits.join(" · ") + "</nav>";
 }
 
-/* Static lot pages do not load the application runtime, so the configured
- * public Embed key is rendered directly into the prerendered map iframe.
- * The ordinary Maps link remains available when no key is configured. */
+/* Generated lot pages render the configured public Embed key directly into the
+ * prerendered map iframe. The ordinary Maps link remains available when no key
+ * is configured; the static app runtime never revisits this block. */
 function lotMapQuery(r) {
   var address = String(r[C.end] || "").replace(/\s+/g, " ").trim();
   if (!address) return "";
@@ -1854,6 +1828,7 @@ function screenLot(id) {
       '<p class="note">' + esc(auctionNote(r)) + "</p></div>" +
     heroFinance(r, vd) +
     marketHeroSummary(r[C.id]) +
+    lotTransactionSummary(r) +
     '<div class="hero-actions">' +
       (r[C.src] === "caixa" ? '<button type="button" class="analysis-cta" data-analysis-cta>' +
         esc(t("lot.ai.cta", null, "Analyze with AI")) + "</button>" : "") +
@@ -1918,7 +1893,7 @@ function screenLot(id) {
 
     '<div class="lot-wide">' +
       '<section class="mkt" data-lot-report="' + esc(r[C.id]) + '"></section>' +
-      marketReportBlock(r[C.id]) + entryCard(r) +
+      marketReportBlock(r[C.id]) +
 
       // Caixa publishes an edital PDF for every sale; the worker only trusts
       // Caixa's own domains, so the reader pastes that link and gets the
@@ -2481,6 +2456,8 @@ function render() {
 function wireGallery(root) {
   var gallery = root && root.querySelector ? root.querySelector("[data-gallery]") : null;
   if (!gallery) return;
+  if (gallery.getAttribute("data-gallery-wired") === "true") return;
+  gallery.setAttribute("data-gallery-wired", "true");
   var hero = gallery.querySelector("[data-gallery-hero]");
   var open = gallery.querySelector("[data-gallery-open]");
   var lightbox = gallery.querySelector("[data-gallery-lightbox]");
@@ -2632,12 +2609,20 @@ function askNear() {
 
 /* ---- boot ------------------------------------------------------ */
 
-var saved = null;
-try { saved = localStorage.getItem("city"); } catch (e) { /* private mode */ }
-indexCity(D.cities.filter(function (c) { return c.slug === saved; })[0] || guessCity());
-paintPick();
+if (window.__D__ && Array.isArray(D.cities)) {
+  var saved = null;
+  try { saved = localStorage.getItem("city"); } catch (e) { /* private mode */ }
+  indexCity(D.cities.filter(function (c) { return c.slug === saved; })[0] || guessCity());
+  paintPick();
 
-// No client-side router: every link is a real URL and every URL is a real
-// file. The brand is an anchor like any other.
-document.querySelector(".brand").setAttribute("href", "/");
-render();
+  // No client-side router: every link is a real URL and every URL is a real
+  // file. The brand is an anchor like any other.
+  var brand = document.querySelector(".brand");
+  if (brand) brand.setAttribute("href", "/");
+  render();
+} else {
+  /* Generated pages already contain their body and their SSR map iframe. The
+   * static runtime only attaches gallery behavior; it never re-renders the
+   * page or touches map/network state. */
+  wireGallery(document);
+}

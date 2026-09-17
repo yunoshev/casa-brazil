@@ -246,6 +246,7 @@ svg.map.shapes{max-height:62vh}
 .related-lot .related-facts{font-variant-numeric:tabular-nums}
 .related-trail{color:var(--ink3); font-size:12px; margin-top:7px; overflow-wrap:anywhere}
 .related-trail a{color:var(--ink2)}
+.related-empty{margin:0; color:var(--ink2); font-size:14px; line-height:1.45}
 .same-street-lots{border-top:1px solid var(--line); padding-top:18px}
 .same-street-lot .nm{font-family:var(--display); font-weight:700}
 .same-street-all{margin-left:auto; color:var(--ink2); font-size:13px; font-weight:600; text-decoration-thickness:1px; text-underline-offset:3px}
@@ -469,6 +470,11 @@ svg.map.shapes{max-height:62vh}
 .hero-market span{font:600 10px/1.2 var(--label); color:var(--ink3); text-transform:uppercase; letter-spacing:.07em}
 .hero-market b{font:800 17px/1.1 var(--display); letter-spacing:-.025em; font-variant-numeric:tabular-nums}
 .hero-market small{color:var(--ink2); font-size:12px}
+.hero-market-note{flex-basis:100%; margin:3px 0 0; color:var(--ink3); font-size:12px; line-height:1.4}
+.hero-transactions{display:flex; flex-wrap:wrap; align-items:baseline; gap:5px 10px; margin-top:10px; padding:10px 11px; border:1px solid var(--line); border-radius:12px; background:var(--card)}
+.hero-transactions span{font:600 10px/1.2 var(--label); color:var(--ink3); text-transform:uppercase; letter-spacing:.07em}
+.hero-transactions b{font:800 17px/1.1 var(--display); letter-spacing:-.025em; font-variant-numeric:tabular-nums}
+.hero-transactions small{flex-basis:100%; color:var(--ink2); font-size:12px}
 .hero-actions{display:flex; flex-wrap:wrap; align-items:center; gap:10px; margin-top:12px}
 .analysis-cta{display:flex; align-items:center; justify-content:center; width:100%; min-height:52px; margin-top:12px; border:0; border-radius:14px; background:var(--ink); color:var(--paper); font:700 17px/1.2 var(--display); cursor:pointer}
 .analysis-cta:hover,.analysis-cta:focus-visible{outline:3px solid var(--mark); outline-offset:3px}

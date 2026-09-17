@@ -92,6 +92,7 @@ ASSETS = (
     "parts/analyze.js",
     "parts/analytics.js",
     "parts/market.js",
+    "v2/app.js",
     "data/market_reports.json",
 )
 
@@ -378,20 +379,29 @@ def esc_attr(s: str) -> str:
 #: without the theme keys the regex has stopped matching, and the build says so
 #: instead of shipping pages whose only visible string is a key name.
 KEY_RE = re.compile(r"""["']([a-z][a-z0-9_]*(?:\.[a-z0-9_]+)+)["']""")
+# `plur()` receives a translation-key base and resolves the locale-specific
+# `.one`, `.few`, `.many`, or `.other` key at runtime. Those bases are not
+# catalogue entries themselves, so do not make the static key audit reject a
+# shipped runtime merely because app.js contains a pluralized label.
+PLURAL_CALL_RE = re.compile(r"\bplur\([^;\n]{0,160}")
 KEY_CANARY = "nav.theme"
 
 
 def runtime_keys() -> set[str]:
     keys: set[str] = set()
+    plural_bases: set[str] = set()
     for rel in ASSETS:
         if rel.endswith(".js"):
-            keys |= set(KEY_RE.findall((SITE / rel).read_text()))
+            source = (SITE / rel).read_text()
+            keys |= set(KEY_RE.findall(source))
+            for call in PLURAL_CALL_RE.findall(source):
+                plural_bases |= set(KEY_RE.findall(call))
     if KEY_CANARY not in keys:
         raise SystemExit(
             f"в parts/*.js не нашлось даже {KEY_CANARY!r} — разбор ключей сломан, "
             f"страницы уехали бы с именами ключей вместо слов"
         )
-    return keys
+    return keys - plural_bases
 
 
 #: Written into every output directory this script creates. `--out` is emptied
