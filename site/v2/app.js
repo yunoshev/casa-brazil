@@ -1764,6 +1764,7 @@ function documentReportSlot(id) {
   if (!report) return '<section class="mkt" data-lot-report="' + esc(id) + '"></section>';
   function list(items) { return '<ul>' + items.map(function (item) { return '<li>' + esc(item) + '</li>'; }).join('') + '</ul>'; }
   return '<section class="mkt document-report" id="document-report" data-saved-document-report="' + esc(id) + '" aria-labelledby="document-report-title">' +
+    '<details data-document-report-disclosure><summary class="analysis-cta">' + esc(t("doc.report.view")) + '</summary>' +
     '<div data-document-report-text lang="pt"><h2 id="document-report-title" tabindex="-1">' + esc(t("doc.report.title")) + '</h2>' +
     '<p class="note">' + esc(t("doc.report.source")) + '</p>' +
     '<p class="foot">' + esc(t("doc.report.dates", { document: report.document_date, capture: report.captured_at.slice(0, 10) })) + '</p>' +
@@ -1777,12 +1778,18 @@ function documentReportSlot(id) {
     '<p><a href="' + esc(report.source_url) + '" target="_blank" rel="noopener noreferrer">' + esc(t("doc.report.original")) + '</a></p></div>' +
     '<button type="button" class="analysis-cta" data-copy-document-report>' + esc(t("doc.report.copy")) + '</button>' +
     '<p role="status" aria-live="polite" data-document-copy-status></p>' +
-    '<textarea hidden readonly data-document-copy-fallback aria-label="' + esc(t("doc.report.manual")) + '"></textarea></section>';
+    '<textarea hidden readonly data-document-copy-fallback aria-label="' + esc(t("doc.report.manual")) + '"></textarea></details></section>';
 }
 
 function wireDocumentReport(root) {
   var section = root.querySelector("[data-saved-document-report]");
   if (!section) return;
+  var disclosure = section.querySelector('[data-document-report-disclosure]');
+  root.querySelectorAll('a[href="#document-report"]').forEach(function (link) {
+    if (link.getAttribute('data-report-open-wired')) return;
+    link.setAttribute('data-report-open-wired', '1');
+    link.addEventListener('click', function () { if (disclosure) disclosure.open = true; });
+  });
   var button = section.querySelector("[data-copy-document-report]");
   if (!button || button.getAttribute("data-copy-wired")) return;
   button.setAttribute("data-copy-wired", "1");

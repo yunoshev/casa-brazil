@@ -1,4 +1,7 @@
 .document-report { scroll-margin-top: 6rem; }
+.document-report summary { cursor: pointer; width: fit-content; max-width: 100%; }
+.document-report summary:focus-visible { outline: 3px solid currentColor; outline-offset: 4px; }
+.document-report details[open] > summary { margin-bottom: 1.5rem; }
 .document-report article { margin: 1.25rem 0; }
 .document-report blockquote { margin: .5rem 0; padding-left: 1rem; border-left: 3px solid currentColor; }
 .document-report li { margin-bottom: .6rem; }

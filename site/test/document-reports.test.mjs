@@ -29,14 +29,28 @@ function runtime(clipboard) {
   return page;
 }
 
-test('reviewed report is visible HTML, cited, and does not create an API analysis box', () => {
+test('reviewed report is complete HTML inside a closed native disclosure, without API analysis', () => {
   const p = runtime({ writeText: async () => {} });
   const html = p.ctx.documentReportSlot(id);
   assert.match(html, /HIS-2/);
+  assert.match(html, /<details data-document-report-disclosure><summary/);
+  assert.doesNotMatch(html, /<details[^>]*\bopen\b/);
   assert.match(html, /não do PDF original/);
   assert.match(html, /Fonte: página 3/);
   assert.doesNotMatch(html, /data-lot-report=|data-az=/);
   assert.match(p.ctx.documentReportSlot('unknown'), /data-lot-report="unknown"/);
+});
+
+test('hero link reveals saved report without another AI request', async () => {
+  const p = runtime({ writeText: async () => {} });
+  const link = p.document.createElement('a');
+  link.setAttribute('href', '#document-report');
+  p.document.body.appendChild(link);
+  const selectAll = p.document.querySelectorAll.bind(p.document);
+  p.document.querySelectorAll = selector => selector === 'a[href="#document-report"]' ? [link] : selectAll(selector);
+  p.ctx.wireDocumentReport(p.document);
+  await link.emit('click');
+  assert.equal(p.document.querySelector('[data-document-report-disclosure]').open, true);
 });
 
 test('copy includes limitations and clean canonical once, and wiring is idempotent', async () => {
