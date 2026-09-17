@@ -134,6 +134,16 @@ class LotMediaBuildTest(unittest.TestCase):
         )
         site = self.root / "site" / "v2"
         site.mkdir(parents=True)
+        real_public_market_reports = BUILD.PUBLIC_MARKET_REPORTS
+        real_market_before = (
+            real_public_market_reports.read_bytes()
+            if real_public_market_reports.exists()
+            else None
+        )
+        public_market_reports = self.root / "site" / "data" / "market_reports.json"
+        public_market_reports.parent.mkdir(parents=True)
+        market_sentinel = b"lifecycle-bound-market-sentinel\n"
+        public_market_reports.write_bytes(market_sentinel)
         (site / "index.tpl.html").write_text(
             "<script>window.__D__ = __PAYLOAD__;</script>__I18N_DATA____COUNTERS____TITLE____DESC__",
             encoding="utf-8",
@@ -156,6 +166,7 @@ class LotMediaBuildTest(unittest.TestCase):
         ]
         with (
             mock.patch.object(BUILD, "SITE", site),
+            mock.patch.object(BUILD, "PUBLIC_MARKET_REPORTS", public_market_reports),
             mock.patch.object(BUILD, "build_city", return_value=built_city),
             mock.patch.object(BUILD, "save_shape_cache"),
             mock.patch.object(BUILD.classic, "load_catalogues", return_value=catalogues),
@@ -165,11 +176,22 @@ class LotMediaBuildTest(unittest.TestCase):
             with mock.patch("sys.argv", ["proto_build.py", *argv]):
                 BUILD.main()
             first = (site / "index.html").read_text(encoding="utf-8")
+            first_market = public_market_reports.read_bytes()
             with mock.patch("sys.argv", ["proto_build.py", *argv]):
                 BUILD.main()
             second = (site / "index.html").read_text(encoding="utf-8")
+            second_market = public_market_reports.read_bytes()
 
         self.assertEqual(first, second)
+        self.assertNotEqual(first_market, market_sentinel)
+        self.assertEqual(first_market, second_market)
+        generated_market = json.loads(first_market)
+        self.assertEqual(generated_market["schema"], "brazil-market-reports-public-v1")
+        self.assertEqual(generated_market["reports"], [])
+        if real_market_before is None:
+            self.assertFalse(real_public_market_reports.exists())
+        else:
+            self.assertEqual(real_public_market_reports.read_bytes(), real_market_before)
         payload_match = re.search(r"window\.__D__ = (.+?)</script>", first)
         self.assertIsNotNone(payload_match)
         payload = json.loads(payload_match.group(1).rstrip(";"))
