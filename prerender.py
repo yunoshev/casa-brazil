@@ -473,6 +473,15 @@ async def run(a, ws_url: str, tpl: str, out: Path) -> None:
         async with websockets.connect(ws_url, max_size=64_000_000) as ws:
             tab = Tab(ws)
             await tab.send("Page.enable")
+            # The rendered HTML intentionally contains lazy Google Maps
+            # iframes for readers. Block their network requests only in this
+            # build-time Chrome session: the final HTML still keeps the iframe
+            # and visitors load it normally in their own browser.
+            await tab.send("Network.enable")
+            await tab.send(
+                "Network.setBlockedURLs",
+                urls=["https://www.google.com/maps/embed/*"],
+            )
             # Straight at the shell, never at "/": the root still belongs to
             # the front end this one replaces, and a build that silently
             # rendered the old page would be very hard to notice.

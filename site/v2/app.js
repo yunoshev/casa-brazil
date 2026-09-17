@@ -1783,9 +1783,9 @@ function lotBreadcrumb(r) {
   return '<nav class="lot-breadcrumb" aria-label="' + esc(t("lot.breadcrumb")) + '">' + bits.join(" · ") + "</nav>";
 }
 
-/* Map access stays user-initiated. The normal link is always useful and sends
- * nothing to Google until it is followed. A configured public Embed API key
- * adds a second explicit choice; its iframe is created only after that click. */
+/* Static lot pages do not load the application runtime, so the configured
+ * public Embed key is rendered directly into the prerendered map iframe.
+ * The ordinary Maps link remains available when no key is configured. */
 function lotMapQuery(r) {
   var address = String(r[C.end] || "").replace(/\s+/g, " ").trim();
   if (!address) return "";
@@ -1806,11 +1806,13 @@ function lotMapsLink(r) {
 function lotMapsBlock(r) {
   var query = lotMapQuery(r);
   if (!query) return "";
-  var button = mapsEmbedKey() ? '<button type="button" class="map-embed-button" data-lot-map-load>' +
-    esc(t("lot.maps.embed.button")) + "</button>" : "";
-  return '<section class="lot-map" data-lot-map data-map-query="' + esc(query) + '">' +
+  var key = mapsEmbedKey();
+  var iframe = key ? '<div class="lot-map-frame"><iframe src="https://www.google.com/maps/embed/v1/place?key=' +
+    esc(encodeURIComponent(key)) + '&amp;q=' + esc(encodeURIComponent(query)) + '" title="' +
+    esc(t("lot.maps.embed.title")) + '" loading="lazy" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe></div>' : "";
+  return '<section class="lot-map">' +
     '<h2>' + esc(t("lot.maps.heading")) + '</h2><div class="lot-map-actions">' +
-    lotMapsLink(r) + button + '</div><div class="lot-map-frame" data-lot-map-frame></div></section>';
+    lotMapsLink(r) + '</div>' + iframe + '</section>';
 }
 
 function screenLot(id) {
@@ -2584,30 +2586,6 @@ function wireGallery(root) {
   select(0, false);
 }
 
-function wireLotMap(root) {
-  var block = root && root.querySelector ? root.querySelector("[data-lot-map]") : null;
-  if (!block) return;
-  var button = block.querySelector("[data-lot-map-load]");
-  var frame = block.querySelector("[data-lot-map-frame]");
-  if (!button || !frame) return;
-  button.addEventListener("click", function () {
-    if (frame.querySelector("iframe")) return;
-    var key = mapsEmbedKey();
-    var query = block.getAttribute("data-map-query") || "";
-    if (!key || !query) return;
-    var iframe = document.createElement("iframe");
-    iframe.setAttribute("src", "https://www.google.com/maps/embed/v1/place?key=" +
-      encodeURIComponent(key) + "&q=" + encodeURIComponent(query));
-    iframe.setAttribute("title", t("lot.maps.embed.title"));
-    iframe.setAttribute("loading", "lazy");
-    iframe.setAttribute("referrerpolicy", "strict-origin-when-cross-origin");
-    iframe.setAttribute("allowfullscreen", "");
-    frame.appendChild(iframe);
-    button.disabled = true;
-    button.hidden = true;
-  });
-}
-
 function wire() {
   if (window.ANALYZE) window.ANALYZE.wire();
   var near = $("near");
@@ -2615,7 +2593,6 @@ function wire() {
   wireCity($("view"));
   wireAnalysisCTA($("view"));
   wireGallery($("view"));
-  wireLotMap($("view"));
 }
 
 function wireAnalysisCTA(root) {

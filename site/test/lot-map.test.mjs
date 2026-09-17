@@ -46,49 +46,19 @@ test('keeps the safe external Maps link and omits embed UI without a valid key',
   }
 });
 
-test('creates one lazy embed iframe only after the user clicks', () => {
-  const { ctx, created } = runtime({ key: 'AIza_safe-key_123' });
+test('ships one lazy embed iframe in the prerendered lot page when a valid key is configured', () => {
+  const { ctx } = runtime({ key: 'AIza_safe-key_123' });
   const html = ctx.screenLot('lot-1');
-  assert.match(html, /data-lot-map-load/);
-  assert.doesNotMatch(html, /maps\/embed\/v1\/place/);
-
-  const listeners = {};
-  const button = { disabled: false, hidden: false, addEventListener(name, fn) { listeners[name] = fn; } };
-  const children = [];
-  const frame = { querySelector(selector) { return selector === 'iframe' ? children[0] || null : null; },
-    appendChild(child) { children.push(child); } };
-  const block = { getAttribute(name) { return name === 'data-map-query' ? 'Rua Principal, 10, Rio de Janeiro, RJ, Brasil' : null; },
-    querySelector(selector) { return selector === '[data-lot-map-load]' ? button : frame; } };
-  const root = { querySelector() { return block; } };
-  ctx.wireLotMap(root);
-  assert.equal(created.length, 0);
-  listeners.click();
-  listeners.click();
-  assert.equal(created.length, 1);
-  assert.equal(children.length, 1);
-  assert.equal(created[0].attrs.src,
-    'https://www.google.com/maps/embed/v1/place?key=AIza_safe-key_123&q=Rua%20Principal%2C%2010%2C%20Rio%20de%20Janeiro%2C%20RJ%2C%20Brasil');
-  assert.equal(created[0].attrs.loading, 'lazy');
-  assert.equal(created[0].attrs.referrerpolicy, 'strict-origin-when-cross-origin');
-  assert.equal(created[0].attrs.title, 'Map of the property address');
+  assert.doesNotMatch(html, /data-lot-map-load|map-embed-button/);
+  assert.match(html, /<iframe src="https:\/\/www\.google\.com\/maps\/embed\/v1\/place\?key=AIza_safe-key_123&amp;q=Rua%20Principal%2C%2010%2C%20Rio%20de%20Janeiro%2C%20RJ%2C%20Brasil"/);
+  assert.match(html, /title="Map of the property address" loading="lazy" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen/);
 });
 
 test('normalizes and encodes the exact lot address without allowing markup injection', () => {
-  const { ctx, created } = runtime({ key: 'safe_key', address: ' Rua <img src=x onerror=alert(1)>   7 & 9 ' });
+  const { ctx } = runtime({ key: 'safe_key', address: ' Rua <img src=x onerror=alert(1)>   7 & 9 ' });
   const html = ctx.screenLot('lot-1');
   assert.doesNotMatch(html, /<img src=x/);
-  assert.match(html, /data-map-query="Rua &lt;img src=x onerror=alert\(1\)&gt; 7 &amp; 9, Rio de Janeiro, RJ, Brasil"/);
+  assert.doesNotMatch(html, /data-lot-map|data-lot-map-load/);
   assert.match(html, /query=Rua%20%3Cimg%20src%3Dx%20onerror%3Dalert\(1\)%3E%207%20%26%209%2C%20Rio%20de%20Janeiro%2C%20RJ%2C%20Brasil/);
-
-  const listeners = {}, children = [];
-  const button = { addEventListener(name, fn) { listeners[name] = fn; } };
-  const frame = { querySelector() { return children[0] || null; }, appendChild(child) { children.push(child); } };
-  const raw = 'Rua <img src=x onerror=alert(1)> 7 & 9, Rio de Janeiro, RJ, Brasil';
-  const block = { getAttribute() { return raw; },
-    querySelector(selector) { return selector === '[data-lot-map-load]' ? button : frame; } };
-  ctx.wireLotMap({ querySelector() { return block; } });
-  listeners.click();
-  assert.equal(created[0].attrs.src,
-    'https://www.google.com/maps/embed/v1/place?key=safe_key&q=' + encodeURIComponent(raw));
-  assert.doesNotMatch(created[0].attrs.src, /<|>|\s/);
+  assert.match(html, /maps\/embed\/v1\/place\?key=safe_key&amp;q=Rua%20%3Cimg%20src%3Dx%20onerror%3Dalert\(1\)%3E%207%20%26%209/);
 });
