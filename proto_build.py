@@ -41,7 +41,7 @@ import build as classic
 import shapes
 from market_release import compact_json as market_compact_json
 from market_release import lifecycle_binding, public_artifact
-from public_config import snippet
+from public_config import analysis_script_src, snippet
 from release_check import validate_release_site_url
 from release_promotion import (
     MANIFEST_NAME,
@@ -1023,6 +1023,7 @@ def main() -> None:
         # crawler that runs no JS has to find something better than a marker.
         .replace("__TITLE__", ref["meta.title"])
         .replace("__DESC__", ref["meta.desc"])
+        .replace('src="/parts/analyze.js"', f'src="{analysis_script_src()}"')
     )
     (SITE / "index.html").write_text(out)
     if strict_release:

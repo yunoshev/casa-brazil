@@ -42,6 +42,9 @@ test('offline browser one-click -> Worker HMAC -> mock core -> bounded poll -> g
         ...(request.body ? { body: request.body } : {}) }), env);
     } });
     site.load('analyze');
+    assert.equal(site.box.querySelectorAll('button').length, 1);
+    assert.equal(site.box.querySelector('button').textContent, 'Analisar com IA');
+    assert.equal(site.box.querySelectorAll('input').length, 0);
     const task = site.analyze();
     await until(() => coreCalls.length === 1);
     assert.equal(coreCalls[0].path, '/api/brazil-analysis/lots/' + id);

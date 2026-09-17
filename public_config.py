@@ -6,15 +6,24 @@ Sender credentials and the task processing/email workers are not implemented.
 
 from __future__ import annotations
 
+import hashlib
 import html
 import json
 import os
 import re
+from pathlib import Path
 from urllib.parse import urlsplit
 
 from seo import validate_site_url
 
 DEFAULT_API = "https://preco-real-analyze.preco-real.workers.dev"
+
+
+def analysis_script_src() -> str:
+    """Cache-bust the analysis controller with its published bytes."""
+    path = Path(__file__).parent / "site" / "parts" / "analyze.js"
+    digest = hashlib.sha256(path.read_bytes()).hexdigest()[:12]
+    return f"/parts/analyze.js?v={digest}"
 
 
 def settings(site: str, env=None) -> dict:

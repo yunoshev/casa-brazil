@@ -5,6 +5,7 @@ than rewriting CSS URLs.  This check protects that replacement contract and
 the publisher boundary from silently losing a cacheable asset.
 """
 
+import hashlib
 import importlib.util
 import sys
 import unittest
@@ -36,6 +37,22 @@ class AssetVersioningTests(unittest.TestCase):
         self.assertIsInstance(PRERENDER.ASSETS, tuple)
         source = (ROOT / "prerender.py").read_text(encoding="utf-8")
         self.assertIn("ASSETS = (", source)
+
+    def test_generated_lot_shell_uses_only_content_versioned_analysis_controller(self):
+        digest = hashlib.sha256((ROOT / "site/parts/analyze.js").read_bytes()).hexdigest()[:12]
+        template = (ROOT / "site/v2/page.tpl.html").read_text(encoding="utf-8")
+        html = PRERENDER.shell(
+            template,
+            head={"title": "Lot", "desc": "Lot", "canonical": "https://example.test/lot/"},
+            body="",
+            split=False,
+            lot=True,
+            ld=[],
+            chrome={"i18n": {}, "cities": [], "here": {}},
+        )
+        expected = f'src="/parts/analyze.js?v={digest}"'
+        self.assertEqual(html.count(expected), 1)
+        self.assertNotIn('src="/parts/analyze.js"', html)
 
 
 if __name__ == "__main__":
