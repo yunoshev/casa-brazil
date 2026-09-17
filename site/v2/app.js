@@ -703,6 +703,55 @@ function areaStat(key) {
   };
 }
 
+/* Inventory context is deliberately separate from the deed statistics above.
+ * It counts the unique catalogue records that this route can actually link to
+ * and calls the observed opening bid what it is.  It never combines market
+ * report ranges or turns an unverified row into a confirmed offer. */
+function inventoryDate(rows) {
+  var generated = archiveDate(D && D.generated);
+  if (generated) return { key: "inventory.date.dataset", date: generated.slice(0, 10) };
+  var dates = uniqueRows(rows).map(function (r) {
+    var lc = lifecycle(r);
+    return archiveDate(lc.last_checked_at || lc.last_seen_at);
+  }).filter(Boolean).sort();
+  return dates.length ? { key: "inventory.date.checked", date: dates[dates.length - 1].slice(0, 10) } : null;
+}
+
+function uniqueRows(rows) {
+  var seen = {};
+  return (Array.isArray(rows) ? rows : []).filter(function (r, i) {
+    if (!r) return false;
+    var id = String(r[C.id] == null ? "" : r[C.id]).trim() || "@" + i;
+    if (seen[id]) return false;
+    seen[id] = true;
+    return true;
+  });
+}
+
+function inventorySummary(rows, anchors) {
+  var all = uniqueRows(rows), current = all.filter(isCurrent), archived = all.filter(function (r) { return !isCurrent(r); });
+  var unverified = current.filter(function (r) { return lotStatus(r) === "unverified"; }).length;
+  var prices = current.map(function (r) { return r[C.preco]; }).filter(priceKnown).sort(function (a, b) { return a - b; });
+  var price = prices.length
+    ? money(prices[0]) + " – " + money(prices[prices.length - 1]) + " (" + t("inventory.price.sample", { n: num(prices.length) }) + ")"
+    : t("inventory.price.none");
+  var date = inventoryDate(all);
+  var nav = [];
+  if (current.length && anchors && anchors.current) nav.push('<a href="#' + esc(anchors.current) + '">' + esc(t("inventory.nav.current")) + '</a>');
+  if (archived.length && anchors && anchors.archived) nav.push('<a href="#' + esc(anchors.archived) + '">' + esc(t("inventory.nav.archived")) + '</a>');
+  return '<section class="mkt inventory-summary" data-inventory-summary aria-labelledby="inventory-summary-title">' +
+    '<div class="sechead"><h2 id="inventory-summary-title">' + esc(t("inventory.title")) + '</h2><span class="n">' + esc(t("inventory.records", { n: num(all.length) })) + '</span></div>' +
+    '<div class="facts">' +
+      fact(t("inventory.current"), num(current.length)) +
+      fact(t("inventory.archived"), num(archived.length)) +
+      (unverified ? fact(t("inventory.unverified"), num(unverified)) : "") +
+      fact(t("inventory.price"), price) +
+    '</div>' +
+    '<p class="foot inventory-meta">' + esc(date ? t(date.key, { date: date.date }) : t("inventory.date.unknown")) + " " + esc(t("inventory.note")) + "</p>" +
+    (nav.length ? '<p class="foot inventory-nav">' + nav.join(" · ") + "</p>" : "") +
+    '</section>';
+}
+
 /* Every area the map knows, not only the ones with a lot open today.
  *
  * An auction district empties out in weeks; a district does not. The page that
@@ -1004,6 +1053,7 @@ function screenStreet(code) {
         district: districtRoute ? link("/a/" + encodeURIComponent(dk), esc(areaName(dk))) : esc(city.nome),
         year: year,
       }) : t("street.catalog.lede")) + "</p></div>" +
+    inventorySummary(lotsByStreet[code] || [], { current: "street-current-lots", archived: "street-archive-lots" }) +
     (lines.length ? '<section class="mkt"><div class="sechead"><h2>' + t("mkt.h2") +
       '</h2><span class="n">' + t("mkt.year", { year: year }) + "</span></div>" +
       lines.join("") +
@@ -1024,13 +1074,13 @@ function screenStreet(code) {
 function streetLotLists(code) {
   var rows = lotsByStreet[code] || [];
   var current = rows.filter(isCurrent), archived = rows.filter(function (r) { return !isCurrent(r); });
-  function section(key, items) {
+  function section(key, id, items) {
     if (!items.length) return "";
-    return '<section class="sec street-lots"><div class="sechead"><h2>' +
+    return '<section id="' + id + '" class="sec street-lots" aria-labelledby="' + id + '-title"><div class="sechead"><h2 id="' + id + '-title">' +
       esc(t(key)) + '</h2><span class="n">' + esc(num(items.length)) +
       '</span></div><div class="rowlist">' + items.map(lotRow).join("") + "</div></section>";
   }
-  return section("street.lots.current", current) + section("street.lots.archive", archived);
+  return section("street.lots.current", "street-current-lots", current) + section("street.lots.archive", "street-archive-lots", archived);
 }
 
 function streetLine(kind, own, base) {
@@ -1342,8 +1392,9 @@ function screenArea(key) {
           ? t("area.lede", { lots: lots(a.n), rel: a.rel, below: b(a.below) })
           : t(marketOnly() ? "area.lede.market" : "area.lede.nodata",
               { lots: lots(a.n) })) + "</p></div>" + mini +
+    inventorySummary((byArea[key] || []).concat(historyByArea[key] || []), { current: "area-current-lots", archived: "area-archive-lots" }) +
     inventoryNotice() + marketAvailabilityNote(byArea[key] || []) + marketCard(key) + upkeepCard(key) + streetList(key) +
-    (a.n ? '<section class="sec"><div class="rowlist">' +
+    (a.n ? '<section id="area-current-lots" class="sec" aria-labelledby="area-current-lots-title"><div class="sechead"><h2 id="area-current-lots-title">' + esc(t("area.lots.current")) + '</h2><span class="n">' + esc(num(a.n)) + '</span></div><div class="rowlist">' +
       a.rows.slice().sort(function (x, y) {
         var rx = reliable(x), ry = reliable(y);
         if (rx !== ry) return rx ? -1 : 1;
@@ -1351,7 +1402,7 @@ function screenArea(key) {
       // No cap. This is the only page that lists a district in full, and a lot
       // that is on no page is a lot that does not exist.
       }).map(lotRow).join("") + "</div></section>" : "") +
-    ((historyByArea[key] || []).length ? '<section class="sec"><h2>' + esc(t("archive.nav")) + '</h2>' +
+    ((historyByArea[key] || []).length ? '<section id="area-archive-lots" class="sec" aria-labelledby="area-archive-lots-title"><h2 id="area-archive-lots-title">' + esc(t("archive.nav")) + '</h2>' +
       '<p>' + esc(t("archive.area.notice")) + '</p><div class="rowlist">' +
       historyByArea[key].slice(0, ALL_PAGE_SIZE).map(lotRow).join("") + '</div><p class="foot">' +
       link("/archive", esc(t("archive.all", { n: num(historyByArea[key].length) }))) + '</p></section>' : '') +
