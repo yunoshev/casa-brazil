@@ -417,6 +417,7 @@
  "market.title": "Market around this lot",
  "market.intro": "Nearby comparables to put the lot in context.",
  "market.listings.title": "Comparable listings with direct links",
+ "market.listings.unavailable": "The source did not provide direct links for this sample; only verified aggregate data is shown.",
  "market.sale_asking": "Sale asking prices",
  "market.discount": "Difference from the lot",
  "market.rent": "Monthly asking rent",

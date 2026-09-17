@@ -417,6 +417,7 @@
  "market.title": "Mercado ao redor",
  "market.intro": "Comparáveis próximos para dar contexto ao lote.",
  "market.listings.title": "Anúncios comparáveis com link direto",
+ "market.listings.unavailable": "A fonte não forneceu links diretos para esta amostra; exibimos apenas os dados agregados verificados.",
  "market.sale_asking": "Preços pedidos na venda",
  "market.discount": "Diferença para o lote",
  "market.rent": "Aluguel mensal anunciado",

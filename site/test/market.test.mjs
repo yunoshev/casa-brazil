@@ -69,6 +69,15 @@ test('optional rent, yield and condo facts render as absent without inventing va
   assert.match(text, /not reported/);
 });
 
+test('missing source URLs show an explicit factual no-links state', () => {
+  const s = browser('en');
+  const root = s.document.createElement('div');
+  const withoutLinks = { ...valid, comparables: [] };
+  assert.equal(s.window.MARKET.mount(root, withoutLinks, s.document), true);
+  assert.equal(root.querySelectorAll('.market-listing-link').length, 0);
+  assert.match(root.textContent, /source did not provide direct links/i);
+});
+
 test('fewer than five comparables shows translated insufficient data, never a market estimate', () => {
   const s = browser('en');
   const root = s.document.createElement('div');

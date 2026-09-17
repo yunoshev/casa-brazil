@@ -214,6 +214,9 @@
         listings.appendChild(entry);
       });
       section.appendChild(listings);
+    } else {
+      section.appendChild(node(document, "p", "market-listings-unavailable",
+        translate("market.listings.unavailable")));
     }
 
     var disclaimer = node(document, "p", "market-disclaimer");
