@@ -292,10 +292,10 @@ def shell(
     head: dict,
     body: str,
     split: bool,
-    lot: bool,
     ld: list,
     chrome: dict,
     home: bool = False,
+    lot: bool = False,
 ) -> str:
     """One rendered screen, wrapped in the page it ships as."""
     scripts = "\n".join(f'<script type="application/ld+json">{blob(x)}</script>' for x in ld if x)
@@ -577,7 +577,6 @@ async def run(a, ws_url: str, tpl: str, out: Path) -> None:
                     head,
                     page["body"],
                     page["split"],
-                    page.get("lot", False),
                     [],  # Add entity breadcrumbs once the actual-write set is known.
                     {
                         "i18n": i18n,
@@ -585,6 +584,7 @@ async def run(a, ws_url: str, tpl: str, out: Path) -> None:
                         "here": {"city": page["city"] or ("sao-paulo-sp" if path == "/" else "")},
                     },
                     path == "/",
+                    page.get("lot", False),
                 )
                 left = [m for m in MARKERS if m in html]
                 if left:
