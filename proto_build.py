@@ -61,7 +61,66 @@ PUBLIC_MARKET_REPORTS = HERE / "site" / "data" / "market_reports.json"
 # snapshots.  This file is deliberately optional: a catalogue refresh must
 # never stop publishing just because no approved photo projection exists yet.
 LOT_MEDIA = HERE / "data" / "lot-media.json"
+DOCUMENT_REPORTS = HERE / "site" / "content" / "document-reports.json"
 LIFECYCLE_RECEIPT = HERE / "data" / "site.json.release.json"
+
+
+def load_document_reports(path: Path, source: dict) -> dict:
+    """Only reviewed, non-personal screenshot summaries for an exact source ID.
+
+    These are versioned editorial artifacts, never original-PDF cache entries.
+    Missing lots are omitted; malformed or mismatched reports fail the build.
+    """
+    if not path.exists():
+        return {}
+    data = json.loads(path.read_text())
+    if set(data) != {"schema", "reports"} or data["schema"] != "reviewed-screenshot-reports-v1":
+        raise ValueError("invalid document reports schema")
+    cols = {name: i for i, name in enumerate(source["cols"])}
+    rows = {str(row[cols["id"]]): row for city in source["cities"] for row in city["rows"]}
+    result = {}
+    allowed = {"source_kind", "original_pdf_available", "reviewed", "source_id", "source_url",
+               "captured_at", "document_date", "page_count", "language", "model", "summary",
+               "findings", "unknowns", "next_checks", "limitations"}
+    def safe(value):
+        return isinstance(value, str) and 0 < len(value) <= 2000 and not re.search(r"[<>\x00-\x08]", value)
+    for lot_id, report in data["reports"].items():
+        if not re.fullmatch(r"[a-f0-9]{16}", lot_id) or not isinstance(report, dict) or set(report) != allowed:
+            raise ValueError("invalid reviewed report fields")
+        if (report["source_kind"] != "browser_screenshots" or report["original_pdf_available"] is not False
+                or report["reviewed"] is not True or report["language"] != "pt"
+                or type(report["page_count"]) is not int or not 1 <= report["page_count"] <= 150
+                or not isinstance(report["source_id"], str) or not re.fullmatch(r"\d{8,20}", report["source_id"])):
+            raise ValueError("invalid reviewed report provenance")
+        expected = "https://venda-imoveis.caixa.gov.br/sistema/detalhe-imovel.asp?hdnimovel=" + report["source_id"]
+        if report["source_url"] != expected:
+            raise ValueError("invalid reviewed report source")
+        try:
+            captured = datetime.fromisoformat(report["captured_at"].replace("Z", "+00:00"))
+            document_day = date.fromisoformat(report["document_date"])
+            if captured.tzinfo is None or document_day > captured.date():
+                raise ValueError("invalid report chronology")
+        except (TypeError, AttributeError, ValueError) as exc:
+            raise ValueError("invalid reviewed report date") from exc
+        if not safe(report["summary"]) or not safe(report["model"]):
+            raise ValueError("invalid reviewed report text")
+        for key in ("unknowns", "next_checks", "limitations"):
+            if not isinstance(report[key], list) or not 1 <= len(report[key]) <= 12 or not all(safe(x) for x in report[key]):
+                raise ValueError("invalid reviewed report section")
+        if not isinstance(report["findings"], list) or not 1 <= len(report["findings"]) <= 12:
+            raise ValueError("invalid reviewed report findings")
+        for finding in report["findings"]:
+            if (not isinstance(finding, dict) or set(finding) != {"page", "title", "quote", "text"}
+                    or type(finding["page"]) is not int or not 1 <= finding["page"] <= report["page_count"]
+                    or not all(safe(finding[k]) for k in ("title", "quote", "text"))):
+                raise ValueError("invalid reviewed report citation")
+        row = rows.get(lot_id)
+        if row is None:
+            continue
+        if row[cols["src"]] != "caixa" or row[cols["link"]] != expected:
+            raise ValueError("document report does not match catalog source")
+        result[lot_id] = report
+    return result
 
 MARKET_KEYS = {
     "schema",
@@ -994,6 +1053,7 @@ def main() -> None:
     atomic_write(PUBLIC_MARKET_REPORTS, market_compact_json(public_market_reports) + b"\n")
     if market_reports:
         payload["market_reports"] = market_reports
+    payload["document_reports"] = load_document_reports(DOCUMENT_REPORTS, src)
     # The media projection joins against the post-build cities.  That means a
     # stale photo record for a city/lifecycle row that is no longer published
     # cannot make the payload larger or produce an orphan URL.

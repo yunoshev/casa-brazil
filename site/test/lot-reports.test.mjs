@@ -112,8 +112,9 @@ test('GA consent and allowlist keep display separate from conversion and omit id
 
 test('both historical and current lot templates carry the report hook, not just Caixa input form', () => {
   const source = readFileSync(new URL('../v2/app.js', import.meta.url), 'utf8');
-  assert.match(source.slice(source.indexOf('function screenHistoricalLot'), source.indexOf('function marketOnly')), /data-lot-report/);
-  assert.match(source.slice(source.indexOf('function screenLot(')), /data-lot-report/);
+  assert.match(source.slice(source.indexOf('function screenHistoricalLot'), source.indexOf('function marketOnly')), /documentReportSlot\(r\[C.id\]\)/);
+  assert.match(source.slice(source.indexOf('function screenLot(')), /documentReportSlot\(r\[C.id\]\)/);
+  assert.match(source.slice(source.indexOf('function documentReportSlot'), source.indexOf('function wireDocumentReport')), /data-lot-report/);
 });
 
 test('existing explicit analysis preserves start/ok funnel without report display conversion', async () => {

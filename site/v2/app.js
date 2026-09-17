@@ -199,7 +199,7 @@ function screenHistoricalLot(r) {
     lotBreadcrumb(r) + '</div>' +
     lifecycleBanner(r) + lotGallery(r) + lotMapsBlock(r) + '<p class="foot">' + link("/archive", esc(t("archive.nav"))) + ' · ' +
     link("/all", esc(t("archive.current"))) + '</p>' + lotHistory(r) +
-    '<section class="mkt" data-lot-report="' + esc(r[C.id]) + '"></section>' +
+    documentReportSlot(r[C.id]) +
     '<section class="mkt historical-analysis"><h2>' + esc(t("archive.analysis.h2")) + '</h2>' +
     '<p>' + esc(t("archive.analysis.notice")) + '</p><div class="facts">' +
     fact(t("archive.price.appraisal"), priceText(r[C.aval])) +
@@ -1751,6 +1751,66 @@ function marketReportFor(id) {
   return report && report.schema === "market-v1" ? report : null;
 }
 
+function documentReportFor(id) {
+  var reports = D && D.document_reports;
+  var report = reports && reports[String(id)];
+  return report && report.reviewed === true && report.source_kind === "browser_screenshots" &&
+    report.original_pdf_available === false ? report : null;
+}
+
+function documentReportSlot(id) {
+  var report = documentReportFor(id);
+  if (!report) return '<section class="mkt" data-lot-report="' + esc(id) + '"></section>';
+  function list(items) { return '<ul>' + items.map(function (item) { return '<li>' + esc(item) + '</li>'; }).join('') + '</ul>'; }
+  return '<section class="mkt document-report" id="document-report" data-saved-document-report="' + esc(id) + '" aria-labelledby="document-report-title">' +
+    '<div data-document-report-text lang="pt"><h2 id="document-report-title" tabindex="-1">' + esc(t("doc.report.title")) + '</h2>' +
+    '<p class="note">' + esc(t("doc.report.source")) + '</p>' +
+    '<p class="foot">' + esc(t("doc.report.dates", { document: report.document_date, capture: report.captured_at.slice(0, 10) })) + '</p>' +
+    '<p class="say">' + esc(report.summary) + '</p><h3>' + esc(t("doc.report.facts")) + '</h3>' +
+    report.findings.map(function (f) {
+      return '<article><h4>' + esc(f.title) + '</h4><p>' + esc(f.text) + '</p><blockquote>' +
+        esc(f.quote) + '</blockquote><p class="foot">' + esc(t("doc.report.page", { page: f.page })) + '</p></article>';
+    }).join('') + '<h3>' + esc(t("doc.report.unknowns")) + '</h3>' + list(report.unknowns) +
+    '<h3>' + esc(t("doc.report.next")) + '</h3>' + list(report.next_checks) +
+    '<h3>' + esc(t("doc.report.limits")) + '</h3>' + list(report.limitations) +
+    '<p><a href="' + esc(report.source_url) + '" target="_blank" rel="noopener noreferrer">' + esc(t("doc.report.original")) + '</a></p></div>' +
+    '<button type="button" class="analysis-cta" data-copy-document-report>' + esc(t("doc.report.copy")) + '</button>' +
+    '<p role="status" aria-live="polite" data-document-copy-status></p>' +
+    '<textarea hidden readonly data-document-copy-fallback aria-label="' + esc(t("doc.report.manual")) + '"></textarea></section>';
+}
+
+function wireDocumentReport(root) {
+  var section = root.querySelector("[data-saved-document-report]");
+  if (!section) return;
+  var button = section.querySelector("[data-copy-document-report]");
+  if (!button || button.getAttribute("data-copy-wired")) return;
+  button.setAttribute("data-copy-wired", "1");
+  button.addEventListener("click", async function () {
+    var body = section.querySelector("[data-document-report-text]");
+    var status = section.querySelector("[data-document-copy-status]");
+    var fallback = section.querySelector("[data-document-copy-fallback]");
+    var canonical = document.querySelector('link[rel="canonical"]');
+    var raw = canonical && canonical.getAttribute("href");
+    var url;
+    try {
+      url = new URL(raw || location.href);
+      if (url.origin !== "https://precodemartelo.com" || !/\/lote\/[^/]+\/$/.test(url.pathname)) throw new Error("invalid canonical");
+      url.search = ""; url.hash = "";
+    } catch (e) { status.textContent = t("doc.report.copyerror"); return; }
+    var value = (body.innerText || body.textContent).trim() + "\n\nFonte: Preço Real\n" + url.href;
+    try {
+      if (!navigator.clipboard || !navigator.clipboard.writeText) throw new Error("clipboard unavailable");
+      await navigator.clipboard.writeText(value);
+      fallback.hidden = true;
+      status.textContent = t("doc.report.copied");
+    } catch (e) {
+      fallback.value = value; fallback.hidden = false;
+      fallback.focus(); fallback.select();
+      status.textContent = t("doc.report.manual");
+    }
+  });
+}
+
 function marketHeroSummary(id) {
   var report = marketReportFor(id);
   var asking = report && report.sale_asking;
@@ -1885,7 +1945,8 @@ function screenLot(id) {
     marketHeroSummary(r[C.id]) +
     lotTransactionSummary(r) +
     '<div class="hero-actions">' +
-      (r[C.src] === "caixa" ? '<button type="button" class="analysis-cta" data-analysis-cta>' +
+      (documentReportFor(r[C.id]) ? '<a class="analysis-cta" href="#document-report">' + esc(t("doc.report.view")) + '</a>' :
+        r[C.src] === "caixa" ? '<button type="button" class="analysis-cta" data-analysis-cta>' +
         esc(t("lot.ai.cta", null, "Analyze with AI")) + "</button>" : "") +
       (r[C.link] ? '<a class="source-link" href="' + esc(r[C.link]) +
         '" target="_blank" rel="noopener" data-out="' + esc(r[C.src] || "lot") + '">' +
@@ -1949,14 +2010,14 @@ function screenLot(id) {
     "</div>" +
 
     '<div class="lot-wide">' +
-      '<section class="mkt" data-lot-report="' + esc(r[C.id]) + '"></section>' +
+      documentReportSlot(r[C.id]) +
       marketReportBlock(r[C.id]) +
 
       // Caixa publishes an edital PDF for every sale; the worker only trusts
       // Caixa's own domains, so the reader pastes that link and gets the
       // dossiê free. Other sources' documents live behind auctioneers' sites
       // the allowlist does not know — no box rather than a box that fails.
-      (r[C.src] === "caixa"
+      (r[C.src] === "caixa" && !documentReportFor(r[C.id])
         ? '<section class="mkt azbox" data-az="' + esc(r[C.id]) + '" data-az-source="' +
           esc(r[C.link] || "") + '"></section>' : "") +
     "</div>" + lotHistory(r) + sameStreetLots(r) + relatedLots(r) + footer();
@@ -2627,6 +2688,7 @@ function wire() {
   wireCity($("view"));
   wireAnalysisCTA($("view"));
   wireGallery($("view"));
+  wireDocumentReport($("view"));
 }
 
 function wireAnalysisCTA(root) {
@@ -2682,4 +2744,5 @@ if (window.__D__ && Array.isArray(D.cities)) {
    * static runtime only attaches gallery behavior; it never re-renders the
    * page or touches map/network state. */
   wireGallery(document);
+  wireDocumentReport(document);
 }

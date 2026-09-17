@@ -1,0 +1,43 @@
+{
+  "schema": "reviewed-screenshot-reports-v1",
+  "reports": {
+    "034aa2e652ab4905": {
+      "source_kind": "browser_screenshots",
+      "original_pdf_available": false,
+      "reviewed": true,
+      "source_id": "8787709428751",
+      "source_url": "https://venda-imoveis.caixa.gov.br/sistema/detalhe-imovel.asp?hdnimovel=8787709428751",
+      "captured_at": "2026-09-17T20:35:21.126Z",
+      "document_date": "2026-04-16",
+      "page_count": 4,
+      "language": "pt",
+      "model": "gemini-3.1-flash-lite",
+      "summary": "A matrícula identifica o apartamento 906, Torre 2, Bloco B, do NEO CONX – PIRITUBA. Há registro de consolidação em favor da Caixa e uma declaração de destinação HIS-2 que merece verificação antes da compra. O documento não confirma a situação atual do imóvel.",
+      "findings": [
+        {"page": 1, "title": "Identificação do imóvel", "quote": "APARTAMENTO nº 906", "text": "A página 1 identifica a unidade, a Torre 2 e o Bloco B. A ligação deste documento ao lote foi observada na página oficial da Caixa."},
+        {"page": 1, "title": "Garantia anterior", "quote": "UMA ALIENAÇÃO FIDUCIÁRIA", "text": "O registro menciona uma garantia anterior. Isso não comprova saldo devedor atual, quitação ou condições atuais da venda."},
+        {"page": 2, "title": "Consolidação registrada em 16/04/2026", "quote": "CONSOLIDAÇÃO DA PROPRIEDADE FIDUCIÁRIA", "text": "A averbação AV-3 registra a consolidação em nome da Caixa. Ela não basta para concluir que a situação permaneça igual hoje, que o imóvel esteja desocupado ou que não existam contestações."},
+        {"page": 3, "title": "Atenção à classificação HIS-2", "quote": "Habitação de Interesse Social - HIS-2", "text": "A certidão declara essa destinação por dez anos contados da expedição do certificado de conclusão da obra. As imagens não permitem determinar com segurança o término desse prazo nem as condições atuais aplicáveis à compra."}
+      ],
+      "unknowns": [
+        "Ocupação atual e condições de entrega da posse.",
+        "Débitos atuais de condomínio e IPTU e responsabilidade por essas despesas.",
+        "Processos ou alterações registrais posteriores à certidão.",
+        "Condições de aquisição ou uso ligadas à classificação HIS-2.",
+        "Disponibilidade atual do anúncio e edital vigente."
+      ],
+      "next_checks": [
+        "Conferir o edital e as condições de venda do lote exato.",
+        "Obter matrícula atualizada e confirmar a situação registral com profissional habilitado.",
+        "Verificar a classificação HIS-2 e a data do certificado de conclusão da obra.",
+        "Consultar as fontes responsáveis sobre ocupação, condomínio e IPTU."
+      ],
+      "limitations": [
+        "Análise com auxílio de IA, conferida visualmente nas capturas. Não é parecer jurídico nem recomendação de investimento.",
+        "Fonte: capturas das quatro páginas no visualizador; a quarta está indicada como EM BRANCO. O PDF original não foi armazenado nem sua assinatura autenticada.",
+        "A data de captura não é a data da certidão e não confirma a atualidade do documento.",
+        "Valores históricos dos atos não são avaliação atual, preço do anúncio ou saldo devedor."
+      ]
+    }
+  }
+}
