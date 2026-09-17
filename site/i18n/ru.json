@@ -610,6 +610,8 @@
  "related.city": "Тот же город",
  "related.current": "Текущий",
  "related.archive": "Архив",
+ "same.street.title": "Другие аукционы на этой улице",
+ "same.street.all": "Все {count} лотов на {street}",
  "lot.breadcrumb": "Навигация по местоположению",
  "lot.maps": "Открыть адрес в Google Maps",
  "lot.maps.heading": "Расположение",

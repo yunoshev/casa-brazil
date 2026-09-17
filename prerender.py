@@ -288,7 +288,14 @@ ANALYTICS = ""
 
 
 def shell(
-    tpl: str, head: dict, body: str, split: bool, ld: list, chrome: dict, home: bool = False
+    tpl: str,
+    head: dict,
+    body: str,
+    split: bool,
+    lot: bool,
+    ld: list,
+    chrome: dict,
+    home: bool = False,
 ) -> str:
     """One rendered screen, wrapped in the page it ships as."""
     scripts = "\n".join(f'<script type="application/ld+json">{blob(x)}</script>' for x in ld if x)
@@ -302,7 +309,7 @@ def shell(
         .replace("__CANONICAL__", esc_attr(head["canonical"]))
         .replace("__ROBOTS__", "noindex, follow" if head.get("noindex") else "index, follow")
         .replace("__LD__", scripts)
-        .replace("__CLASS__", "wrap split" if split else "wrap")
+        .replace("__CLASS__", "wrap" + (" lot-page" if lot else "") + (" split" if split else ""))
         .replace("__BODY__", body)
         .replace("__COUNTERS__", ANALYTICS)
         .replace("__HOME_GEO__", '<script src="/parts/geo.js" defer></script>' if home else "")
@@ -570,6 +577,7 @@ async def run(a, ws_url: str, tpl: str, out: Path) -> None:
                     head,
                     page["body"],
                     page["split"],
+                    page.get("lot", False),
                     [],  # Add entity breadcrumbs once the actual-write set is known.
                     {
                         "i18n": i18n,

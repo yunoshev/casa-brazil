@@ -40,7 +40,9 @@ function runtime(c) {
     pct: String, plur: (key, n) => key + (n === 1 ? '.one' : '.other'),
     t: (key, vars = {}, fallback) => (cat[key] || fallback || key).replace(/\{(\w+)\}/g, (s, k) => vars?.[k] ?? s) };
   const window = { __D__: { cols, cities: [c] }, __SHIP_LANGS__: ['en'] };
-  const ctx = vm.createContext({ window, LANG, URL, document: {} });
+  const ctx = vm.createContext({ window, LANG, URL, document: {
+    createElement: () => ({ innerHTML: '', querySelectorAll: () => [] }),
+  } });
   vm.runInContext(functions, ctx);
   ctx.indexCity(c);
   return ctx;
@@ -102,6 +104,38 @@ test('lot breadcrumbs include only valid city, area and street routes', () => {
   ]);
 });
 
+test('a lot gets a compact, exact-street block only after a certain address match', () => {
+  const ctx = runtime(fixture());
+  const html = ctx.screenLot('origin');
+  assert.match(html, /class="sec same-street-lots"/);
+  assert.match(html, /Other auctions on this street/);
+  assert.match(html, /lote\/lot-street-current\//);
+  assert.match(html, /lote\/lot-street-archive\//);
+  assert.doesNotMatch(html, /class="row same-street-lot"[^>]*href="[^"\n]*lot-area-current/);
+  assert.match(html, /Ver|See all/);
+  assert.match(html, /rua\/rua-principal\//);
+
+  const uncertain = fixture();
+  uncertain.rows[0][C.end] = 'Rua Principal Annex, 10';
+  const uncertainCtx = runtime(uncertain);
+  const uncertainHtml = uncertainCtx.screenLot('origin');
+  assert.doesNotMatch(uncertainHtml, /same-street-lots/);
+  assert.deepEqual(Array.from(uncertainCtx.pageTrail(uncertainCtx.href('/l/origin')), item => item.path), [
+    '/', uncertainCtx.cityBase(), uncertainCtx.href('/a/CENTRO'), uncertainCtx.href('/l/origin'),
+  ]);
+});
+
+test('a gallery does not create an empty desktop sidebar on a lot route', () => {
+  const ctx = runtime(fixture());
+  const lotPath = ctx.href('/l/origin');
+  assert.equal(ctx.isLotRoute(lotPath), true);
+  assert.equal(ctx.pageUsesSideColumn(lotPath, '<div class="lot-gallery"><img class="shot"></div>'), false);
+  assert.equal(ctx.pageUsesSideColumn(ctx.cityBase(), '<div class="side"></div>'), true);
+  const rendered = ctx.window.__render__(lotPath);
+  assert.equal(rendered.lot, true);
+  assert.equal(rendered.split, false);
+});
+
 test('missing geography does not invent area or street routes', () => {
   const c = fixture();
   c.rows[0][C.bairro] = 'No Such District';
@@ -118,4 +152,5 @@ test('street pages separate current and archived catalogue lots', () => {
   assert.match(html, /Archived lots on this street/);
   assert.match(html, /lote\/lot-street-current\//);
   assert.match(html, /lote\/lot-street-archive\//);
+  assert.doesNotMatch(html, /lote\/lot-unknown-street\//);
 });

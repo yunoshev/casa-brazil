@@ -437,6 +437,8 @@
  "related.city": "Mesma cidade",
  "related.current": "Atual",
  "related.archive": "Arquivo",
+ "same.street.title": "Outros leilões nesta rua",
+ "same.street.all": "Ver os {count} lotes em {street}",
  "lot.breadcrumb": "Navegação de localização",
  "lot.maps": "Abrir endereço no Google Maps",
  "lot.maps.heading": "Localização",

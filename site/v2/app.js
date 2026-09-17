@@ -198,7 +198,7 @@ function screenHistoricalLot(r) {
     (reliable(r) ? fact(t("archive.price.estimate"), priceText(r[C.hammer])) +
       fact(t("archive.price.market"), priceText(r[C.mkt])) : '') + '</div></section>' +
     (httpsSource(r[C.link]) ? '<p class="foot"><a href="' + esc(r[C.link]) + '" target="_blank" rel="noopener noreferrer">' +
-      esc(t("archive.source.original")) + '</a></p>' : '') + relatedLots(r) + footer();
+      esc(t("archive.source.original")) + '</a></p>' : '') + sameStreetLots(r) + relatedLots(r) + footer();
 }
 
 /* A city we carry for its paid side only: no comps pipeline, no hammer chain,
@@ -551,22 +551,28 @@ function indexCity(c) {
   lotById = {};
   lotBySlug = {};
   refreshStats(c);
-  var streetCodes = Object.keys((c.streets || {}).d || {}).sort(function (a, b) {
+  var streets = (c.streets || {}).d || {};
+  // A street URL is a promise.  Do not use a row merely because its text
+  // resembles an address: the matching street must have one unambiguous,
+  // published route in this city's catalogue.
+  streetBySlug = {};
+  Object.keys(streets).forEach(function (code) {
+    var slug = streets[code] && streets[code].slug;
+    if (!slug) return;
+    if (Object.prototype.hasOwnProperty.call(streetBySlug, slug)) {
+      streetBySlug[slug] = null; // Colliding slugs cannot safely be linked.
+    } else {
+      streetBySlug[slug] = code;
+    }
+  });
+  var streetCodes = Object.keys(streets).filter(publishedStreetCode).sort(function (a, b) {
     return String(c.streets.d[b].name || "").length - String(c.streets.d[a].name || "").length;
   });
   c.rows.forEach(function (r) {
     lotById[String(r[C.id])] = r;
     lotBySlug[lotSlug(r)] = r;
     lotsByCity.push(r);
-    var id = String(r[C.id]), address = normKey(r[C.end]), street = null;
-    if (address) for (var i = 0; i < streetCodes.length; i++) {
-      var code = streetCodes[i], name = normKey(c.streets.d[code].name);
-      if (name && (address === name || address.indexOf(name + " ") === 0 ||
-          (" " + address).indexOf(" " + name + ",") === 0)) {
-        street = code;
-        break;
-      }
-    }
+    var id = String(r[C.id]), street = matchedStreetCode(r[C.end], streetCodes);
     streetCodeByLotId[id] = street;
     if (street) (lotsByStreet[street] = lotsByStreet[street] || []).push(r);
     var k = areaOf(r), place = { area: k || normKey(r[C.bairro]), street: street };
@@ -575,10 +581,8 @@ function indexCity(c) {
     if (k) (target[k] = target[k] || []).push(r);
   });
   // Both directions: the URL carries a slug, the data is keyed by the raster
-  // key, and a reader arriving from outside has only the slug.
-  streetBySlug = {};
-  var sts = (c.streets || {}).d || {};
-  Object.keys(sts).forEach(function (code) { streetBySlug[sts[code].slug] = code; });
+  // key, and a reader arriving from outside has only the slug.  The reverse
+  // map above deliberately omits ambiguous slugs.
   slugToKey = { fwd: {}, rev: {} };
   var nice = (c.shapes || {}).nice || {};
   Object.keys(nice).forEach(function (k) {
@@ -589,6 +593,39 @@ function indexCity(c) {
     slugToKey.rev[k] = sl;
   });
   buildRelatedGroups();
+}
+
+function publishedStreetCode(code) {
+  var st = city.streets && city.streets.d && city.streets.d[code];
+  return !!(st && st.name && st.slug && streetBySlug[st.slug] === code);
+}
+
+/* An address can name a road and then continue with a building name.  That is
+ * not enough to call it the catalogue street: after the exact street name we
+ * require a conventional house/unit marker or a number.  This consciously
+ * leaves some rows unlinked rather than connecting a reader to the wrong Rua.
+ */
+function certainStreetTail(value) {
+  var tail = String(value || "").replace(/^[\s,;:/.-]+/, "");
+  return !tail || /^\d/.test(tail) ||
+    /^(?:N(?:[.\s]|$)|NO(?:[.\s]|$)|NUM(?:[.\s]|$)|NUMERO\b|S\s*\/?\s*N\b|SN\b|KM\b|LOTE\b|LT\b|QUADRA\b|QD\b|CASA\b|AP(?:T)?\b|BLOCO\b|BL\b|ED(?:IFICIO)?\b)/.test(tail);
+}
+
+function streetAddressMatches(address, streetName) {
+  var text = normKey(address), name = normKey(streetName);
+  if (!text || !name || text.indexOf(name) !== 0) return false;
+  if (text === name) return true;
+  var boundary = text.charAt(name.length);
+  return /[\s,;:/.-]/.test(boundary) && certainStreetTail(text.slice(name.length));
+}
+
+function matchedStreetCode(address, codes) {
+  if (!address) return null;
+  for (var i = 0; i < codes.length; i++) {
+    var code = codes[i], st = city.streets.d[code];
+    if (st && streetAddressMatches(address, st.name)) return code;
+  }
+  return null;
 }
 
 function areaStat(key) {
@@ -1343,17 +1380,11 @@ function lotMetaFacts(r) {
 function streetCodeForLot(r) {
   var id = String(r[C.id]);
   if (Object.prototype.hasOwnProperty.call(streetCodeByLotId, id)) return streetCodeByLotId[id];
-  var address = normKey(r[C.end]);
-  if (!address || !city.streets || !city.streets.d) return null;
-  var codes = Object.keys(city.streets.d).sort(function (a, b) {
+  if (!r[C.end] || !city.streets || !city.streets.d) return null;
+  var codes = Object.keys(city.streets.d).filter(publishedStreetCode).sort(function (a, b) {
     return String(city.streets.d[b].name || "").length - String(city.streets.d[a].name || "").length;
   });
-  for (var i = 0; i < codes.length; i++) {
-    var st = city.streets.d[codes[i]], name = normKey(st.name);
-    if (name && (address === name || address.indexOf(name + " ") === 0 ||
-        (" " + address).indexOf(" " + name + ",") === 0)) return codes[i];
-  }
-  return null;
+  return matchedStreetCode(r[C.end], codes);
 }
 
 function relatedPlace(r) {
@@ -1448,6 +1479,36 @@ function relatedLots(r) {
         '<div class="related-trail" aria-label="' + esc(t("lot.breadcrumb")) + '">' + relatedTrail(item.place) + "</div>" +
       "</a>";
     }).join("") + "</div></section>";
+}
+
+/* A reader who has arrived on a property page most often wants the other
+ * auctions at this exact address level, not a generic "nearby" list.  Keep
+ * that answer short; the street page remains the route to the full catalogue.
+ * `streetCodeForLot` only returns a certain match with a real street route.
+ */
+var SAME_STREET_LOT_LIMIT = 4;
+function sameStreetLots(r) {
+  var code = streetCodeForLot(r);
+  if (!code || !publishedStreetCode(code)) return "";
+  var rows = (relatedGroups.street[code] || []).filter(function (candidate) {
+    return String(candidate[C.id]) !== String(r[C.id]);
+  }).slice(0, SAME_STREET_LOT_LIMIT);
+  if (!rows.length) return "";
+  var street = city.streets.d[code];
+  return '<section class="sec same-street-lots" aria-labelledby="same-street-lots-title">' +
+    '<div class="sechead"><h2 id="same-street-lots-title">' + esc(t("same.street.title")) +
+      '</h2><a class="same-street-all" href="' + esc(href("/r/" + encodeURIComponent(code))) + '">' +
+      esc(t("same.street.all", { street: title(street.name), count: num((lotsByStreet[code] || []).length) })) +
+      '</a></div><div class="rowlist">' + rows.map(function (candidate) {
+        var historical = !isCurrent(candidate), price = relatedPrice(candidate);
+        var facts = [price, candidate[C.area] ? candidate[C.area] + " " + t("unit.m2") : null].filter(Boolean);
+        return '<a class="row same-street-lot" href="' + esc(href("/l/" + encodeURIComponent(candidate[C.id]))) + '">' +
+          '<div class="r1"><div class="nm">' + esc(title(candidate[C.end] || candidate[C.tipo] || t("lot.fallback"))) +
+            '</div><span class="pill ' + (historical ? "mute" : "good") + '">' +
+            esc(t(historical ? "related.archive" : "related.current")) + '</span></div>' +
+          (facts.length ? '<div class="sub related-facts">' + esc(facts.join(" · ")) + '</div>' : "") +
+        '</a>';
+      }).join("") + '</div></section>';
 }
 
 /* `i` arrives free from every call site's .map(lotRow). It decides one thing:
@@ -1753,7 +1814,7 @@ function screenLot(id) {
       (r[C.link] ? '<a class="cta" href="' + esc(r[C.link]) +
         '" target="_blank" rel="noopener" data-out="' + esc(r[C.src] || "lot") + '">' +
         t("lot.cta") + "</a>" : "") +
-    "</div>" + lotHistory(r) + relatedLots(r) + footer();
+    "</div>" + lotHistory(r) + sameStreetLots(r) + relatedLots(r) + footer();
 }
 
 function fact(k, val) {
@@ -2162,13 +2223,28 @@ window.__render__ = function (path) {
   return {
     body: html,
     city: atCity ? city.slug : "",
-    split: !!box.querySelector(".side, .mapcard:not(.maparea), .shot"),
+    split: pageUsesSideColumn(path, html),
+    lot: isLotRoute(path),
     head: headFor(path),
     breadcrumbs: pageTrail(path),
     lastmod: lotLastmod(path),
     links: links,
   };
 };
+
+function isLotRoute(path) {
+  var parts = String(path || "/").split("/").filter(Boolean);
+  return parts.length >= 2 && parts[parts.length - 2] === SEG.lot;
+}
+
+/* A lot gallery contains an image with class `shot`, but it is content, not a
+ * sidebar.  The former broad selector saw that nested image and created a
+ * second desktop grid column with nothing in it.  Only screens that explicitly
+ * emit `.side` may use the split layout; lot pages keep the available width.
+ */
+function pageUsesSideColumn(path, html) {
+  return !isLotRoute(path) && /class="side(?:\s|")/.test(String(html || ""));
+}
 
 window.__homeCityFragment__ = function (slug) {
   var chosen = D.cities.filter(function (c) { return c.slug === slug; })[0];
@@ -2279,9 +2355,10 @@ function render() {
   }
   var view = $("view");
   view.innerHTML = html;
-  // Two columns only when there is something to put in the second one; a lot
-  // list has no map, and an empty sticky column is just a wide margin.
-  view.className = "wrap" + (view.querySelector(".side, .mapcard:not(.maparea), .shot") ? " split" : "");
+  // A gallery image is not a desktop sidebar.  Keep a lot page wide unless
+  // the renderer deliberately emitted a `.side` column.
+  view.className = "wrap" + (isLotRoute(location.pathname) ? " lot-page" : "") +
+    (pageUsesSideColumn(location.pathname, html) ? " split" : "");
   window.scrollTo(0, 0);
   wire();
 }

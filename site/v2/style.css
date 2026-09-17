@@ -246,6 +246,9 @@ svg.map.shapes{max-height:62vh}
 .related-lot .related-facts{font-variant-numeric:tabular-nums}
 .related-trail{color:var(--ink3); font-size:12px; margin-top:7px; overflow-wrap:anywhere}
 .related-trail a{color:var(--ink2)}
+.same-street-lots{border-top:1px solid var(--line); padding-top:18px}
+.same-street-lot .nm{font-family:var(--display); font-weight:700}
+.same-street-all{margin-left:auto; color:var(--ink2); font-size:13px; font-weight:600; text-decoration-thickness:1px; text-underline-offset:3px}
 .bar{height:5px; border-radius:99px; background:var(--sunk); margin-top:9px; overflow:hidden}
 .bar i{display:block; height:100%; border-radius:99px}
 
@@ -493,6 +496,14 @@ svg.map.shapes{max-height:62vh}
   .side .tiles{max-width:none}
   .rowlist{max-width:720px}
   .facts{grid-template-columns:repeat(4,1fr)}
+
+  /* Lot pages are deliberately single-column: a gallery, map and evidence
+     need room, while prose still stops at a comfortable reading measure. */
+  .lot-page > .hero,
+  .lot-page > .verdict,
+  .lot-page > .lot-history,
+  .lot-page > .same-street-lots,
+  .lot-page > .related-lots{max-width:760px}
 }
 
 /* Tap targets stay 44px tall even though the type is small — the row is

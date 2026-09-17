@@ -437,6 +437,8 @@
  "related.city": "Same city",
  "related.current": "Current",
  "related.archive": "Archive",
+ "same.street.title": "Other auctions on this street",
+ "same.street.all": "See all {count} lots on {street}",
  "lot.breadcrumb": "Location breadcrumb",
  "lot.maps": "Open address in Google Maps",
  "lot.maps.heading": "Location",
