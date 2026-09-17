@@ -10,12 +10,12 @@ const cols = ['id', 'src', 'bairro', 'end', 'tipo', 'area', 'quartos', 'preco', 
   'margin', 'mkt', 'aval', 'avalpct', 'n', 'ring', 'conf', 'jud', 'mod', 'data', 'link', 'promised', 'why'];
 const row = fields => cols.map(key => fields[key] ?? null);
 
-function fixture(media, { archived = false, link = null, rowFields = {} } = {}) {
+function fixture(media, { archived = false, link = null, rowFields = {}, market = {} } = {}) {
   const c = {
     slug: 'rio-de-janeiro-rj', uf: 'rj', cslug: 'rio-de-janeiro', nome: 'Rio de Janeiro',
     stats: {}, chain: { hammer_over_asking: 0.5 },
     shapes: { nice: { CENTRO: 'Centro' }, d: { CENTRO: 'M0 0' }, of: {} },
-    market: {}, streets: { by: { CENTRO: ['main'] }, d: {
+    market, streets: { by: { CENTRO: ['main'] }, d: {
       main: { name: 'Rua Principal', slug: 'rua-principal', bairro: 'CENTRO', bairros: ['CENTRO'] },
     } }, lifecycle: {}, rows: [],
   };
@@ -29,12 +29,12 @@ function fixture(media, { archived = false, link = null, rowFields = {} } = {}) 
   return { c, payload };
 }
 
-function runtime({ media, archived = false, link = null, reports = null, rowFields = {}, mapKey } = {}) {
+function runtime({ media, archived = false, link = null, reports = null, rowFields = {}, market = {}, mapKey } = {}) {
   const cat = JSON.parse(readFileSync(new URL('../i18n/en.json', import.meta.url)));
   const LANG = { code: 'en', langs: ['en'], names: { en: 'English' }, num: String, money: String,
     pct: String, plur: (key, n) => key + (n === 1 ? '.one' : '.other'),
     t: (key, vars = {}, fallback) => (cat[key] || fallback || key).replace(/\{(\w+)\}/g, (s, k) => vars?.[k] ?? s) };
-  const { c, payload } = fixture(media, { archived, link, rowFields });
+  const { c, payload } = fixture(media, { archived, link, rowFields, market });
   const window = { __D__: { cols, cities: [c] }, __SHIP_LANGS__: ['en'] };
   if (mapKey) window.__MAPS__ = { embedKey: mapKey };
   if (payload) window.__D__.media = payload;
@@ -197,4 +197,10 @@ test('a market report suppresses the legacy district asking hint on an unscored 
   assert.match(html, /No estimate shown/);
   assert.match(html, /asking prices from listings/);
   assert.doesNotMatch(html, /For scale:/);
+});
+
+test('transaction context translates the property kind on generated lot markup', () => {
+  const html = runtime({ market: { year: '2025', d: { CENTRO: { f: [6000, 12] } } } }).screenLot('lot-1');
+  assert.match(html, /Flats/);
+  assert.doesNotMatch(html, /mkt\.kind\.f/);
 });

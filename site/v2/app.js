@@ -1381,11 +1381,12 @@ function lotTransactionSummary(r) {
   if (!district || !/^\d{4}$/.test(String(mk.year || ""))) return "";
   var type = String(r[C.tipo] || "").toLowerCase();
   var kind = /casa|sobrado|terreno/.test(type) ? "h" : /apart|flat/.test(type) ? "f" : "r";
+  var kindLabel = kind === "h" ? "house" : kind === "f" ? "flat" : "res";
   var value = district[kind] || district.r || district.f || district.h;
   if (!Array.isArray(value) || value.length < 2 || !priceKnown(value[0]) || !value[1]) return "";
   return '<aside class="hero-transactions" aria-label="' + esc(t("mkt.h2")) + '"><span>' +
     esc(t("mkt.h2")) + '</span><b>' + esc(money(value[0])) + " " + esc(t("mkt.per")) +
-    '</b><small>' + esc(areaName(key)) + " · " + esc(t("mkt.kind." + kind)) + " · " +
+    '</b><small>' + esc(areaName(key)) + " · " + esc(t("mkt.kind." + kindLabel)) + " · " +
     esc(t("mkt.deals", { n: num(value[1]) })) + " · " +
     esc(t("mkt.year", { year: mk.year })) + "</small></aside>";
 }
