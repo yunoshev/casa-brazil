@@ -32,6 +32,8 @@ LOT = CITY + "lote/apartamento-123/"
 def page(site, path, *, noindex=False, ld=None):
     return (
         '<!doctype html><html lang="pt-BR"><head>'
+        '<title>Unique page title</title>'
+        '<meta name="description" content="A useful page description.">'
         f'<link rel="canonical" href="{canonical_url(site, path)}">'
         f'<meta name="robots" content="{"noindex, follow" if noindex else "index, follow"}">'
         f'<script type="application/ld+json">{json.dumps(ld or {})}</script>'
@@ -189,6 +191,21 @@ class ArtifactContracts(unittest.TestCase):
             with self.assertRaises(ValueError):
                 validate_page(html, CITY, SITE)
         self.assertTrue(PageFacts('<meta name="Googlebot" content="NOINDEX">').noindex)
+
+    def test_title_and_description_are_single_and_non_empty(self):
+        html = page(SITE, CITY)
+        validate_page(html, CITY, SITE)
+        broken = [
+            html.replace("<title>Unique page title</title>", ""),
+            html.replace("Unique page title", ""),
+            html.replace("</head>", "<title>Duplicate</title></head>"),
+            html.replace('<meta name="description" content="A useful page description.">', ""),
+            html.replace("A useful page description.", ""),
+            html.replace("</head>", '<meta name="description" content="Duplicate"></head>'),
+        ]
+        for document in broken:
+            with self.subTest(document=document), self.assertRaises(ValueError):
+                validate_page(document, CITY, SITE)
 
     def test_entity_breadcrumbs_include_home_city_area_lot(self):
         trail = [

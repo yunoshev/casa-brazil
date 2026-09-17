@@ -159,11 +159,21 @@ assert.ok(ctx.screenAll().includes(ctx.href('/archive')));
 assert.ok(ctx.screenArchive().includes(ctx.href('/all')));
 for (const path of lotLinks(ctx.screenCity())) assert.ok(current.includes(path), 'City recommendations contain current records only');
 for (const path of lotLinks(ctx.screenArea('CENTRO'))) assert.ok(current.includes(path));
+const lotHeadTitles = new Set(), lotHeadDescriptions = new Set();
 for (const path of [...current, ...archived]) {
   const html = ctx.screenFor(path);
+  const id = ctx.idFromSlug(path.split('/').filter(Boolean).at(-1));
+  const head = ctx.headFor(path);
   assert.ok(html?.includes('<h1>'), path);
-  assert.ok(!ctx.headFor(path).noindex, path);
-  assert.equal(ctx.headFor(path).canonical, path);
+  assert.ok(!head.noindex, path);
+  assert.equal(head.canonical, path);
+  assert.ok(head.title.includes(id), `${path}: title lacks stable lot reference`);
+  assert.ok(head.desc.includes(id), `${path}: description lacks stable lot reference`);
+  assert.ok(html.includes(`Lot reference: ${id}`), `${path}: visible lot reference missing`);
+  assert.ok(!lotHeadTitles.has(head.title), `${path}: duplicate lot title`);
+  assert.ok(!lotHeadDescriptions.has(head.desc), `${path}: duplicate lot description`);
+  lotHeadTitles.add(head.title);
+  lotHeadDescriptions.add(head.desc);
   if (archived.includes(path)) {
     assert.match(html, /Removed from current lists/);
     assert.match(html, /Last advertised price — not a sale price/);

@@ -539,6 +539,9 @@ async def run(a, ws_url: str, tpl: str, out: Path) -> None:
             seen, written, t0 = set(queue), 0, time.time()
             emitted = {}
             route_dates = {}
+            inbound_routes: set[str] = set()
+            lot_titles: dict[str, str] = {}
+            lot_descriptions: dict[str, str] = {}
 
             while queue:
                 path = queue.pop(0)
@@ -549,6 +552,19 @@ async def run(a, ws_url: str, tpl: str, out: Path) -> None:
                 page = json.loads(got)
                 head = dict(page["head"], canonical=canonical_url(a.site, path))
                 head["noindex"] = path in FLAT or head.get("noindex", False)
+                if "/lote/" in path and not head["noindex"]:
+                    for label, value, registry in (
+                        ("title", head.get("title"), lot_titles),
+                        ("description", head.get("desc"), lot_descriptions),
+                    ):
+                        if not isinstance(value, str) or not value.strip():
+                            raise SystemExit(f"{path}: lot {label} is empty")
+                        previous = registry.get(value)
+                        if previous is not None:
+                            raise SystemExit(
+                                f"duplicate lot {label}: {previous} and {path}"
+                            )
+                        registry[value] = path
                 html = shell(
                     tpl,
                     head,
@@ -593,6 +609,15 @@ async def run(a, ws_url: str, tpl: str, out: Path) -> None:
                     if href.startswith("/leilao-de-imoveis/") and href not in seen:
                         seen.add(href)
                         queue.append(href)
+                    if href.startswith("/leilao-de-imoveis/"):
+                        inbound_routes.add(href)
+
+            orphan_lots = sorted(
+                path for path in emitted if "/lote/" in path and path not in inbound_routes
+            )
+            if orphan_lots:
+                sample = ", ".join(orphan_lots[:5])
+                raise SystemExit(f"{len(orphan_lots)} emitted lot pages have no internal link: {sample}")
 
             # Map fragments are not routes: no document shell/canonical and no
             # sitemap entry. The current payload contains five supported cities.

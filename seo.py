@@ -122,11 +122,14 @@ class PageFacts(HTMLParser):
     def __init__(self, html):
         super().__init__()
         self.canonicals = []
+        self.titles = []
+        self.descriptions = []
         self.noindex = False
         self.lang = None
         self.doctype = False
         self.structured = []
         self._ld = None
+        self._title = None
         self.feed(html)
         self.close()
 
@@ -139,6 +142,10 @@ class PageFacts(HTMLParser):
             self.lang = a.get("lang")
         if tag == "link" and "canonical" in (a.get("rel") or "").lower().split():
             self.canonicals.append(a.get("href"))
+        if tag == "title":
+            self._title = ""
+        if tag == "meta" and (a.get("name") or "").lower() == "description":
+            self.descriptions.append(a.get("content"))
         if tag == "meta" and (a.get("name") or "").lower() in {"robots", "googlebot"}:
             self.noindex |= bool(
                 {"noindex", "none"} & set(re.split(r"[\s,]+", (a.get("content") or "").lower()))
@@ -149,8 +156,13 @@ class PageFacts(HTMLParser):
     def handle_data(self, data):
         if self._ld is not None:
             self._ld += data
+        if self._title is not None:
+            self._title += data
 
     def handle_endtag(self, tag):
+        if tag == "title" and self._title is not None:
+            self.titles.append(self._title)
+            self._title = None
         if tag == "script" and self._ld is not None:
             self.structured.append(json.loads(self._ld))
             self._ld = None
@@ -162,6 +174,10 @@ def validate_page(html, path, site, emitted=None, *, emitted_urls=None):
         raise ValueError(f"{path}: expected HTML5 and lang=pt-BR")
     if facts.canonicals != [canonical_url(site, path)]:
         raise ValueError(f"{path}: expected exactly one self-canonical")
+    if len(facts.titles) != 1 or not facts.titles[0].strip():
+        raise ValueError(f"{path}: expected exactly one non-empty title")
+    if len(facts.descriptions) != 1 or not (facts.descriptions[0] or "").strip():
+        raise ValueError(f"{path}: expected exactly one non-empty meta description")
     if route_file(path) == "404.html" and not facts.noindex:
         raise ValueError("404.html must be noindex")
     if emitted is not None or emitted_urls is not None:

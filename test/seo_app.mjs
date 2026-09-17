@@ -65,10 +65,33 @@ function crawlAll(runtime) {
   return { pages, urls };
 }
 
+function assertUniqueLotMetadata(runtime, lotUrls, { bodies = false } = {}) {
+  const titles = new Set(), descriptions = new Set();
+  for (const path of lotUrls) {
+    const slug = path.split('/').filter(Boolean).at(-1);
+    const id = runtime.idFromSlug(slug);
+    const head = runtime.headFor(path);
+    assert.ok(head.title.includes(id), `${path}: title lacks stable lot reference`);
+    assert.ok(head.desc.includes(id), `${path}: description lacks stable lot reference`);
+    assert.ok(head.title.length <= 120, `${path}: title is not compact (${head.title.length})`);
+    assert.ok(head.desc.length <= 260, `${path}: description is not compact (${head.desc.length})`);
+    assert.ok(!titles.has(head.title), `${path}: duplicate lot title`);
+    assert.ok(!descriptions.has(head.desc), `${path}: duplicate lot description`);
+    titles.add(head.title);
+    descriptions.add(head.desc);
+    if (bodies) {
+      const html = runtime.screenFor(path);
+      assert.match(html, new RegExp(`Referência do lote: ${id}`));
+      assert.match(html, /\brelated-lot\b/, `${path}: no related-lot internal link`);
+    }
+  }
+}
+
 const { pages: fixturePages, urls } = crawlAll(ctx);
 assert.equal(fixturePages.size, 3);
 assert.equal(urls.length, 405);
 assert.equal(new Set(urls).size, 405);
+assertUniqueLotMetadata(ctx, urls, { bodies: true });
 assert.ok(urls.some(x => x.includes('0000000000000404')), 'unmapped final lot is reachable through pagination');
 for (const url of urls) assert.ok(ctx.screenFor(url)?.includes('<h1>'), url);
 
@@ -144,6 +167,7 @@ for (const raw of exported.cities) {
   const expected = new Set(raw.rows.map(r => live.href('/l/' + encodeURIComponent(r[0]))));
   assert.equal(links.length, raw.rows.length, c.nome);
   assert.deepEqual(new Set(links), expected, c.nome);
+  assertUniqueLotMetadata(live, links);
   total += links.length;
   pageCount += pages.size;
   const bodies = [...pages.values()];

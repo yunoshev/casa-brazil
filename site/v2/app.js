@@ -52,6 +52,11 @@ function title(s) {
     return i && small[w] ? w : w.charAt(0).toUpperCase() + w.slice(1);
   }).join(" ");
 }
+function metaText(value, limit) {
+  var text = String(value || "").replace(/\s+/g, " ").trim();
+  if (text.length <= limit) return text;
+  return text.slice(0, Math.max(1, limit - 1)).replace(/[\s,.;:-]+$/g, "") + "\u2026";
+}
 function normKey(s) {
   return String(s || "").normalize("NFD").replace(/[̀-ͯ]/g, "")
     .trim().toUpperCase();
@@ -134,6 +139,10 @@ function lastAdvertisedPrice(r) {
   var value = lifecycle(r).last_price_brl;
   return priceKnown(value) ? value : priceKnown(r[C.preco]) ? r[C.preco] : null;
 }
+function lotReference(r) { return String(r[C.id] == null ? "" : r[C.id]).trim(); }
+function lotReferenceLine(r) {
+  return '<p class="lot-reference">' + esc(t("lot.reference", { ref: lotReference(r) })) + '</p>';
+}
 function priceText(value) { return priceKnown(value) ? money(value) : t("archive.price.unknown"); }
 function inventoryNotice() { return '<p class="note inventory-note">' + esc(t("archive.inventory.notice")) + '</p>'; }
 function lifecycleBanner(r) {
@@ -178,6 +187,7 @@ function screenHistoricalLot(r) {
   var key = areaOf(r);
   return '<div class="hero">' + back(key ? href("/a/" + encodeURIComponent(key)) : href(), key ? areaName(key) : city.nome) +
     '<h1><span class="lot-title" title="' + esc(title(r[C.end] || r[C.tipo] || t("lot.fallback"))) + '">' + esc(title(r[C.end] || r[C.tipo] || t("lot.fallback"))) + '</span></h1><p class="lede">' + lotLine(r) + '</p>' +
+    lotReferenceLine(r) +
     lotBreadcrumb(r) + '</div>' +
     lifecycleBanner(r) + lotGallery(r) + lotMapsBlock(r) + '<p class="foot">' + link("/archive", esc(t("archive.nav"))) + ' · ' +
     link("/all", esc(t("archive.current"))) + '</p>' + lotHistory(r) +
@@ -1309,6 +1319,23 @@ function lotLine(r) {
   return bits.join(" · ");
 }
 
+/* Search snippets use only fields carried by the source row. The stable
+ * reference makes two units at the same address distinguishable; the facts
+ * make the description useful without claiming an estimate exists. */
+function lotMetaSubject(r) {
+  var bits = [title(r[C.tipo] || t("lot.fallback"))];
+  if (priceKnown(r[C.area]) && r[C.area] > 0) bits.push(r[C.area] + " " + t("unit.m2"));
+  return metaText(bits.join(" · "), 52);
+}
+function lotMetaFacts(r) {
+  var facts = [];
+  if (priceKnown(r[C.preco])) facts.push(t("lot.price.open") + ": " + money(r[C.preco]));
+  if (priceKnown(r[C.aval])) facts.push(t("lot.price.aval") + ": " + money(r[C.aval]));
+  var day = auctionDate(r);
+  if (day) facts.push(t("seo.auction.date", { date: day }));
+  return facts.join(" · ") || lotMetaSubject(r);
+}
+
 /* Related lots use only rows already published in this page's payload. A
  * street is usable only when it has a street page, so partial or misspelled
  * addresses cannot manufacture dead links. Tiers describe place, not distance:
@@ -1655,6 +1682,7 @@ function screenLot(id) {
       '<h1><span class="lot-title" title="' + esc(title(r[C.end] || r[C.tipo] || t("lot.fallback"))) + '">' + esc(title(r[C.end] || r[C.tipo] || t("lot.fallback"))) + "</span></h1>" +
       '<p class="lede">' + lotLine(r) + " · " +
         esc(title(r[C.bairro] || (key ? areaName(key) : city.nome))) + "</p>" +
+      lotReferenceLine(r) +
       lotBreadcrumb(r) +
       '<p class="note">' + esc(auctionNote(r)) + "</p></div>" + lifecycleBanner(r) +
 
@@ -2197,14 +2225,20 @@ function headFor(path) {
     base.desc = t("head.honest.desc", { city: name });
   } else if (p[p.length - 2] === SEG.lot) {
     var r = lotById[idFromSlug(last)];
-    var what = r ? title(r[C.end] || r[C.tipo] || t("lot.fallback")) : t("lot.fallback");
-    var where = r && r[C.bairro] ? title(r[C.bairro]) : name;
-    base.title = t("head.lot.title", { what: what, where: where });
-    base.desc = t("head.lot.desc", { what: what, where: where, city: name });
+    var what = r ? lotMetaSubject(r) : t("lot.fallback");
+    var where = r && r[C.bairro] ? metaText(title(r[C.bairro]), 32) : name;
+    var ref = r ? lotReference(r) : "";
+    var address = r ? metaText(title(r[C.end] || where), 88) : where;
+    var facts = r ? lotMetaFacts(r) : what;
+    base.title = t("head.lot.title", { what: what, where: where, city: name, ref: ref });
+    base.desc = t("head.lot.desc", {
+      what: what, where: where, city: name, address: address, facts: facts, ref: ref,
+    });
     if (r && !isCurrent(r)) {
-      base.title = t(STATUS_KEY[lotStatus(r)]) + ' · ' + what + ' · ' + name;
-      base.desc = what + ', ' + where + '. ' + t("archive.removal.notice") + ' ' +
-        t("archive.price.last") + ': ' + priceText(lastAdvertisedPrice(r));
+      base.title = t(STATUS_KEY[lotStatus(r)]) + ' · ' + what + ' · ' + ref;
+      base.desc = address + ', ' + name + '. ' + t("archive.removal.notice") + ' ' +
+        t("archive.price.last") + ': ' + priceText(lastAdvertisedPrice(r)) + '. ' +
+        t("lot.reference", { ref: ref });
     }
   } else if (archivePageNumber(path)) {
     var archivePage = archivePageNumber(path);
