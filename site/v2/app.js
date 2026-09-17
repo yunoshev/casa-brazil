@@ -1712,6 +1712,7 @@ function askingHint(r) {
 }
 
 function whyBlock(r) {
+  if (marketReportFor(r[C.id])) return "";
   if (reliable(r)) return "";
   var ring = r[C.ring] || 0;
   var out = "";
@@ -1746,7 +1747,8 @@ function whyBlock(r) {
  * synchronous human-readable market facts when the build embedded one. */
 function marketReportFor(id) {
   var reports = D && D.market_reports;
-  return reports && typeof reports === "object" ? reports[String(id)] : null;
+  var report = reports && typeof reports === "object" ? reports[String(id)] : null;
+  return report && report.schema === "market-v1" ? report : null;
 }
 
 function marketHeroSummary(id) {
@@ -1850,6 +1852,7 @@ function screenLot(id) {
   if (!isCurrent(r)) return screenHistoricalLot(r);
   var vd = verdict(r);
   var key = areaOf(r);
+  var report = marketReportFor(r[C.id]);
 
   // Two of these four are ours and two are published facts. Where the verdict
   // is withheld for want of comparable sales, ours come off the scale too —
@@ -1862,7 +1865,7 @@ function screenLot(id) {
     { k: "lot.price.hammer", val: own && r[C.hammer], cls: "c-hammer" },
     { k: "lot.price.market", val: own && r[C.mkt], cls: "c-market" },
     { k: "lot.price.aval", val: r[C.aval], cls: "c-aval" },
-  ].filter(function (p) { return p.val; });
+  ].filter(function (p) { return p.val && !(report && p.k === "lot.price.market"); });
   var hi = Math.max.apply(null, pts.map(function (p) { return p.val; })) * 1.06;
 
   return '<div class="lot-above"><div class="lot-intro">' +
@@ -1896,7 +1899,9 @@ function screenLot(id) {
     lotMapsBlock(r) +
 
     '<div class="verdict">' +
-      (vd
+      (report
+        ? '<p class="word mute">' + esc(t("market.range.context")) + "</p>"
+        : vd
         ? '<div class="delta ' + (r[C.margin] > 0 ? "up" : "dn") + '">' +
             pct(r[C.margin]) + "</div>" +
           '<p class="word ' + vd[1] + '">' + t(vd[2]) + "</p>" +
@@ -1933,7 +1938,7 @@ function screenLot(id) {
       // Same rule: the platform's promise is theirs to answer for and we quote
       // it either way, but our counter-number only appears when we have one.
       (r[C.promised] != null
-        ? '<p class="note">' + t(own ? "lot.note.promised" : "lot.note.promised.noest", {
+        ? '<p class="note">' + t(report ? "lot.note.promised.market" : own ? "lot.note.promised" : "lot.note.promised.noest", {
             promised: b(pct(-Math.abs(r[C.promised]), false)),
             margin: b(pct(r[C.margin])),
           }) + "</p>"

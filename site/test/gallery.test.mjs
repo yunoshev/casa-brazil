@@ -161,7 +161,7 @@ test('generated page template ships the gallery runtime without re-rendering the
 
 test('product hero puts financial facts, market evidence and one analysis anchor before the gallery', () => {
   const html = runtime({ media: { gallery: [{ url: 'https://img.example.test/a.jpg' }] }, reports: {
-    'lot-1': { sale_asking: { min: 111000, max: 155000 }, sample: {
+    'lot-1': { schema: 'market-v1', sale_asking: { min: 111000, max: 155000 }, sample: {
       count: 8, radius_m: 1000, freshness_days: 2, confidence: 'medium',
     } },
   }, link: 'https://example.test/lot' }).screenLot('lot-1');
@@ -188,15 +188,30 @@ test('product hero puts financial facts, market evidence and one analysis anchor
 test('a market report suppresses the legacy district asking hint on an unscored lot', () => {
   const html = runtime({
     reports: {
-      'lot-1': { sale_asking: { min: 111000, max: 155000 }, sample: {
+      'lot-1': { schema: 'market-v1', sale_asking: { min: 111000, max: 155000 }, sample: {
+        count: 8, radius_m: 1000, freshness_days: 2, confidence: 'medium',
+      } },
+    },
+    rowFields: { conf: 'no_comps', why: 'no_comps', ring: 5000, mkt: 150000 },
+  }).screenLot('lot-1');
+  assert.doesNotMatch(html, /No estimate shown/);
+  assert.doesNotMatch(html, /Why we do not show an estimate/);
+  assert.doesNotMatch(html, /asking market/);
+  assert.match(html, /asking prices from listings/);
+  assert.doesNotMatch(html, /For scale:/);
+});
+
+test('an absent or unvalidated market report keeps the honest fallback', () => {
+  const html = runtime({
+    reports: {
+      'lot-1': { schema: 'market-v0', sale_asking: { min: 111000, max: 155000 }, sample: {
         count: 8, radius_m: 1000, freshness_days: 2, confidence: 'medium',
       } },
     },
     rowFields: { conf: 'no_comps', why: 'no_comps', ring: 5000 },
   }).screenLot('lot-1');
   assert.match(html, /No estimate shown/);
-  assert.match(html, /asking prices from listings/);
-  assert.doesNotMatch(html, /For scale:/);
+  assert.doesNotMatch(html, /asking prices from listings/);
 });
 
 test('transaction context translates the property kind on generated lot markup', () => {
