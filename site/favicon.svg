@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-labelledby="title">
+  <title id="title">Preço Real</title>
+  <rect width="64" height="64" rx="14" fill="#0C100D"/>
+  <path d="M13 16h24c8 0 13 4 13 11s-5 11-13 11H22v10h-9V16Zm9 8v6h14c3 0 5-1 5-3s-2-3-5-3H22Z" fill="#ECF2EE"/>
+  <path d="M40 16h11v8H40zM40 32h11v8H40zM40 48h11v8H40z" fill="#4ECB90"/>
+</svg>

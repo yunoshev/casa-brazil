@@ -5,9 +5,8 @@
  * send to someone. The map is the navigation: nothing on it is decorative,
  * every outline is a tap target, and zooming is the route changing.
  *
- * No prose lives here. Every visible string comes through t() from
- * i18n/<lang>.json, and build.py refuses to build if one is missing. The only
- * words written out below are CSS class names and keys. */
+ * Visible strings come through t() from i18n/<lang>.json, including SEO
+ * notices and pagination. */
 
 var D = window.__D__;
 var C = {};
@@ -23,6 +22,26 @@ function esc(s) {
   });
 }
 function b(s) { return "<b>" + s + "</b>"; }
+
+/* This is a rendering reference, never a claim that a source was checked. */
+var dateReference = new Date().toISOString().slice(0, 10);
+function auctionDate(r) {
+  var value = r[C.data];
+  if (typeof value !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return null;
+  var parsed = new Date(value + "T00:00:00Z");
+  return !isNaN(parsed.getTime()) && parsed.toISOString().slice(0, 10) === value ? value : null;
+}
+
+function auctionNote(r) {
+  var day = auctionDate(r);
+  var text = day
+    ? t("seo.auction.date", { date: day }) + " "
+    : t("seo.auction.unknown") + " ";
+  if (day && day < dateReference) {
+    text += t("seo.auction.past", { date: dateReference }) + " ";
+  }
+  return text + t("seo.auction.verify");
+}
 
 /* Portuguese title-casing, and deliberately not translated: this folds the
  * *data* — Brazilian street and district names — not the interface. A Russian
@@ -45,35 +64,32 @@ function $(id) { return document.getElementById(id); }
  * far away, describe a district rather than an address. */
 function reliable(r) { return r[C.conf] === "ok" && r[C.ring] <= 1000; }
 
-/* Lifecycle is source observation, not an inferred auction outcome.  A record
- * missing from an incomplete source remains a historical record; only an
- * explicit outcome may ever describe a sale. */
+/* Inventory membership and analytical reliability are independent. Older
+ * exports remain browsable, but their availability has never been verified. */
 function lifecycle(r, c) { return ((c || city).lifecycle || {})[String(r[C.id])] || {}; }
 function lotStatus(r, c) {
-  var s = lifecycle(r, c).status;
-  return ["active", "unverified", "missing", "archived"].indexOf(s) >= 0 ? s : "unverified";
+  var status = lifecycle(r, c).status;
+  return ["active", "missing", "archived"].indexOf(status) >= 0 ? status : "unverified";
 }
 function isCurrent(r, c) { return ["missing", "archived"].indexOf(lotStatus(r, c)) < 0; }
 function currentRows(c) {
   c = c || city;
   return c.rows.filter(function (r) { return isCurrent(r, c); });
 }
-function offerRows(c) {
-  c = c || city;
-  return c.rows.filter(function (r) { return lotStatus(r, c) === "active"; });
-}
 function archiveRows() {
   return city.rows.filter(function (r) { return !isCurrent(r); }).sort(function (a, b) {
-    var x = lifecycle(a), y = lifecycle(b);
-    return String(y.archived_at || y.missing_since || "").localeCompare(String(x.archived_at || x.missing_since || "")) ||
+    var la = lifecycle(a), lb = lifecycle(b);
+    return String(lb.archived_at || lb.missing_since || "").localeCompare(String(la.archived_at || la.missing_since || "")) ||
       String(a[C.id]).localeCompare(String(b[C.id]));
   });
 }
 function refreshStats(c) {
-  var known = currentRows(c), rows = offerRows(c), rel = rows.filter(reliable), promised = rel.map(function (r) { return r[C.promised]; }).filter(function (v) { return v != null; });
+  var rows = currentRows(c), rel = rows.filter(reliable);
   var loud = rel.filter(function (r) { return (r[C.promised] || 0) >= 45; });
+  var promised = rel.map(function (r) { return r[C.promised]; }).filter(function (v) { return v != null; });
   var s = c.stats = c.stats || {};
-  s.lots = rows.length; s.known_lots = known.length; s.unverified_lots = known.length - rows.length; s.reliable = rel.length;
+  s.lots = rows.length;
+  s.reliable = rel.length;
   s.below = rel.filter(function (r) { return r[C.margin] > 0; }).length;
   s.promised_med = median(promised);
   s.real_med = rel.length ? -median(rel.map(function (r) { return r[C.margin]; })) : null;
@@ -81,36 +97,98 @@ function refreshStats(c) {
   s.above_hammer = loud.filter(function (r) { return r[C.margin] < 0; }).length;
   s.loud_below = loud.filter(function (r) { return r[C.margin] > 0; }).length;
 }
-function statusText(r) {
-  var s = lotStatus(r);
-  return t("lifecycle.status." + s);
+
+var STATUS_KEY = { active: "archive.status.active", unverified: "archive.status.unverified",
+  missing: "archive.status.missing", archived: "archive.status.archived" };
+var OUTCOME_KEY = { sold: "archive.outcome.sold", withdrawn: "archive.outcome.withdrawn",
+  cancelled: "archive.outcome.cancelled", postponed: "archive.outcome.postponed", unsold: "archive.outcome.unsold" };
+var HISTORY_KEY = { seeded: "archive.event.seeded", seen: "archive.event.seen",
+  historical_price: "archive.event.historical_price",
+  price_changed: "archive.event.price_changed", missing: "archive.event.missing",
+  archived: "archive.event.archived", reappeared: "archive.event.reappeared", outcome: "archive.event.outcome" };
+function httpsSource(value) {
+  if (typeof value !== "string" || /[\s<>"'\\]/.test(value)) return null;
+  try {
+    var u = new URL(value);
+    return u.protocol === "https:" && u.hostname && !u.username && !u.password ? value : null;
+  } catch (e) { return null; }
 }
+function confirmedOutcome(r) {
+  var outcome = lifecycle(r).outcome;
+  return outcome && Object.prototype.hasOwnProperty.call(OUTCOME_KEY, outcome.kind) &&
+    httpsSource(outcome.evidence_url) ? outcome : null;
+}
+function archiveDate(value) {
+  if (typeof value !== "string" || !/^\d{4}-\d{2}-\d{2}(?:T.*)?$/.test(value)) return null;
+  var date = new Date(value);
+  var day = new Date(value.slice(0, 10) + "T00:00:00Z");
+  return !isNaN(date.getTime()) && !isNaN(day.getTime()) &&
+    day.toISOString().slice(0, 10) === value.slice(0, 10) ? value : null;
+}
+function dateFact(key, value) {
+  var date = archiveDate(value);
+  return fact(t(key), date || t("archive.date.unknown"));
+}
+function priceKnown(value) { return typeof value === "number" && isFinite(value) && value >= 0; }
 function lastAdvertisedPrice(r) {
-  var p = lifecycle(r).last_price_brl;
-  return typeof p === "number" && isFinite(p) && p >= 0 ? p : r[C.preco];
+  var value = lifecycle(r).last_price_brl;
+  return priceKnown(value) ? value : priceKnown(r[C.preco]) ? r[C.preco] : null;
 }
-function inventoryNotice() { return '<p class="note inventory-note">' + t("lifecycle.inventory", {
-  active: num(city.stats.lots), unverified: num(city.stats.unverified_lots || 0),
-}) + '</p>'; }
+function priceText(value) { return priceKnown(value) ? money(value) : t("archive.price.unknown"); }
+function inventoryNotice() { return '<p class="note inventory-note">' + esc(t("archive.inventory.notice")) + '</p>'; }
 function lifecycleBanner(r) {
-  var lc = lifecycle(r), s = lotStatus(r);
-  return '<section class="mkt lifecycle-banner ' + s + '"><h2>' + esc(statusText(r)) + '</h2><p>' +
-    t(isCurrent(r) ? "lifecycle.notice.current" : "lifecycle.notice.removed") +
-    '</p><div class="facts">' +
-    fact(t("lifecycle.fact.last_seen"), lc.last_seen_at || t("lifecycle.date.unknown")) +
-    fact(t("lifecycle.fact.last_checked"), lc.last_checked_at || t("lifecycle.date.unknown")) +
-    (lc.missing_since ? fact(t("lifecycle.fact.missing_since"), lc.missing_since) : '') +
-    (lc.archived_at ? fact(t("lifecycle.fact.archived_at"), lc.archived_at) : '') + '</div></section>';
+  var status = lotStatus(r), lc = lifecycle(r);
+  return '<section class="lifecycle-banner ' + status + '" aria-label="' + esc(t(STATUS_KEY[status])) + '">' +
+    '<h2>' + esc(t(STATUS_KEY[status])) + '</h2><p>' + esc(t(!isCurrent(r)
+      ? "archive.removal.notice" : status === "active" ? "archive.active.notice" : "archive.unverified.notice")) + '</p>' +
+    '<div class="facts">' + dateFact("archive.date.last_seen", lc.last_seen_at) +
+      dateFact("archive.date.checked", lc.last_checked_at) +
+      (status === "missing" || lc.missing_since ? dateFact("archive.date.missing", lc.missing_since) : "") +
+      (status === "archived" ? dateFact("archive.date.archived", lc.archived_at) : "") + '</div></section>';
 }
+function lotHistory(r) {
+  var lc = lifecycle(r), outcome = confirmedOutcome(r);
+  var history = (Array.isArray(lc.history) ? lc.history : []).filter(function (event) {
+    return event && Object.prototype.hasOwnProperty.call(HISTORY_KEY, event.kind);
+  });
+  return '<section class="mkt lot-history"><h2>' + esc(t("archive.history.h2")) + '</h2>' +
+    '<p class="note">' + esc(t("archive.history.notice")) + '</p>' +
+    '<div class="facts">' + dateFact("archive.date.first_seen", lc.first_seen_at) +
+      fact(t("archive.price.last"), priceText(lastAdvertisedPrice(r))) + '</div>' +
+    (outcome ? '<div class="confirmed-outcome"><h3>' + esc(t(OUTCOME_KEY[outcome.kind])) + '</h3>' +
+      '<div class="facts">' + dateFact("archive.date.outcome", outcome.effective_at) +
+      (outcome.kind === "sold" && priceKnown(outcome.price_brl)
+        ? fact(t("archive.price.sale"), priceText(outcome.price_brl)) : "") + '</div>' +
+      '<a href="' + esc(outcome.evidence_url) + '" target="_blank" rel="noopener noreferrer">' +
+      esc(t("archive.evidence")) + '</a></div>'
+      : '<p>' + esc(t("archive.outcome.unknown")) + '</p>') +
+    (history.length ? '<ol class="history-events">' + history.map(function (event) {
+      var url = httpsSource(event.source_url);
+      return '<li><b>' + esc(t(HISTORY_KEY[event.kind], {
+        date: archiveDate(event.source_date) || t("archive.date.unknown"),
+      })) + '</b><div class="facts">' +
+        dateFact(event.kind === "historical_price" || event.kind === "seeded" ? "archive.date.imported" : "archive.date.observed", event.observed_at) +
+        fact(t("archive.price.observed"), priceText(event.price_brl)) +
+        dateFact("archive.date.source", event.source_date) + '</div>' +
+        (url ? '<a href="' + esc(url) + '" target="_blank" rel="noopener noreferrer">' + esc(t("archive.evidence")) + '</a>' : "") + '</li>';
+    }).join("") + '</ol>' : '<p>' + esc(t("archive.history.empty")) + '</p>') + '</section>';
+}
+
 function screenHistoricalLot(r) {
-  var key = areaOf(r), price = lastAdvertisedPrice(r);
+  var key = areaOf(r);
   return '<div class="hero">' + back(key ? href("/a/" + encodeURIComponent(key)) : href(), key ? areaName(key) : city.nome) +
-    '<h1 class="lot-address">' + esc(title(r[C.end] || r[C.tipo] || t("lot.fallback"))) + '</h1><p class="lede">' + lotLine(r) + '</p></div>' +
-    lifecycleBanner(r) + '<section class="mkt"><h2>' + t("lifecycle.historical.title") + '</h2><p>' + t("lifecycle.historical.body") + '</p><div class="facts">' +
-    fact(t("lifecycle.fact.last_price"), price == null ? t("lifecycle.date.unknown") : money(price)) +
-    fact(t("lifecycle.fact.appraisal"), r[C.aval] == null ? '—' : money(r[C.aval])) + '</div></section>' +
-    gallery(r) + lotMap(r) +
-    '<section class="mkt" data-lot-report="' + esc(r[C.id]) + '"></section>' + footer();
+    '<h1><span class="lot-title" title="' + esc(title(r[C.end] || r[C.tipo] || t("lot.fallback"))) + '">' + esc(title(r[C.end] || r[C.tipo] || t("lot.fallback"))) + '</span></h1><p class="lede">' + lotLine(r) + '</p>' +
+    lotBreadcrumb(r) + '</div>' +
+    lifecycleBanner(r) + lotGallery(r) + lotMapsBlock(r) + '<p class="foot">' + link("/archive", esc(t("archive.nav"))) + ' · ' +
+    link("/all", esc(t("archive.current"))) + '</p>' + lotHistory(r) +
+    '<section class="mkt" data-lot-report="' + esc(r[C.id]) + '"></section>' +
+    '<section class="mkt historical-analysis"><h2>' + esc(t("archive.analysis.h2")) + '</h2>' +
+    '<p>' + esc(t("archive.analysis.notice")) + '</p><div class="facts">' +
+    fact(t("archive.price.appraisal"), priceText(r[C.aval])) +
+    (reliable(r) ? fact(t("archive.price.estimate"), priceText(r[C.hammer])) +
+      fact(t("archive.price.market"), priceText(r[C.mkt])) : '') + '</div></section>' +
+    (httpsSource(r[C.link]) ? '<p class="foot"><a href="' + esc(r[C.link]) + '" target="_blank" rel="noopener noreferrer">' +
+      esc(t("archive.source.original")) + '</a></p>' : '') + relatedLots(r) + footer();
 }
 
 /* A city we carry for its paid side only: no comps pipeline, no hammer chain,
@@ -133,71 +211,129 @@ function verdict(r) {
   return [-999, "bad", "lot.verdict.much_dearer"];
 }
 
-/* Media is deliberately additive: city.media[lotId] = { photos: [https URL] }.
- * The current public payload has no media projection, so its coverage is zero
- * until the export supplies source-backed URLs. Do not manufacture a gallery
- * by probing numbered Caixa filenames. */
+/* Caixa serves a photo for every lot at a URL derived from the listing id.
+ * Nothing else in the registry carries images yet, so the slot stays empty and
+ * says so rather than showing a stand-in that pretends to be the building. */
+function photo(r) {
+  var m = /hdnimovel=(\d+)/.exec(r[C.link] || "");
+  return m ? "https://venda-imoveis.caixa.gov.br/fotos/F" + m[1] + "21.jpg" : null;
+}
 
-function safeHttpsURL(value) {
-  if (typeof value !== "string") return null;
+/* Media is an additive payload. Older builds do not carry it at all, so the
+ * renderer must never make the presence of a gallery a prerequisite for a
+ * lot page.  The exporter currently writes `{cities: {slug: {lot_id: ...}}}`;
+ * the small set of equivalent lookups below also keeps previews and future
+ * payload wrappers readable without fetching anything from the browser. */
+function mediaPayload() {
+  return D.media || D.lot_media || D.media_payload ||
+    (window && window.__MEDIA__) || null;
+}
+function mediaRecordFor(r) {
+  var payload = mediaPayload(), id = String(r[C.id]);
+  if (!payload || typeof payload !== "object") return null;
+  var has = function (obj, key) {
+    return obj && typeof obj === "object" &&
+      Object.prototype.hasOwnProperty.call(obj, key) ? obj[key] : null;
+  };
+  var cityKeys = [city.slug, city.cslug, city.uf && (city.uf + ":" + city.cslug)];
+  var cities = has(payload, "cities");
+  if (cities && typeof cities === "object") {
+    for (var i = 0; i < cityKeys.length; i++) {
+      var bucket = has(cities, cityKeys[i]);
+      var record = has(bucket, id);
+      if (record && typeof record === "object") return record;
+    }
+  }
+  var lots = has(payload, "lots");
+  var direct = has(lots, id) || has(payload, id);
+  if (direct && typeof direct === "object") return direct;
+  var records = has(payload, "records");
+  if (Array.isArray(records)) {
+    for (var j = 0; j < records.length; j++) {
+      var item = records[j];
+      if (item && typeof item === "object" &&
+          String(item.lot_id || item.id || item.registry_uid || "") === id) return item;
+    }
+  }
+  return null;
+}
+function safeMediaUrl(value) {
+  if (typeof value !== "string" || !value || /[\s<>"'\\]/.test(value)) return null;
   try {
     var u = new URL(value);
-    return u.protocol === "https:" && !u.username && !u.password ? u.href : null;
+    return u.protocol === "https:" && u.hostname && !u.username && !u.password && !u.search && !u.hash ? value : null;
   } catch (e) { return null; }
 }
-
-/* Caixa's listing metadata identifies its one cover photograph by hdnimovel.
- * This is a single known fallback, not evidence that any numbered siblings
- * exist. It remains separate from the media projection so a future feed never inherits
- * invented "all photos". */
-function caixaCover(r) {
-  var m = /[?&]hdnimovel=(\d+)(?:&|$)/.exec(r[C.link] || "");
-  return r[C.src] === "caixa" && m
-    ? safeHttpsURL("https://venda-imoveis.caixa.gov.br/fotos/F" + m[1] + "21.jpg") : null;
+function mediaUrls(record) {
+  if (!record || typeof record !== "object") return [];
+  var out = [], seen = {};
+  var add = function (value) {
+    var url = safeMediaUrl(value);
+    if (url && !seen[url]) { seen[url] = true; out.push(url); }
+  };
+  var gallery = record.gallery;
+  if (Array.isArray(gallery)) {
+    gallery.forEach(function (entry) {
+      add(entry && typeof entry === "object" ? entry.url : entry);
+    });
+  }
+  /* If a malformed/new gallery contains no usable URLs, use the v1 fields.
+   * When gallery has usable entries it is authoritative and its order wins. */
+  if (!out.length) {
+    (Array.isArray(record.photos) ? record.photos : []).forEach(add);
+    add(record.primary_photo);
+  }
+  return out;
 }
-function mediaForLot(r) {
-  var item = (city.media || {})[String(r[C.id])] || {};
-  var listed = Array.isArray(item.photos) ? item.photos.map(safeHttpsURL).filter(Boolean) : [];
-  var cover = caixaCover(r);
-  if (cover && listed.indexOf(cover) < 0) listed.unshift(cover);
-  return listed.filter(function (url, i) { return listed.indexOf(url) === i; });
+function lotPhotos(r) {
+  var urls = mediaUrls(mediaRecordFor(r));
+  if (!urls.length) {
+    var fallback = safeMediaUrl(photo(r));
+    if (fallback) urls.push(fallback);
+  }
+  return urls;
 }
-function photo(r) { return mediaForLot(r)[0] || null; }
-
-function mapQueryForLot(r) {
-  var address = String(r[C.end] || "").trim();
-  /* An ellipsis is a feed truncation, not an address. Coordinates are never a
-   * replacement: a district centroid must not become a claimed building. */
-  if (!address || /[…]/.test(address) || !/[A-Za-zÀ-ÿ]/.test(address) || !/(\d|\bs\/?n\b)/i.test(address)) return null;
-  return address + ", " + city.nome + " - " + city.uf + ", Brasil";
+function galleryText(kind, index, total) {
+  var code = LANG && LANG.code;
+  if (kind === "count") {
+    return code === "ru" ? index + " из " + total : code === "en" ? index + " of " + total : index + " de " + total;
+  }
+  if (code === "ru") return kind === "previous" ? "Предыдущее фото" : kind === "next" ? "Следующее фото" : "Фото " + index + " из " + total;
+  if (code === "en") return kind === "previous" ? "Previous photo" : kind === "next" ? "Next photo" : "Photo " + index + " of " + total;
+  return kind === "previous" ? "Foto anterior" : kind === "next" ? "Próxima foto" : "Foto " + index + " de " + total;
 }
-function lotMap(r) {
-  var query = mapQueryForLot(r);
-  if (!query) return "";
-  var external = "https://www.google.com/maps/search/?api=1&query=" + encodeURIComponent(query);
-  return '<section class="lot-map mkt" data-lot-map data-map-query="' + esc(query) + '" hidden>' +
-    '<div class="sechead"><h2>' + t("lot.map.h2") + '</h2></div>' +
-    '<p class="foot lot-map-note">' + t("lot.map.note") + "</p>" +
-    '<div class="lot-map-actions"><button class="map-load" type="button">' + t("lot.map.load") +
-      '</button><a class="map-external" href="' + esc(external) + '" target="_blank" rel="noopener">' +
-      t("lot.map.external") + "</a></div>" +
-    '<div class="lot-map-frame" aria-live="polite"></div></section>';
+function galleryAlt(r, index, total) {
+  var subject = title(r[C.end] || r[C.tipo] || t("lot.fallback"));
+  var place = title(r[C.bairro] || city.nome);
+  return subject + " — " + place + ", " + galleryText("count", index, total);
 }
-
-function gallery(r) {
-  var media = mediaForLot(r);
-  if (!media.length) return "";
-  var alt = t("lot.photo.alt", { what: title(r[C.tipo] || t("lot.fallback")) });
-  return '<section class="gallery" data-gallery data-gallery-count="' + media.length + '">' +
-    '<div class="gallery-stage">' + media.map(function (url, i) {
-      return '<img class="shot gallery-image' + (i ? " hid" : "") + '" src="' + esc(url) + '" alt="' + esc(alt) +
-        '" decoding="async" width="640" height="480" data-gallery-index="' + i + '"' +
-        (i ? ' loading="lazy"' : ' fetchpriority="high"') + ">";
-    }).join("") + "</div><p class=\"foot gallery-note\">" + t("lot.gallery.note") + "</p>" +
-    (media.length > 1 ? '<div class="gallery-controls"><button type="button" class="gallery-prev" aria-label="' + esc(t("lot.gallery.prev")) + '">' +
-      t("lot.gallery.prev") + '</button><span class="gallery-count" aria-live="polite">1 / ' + media.length +
-      '</span><button type="button" class="gallery-next" aria-label="' + esc(t("lot.gallery.next")) + '">' + t("lot.gallery.next") + "</button></div>" : "") +
-    '</section>';
+function lotGallery(r) {
+  var photos = lotPhotos(r);
+  if (!photos.length) return "";
+  var total = photos.length, label = galleryText("count", 1, total);
+  var html = '<section class="lot-gallery" data-gallery data-gallery-total="' + total +
+    '" role="region" tabindex="0" aria-label="' + esc(t("lot.gallery.label", null, "Property photos")) + '">' +
+    '<div class="gallery-hero"><img class="shot" data-gallery-hero src="' + esc(photos[0]) +
+    '" alt="' + esc(galleryAlt(r, 1, total)) + '" decoding="async" fetchpriority="high" width="640" height="480"' +
+    ' onerror="this.style.display=\'none\'">' +
+    '<span class="gallery-count" data-gallery-count aria-live="polite">' + esc(label) + "</span></div>";
+  if (total > 1) {
+    html += '<div class="gallery-controls">' +
+      '<button type="button" class="gallery-control" data-gallery-prev aria-label="' + esc(galleryText("previous", 1, total)) + '" disabled>‹</button>' +
+      '<span class="gallery-hint">' + esc(galleryText("count", 1, total)) + '</span>' +
+      '<button type="button" class="gallery-control" data-gallery-next aria-label="' + esc(galleryText("next", 2, total)) + '">›</button>' +
+      '</div><div class="gallery-thumbs" role="list" aria-label="' + esc(t("lot.gallery.label", null, "Property photos")) + '">';
+    photos.forEach(function (url, i) {
+      html += '<button type="button" class="gallery-thumb" data-gallery-index="' + i +
+        '" data-gallery-alt="' + esc(galleryAlt(r, i + 1, total)) +
+        '" aria-label="' + esc(galleryText("photo", i + 1, total)) + '" aria-current="' + (i === 0 ? "true" : "false") + '">' +
+        '<img src="' + esc(url) + '" alt="" decoding="async"' + (i ? ' loading="lazy"' : '') +
+        ' width="88" height="66" onerror="this.style.display=\'none\'">' +
+        '</button>';
+    });
+    html += "</div>";
+  }
+  return html + "</section>";
 }
 
 /* ---- colour ---------------------------------------------------- */
@@ -353,8 +489,6 @@ function median(a) {
   return s.length % 2 ? s[h] : (s[h - 1] + s[h]) / 2;
 }
 
-// The country page is national, but its static featured map must be stable:
-// São Paulo is the reference city when the reader has not chosen one.
 var DEFAULT_CITY = D.cities.filter(function (c) { return c.slug === "sao-paulo-sp"; })[0] || D.cities[0];
 var city = DEFAULT_CITY;
 var byArea = {};
@@ -363,6 +497,10 @@ var slugToKey = { fwd: {}, rev: {} };
 var streetBySlug = {};
 var lotById = {};
 var lotBySlug = {};
+var streetCodeByLotId = {};
+var lotsByStreet = {};
+var lotsByArea = {};
+var lotsByCity = [];
 D.cities.forEach(refreshStats);
 
 /* Which area a lot sits in is decided at build time by its coordinates, not by
@@ -390,18 +528,41 @@ function areaName(key) {
 function lots(n) { return num(n) + " " + plur("unit.lot", n); }
 
 function indexCity(c) {
+  relatedLotCache = {};
+  relatedPlaceCache = {};
+  relatedCandidates = {};
+  streetCodeByLotId = {};
+  lotsByStreet = {};
+  lotsByArea = {};
+  lotsByCity = [];
   city = c;
   byArea = {};
   historyByArea = {};
   lotById = {};
   lotBySlug = {};
   refreshStats(c);
+  var streetCodes = Object.keys((c.streets || {}).d || {}).sort(function (a, b) {
+    return String(c.streets.d[b].name || "").length - String(c.streets.d[a].name || "").length;
+  });
   c.rows.forEach(function (r) {
     lotById[String(r[C.id])] = r;
     lotBySlug[lotSlug(r)] = r;
-    var k = areaOf(r);
-    if (k && lotStatus(r) === "active") (byArea[k] = byArea[k] || []).push(r);
-    if (k && !isCurrent(r)) (historyByArea[k] = historyByArea[k] || []).push(r);
+    lotsByCity.push(r);
+    var id = String(r[C.id]), address = normKey(r[C.end]), street = null;
+    if (address) for (var i = 0; i < streetCodes.length; i++) {
+      var code = streetCodes[i], name = normKey(c.streets.d[code].name);
+      if (name && (address === name || address.indexOf(name + " ") === 0 ||
+          (" " + address).indexOf(" " + name + ",") === 0)) {
+        street = code;
+        break;
+      }
+    }
+    streetCodeByLotId[id] = street;
+    if (street) (lotsByStreet[street] = lotsByStreet[street] || []).push(r);
+    var k = areaOf(r), place = { area: k || normKey(r[C.bairro]), street: street };
+    if (place.area) (lotsByArea[place.area] = lotsByArea[place.area] || []).push(r);
+    var target = isCurrent(r) ? byArea : historyByArea;
+    if (k) (target[k] = target[k] || []).push(r);
   });
   // Both directions: the URL carries a slug, the data is keyed by the raster
   // key, and a reader arriving from outside has only the slug.
@@ -417,6 +578,7 @@ function indexCity(c) {
     slugToKey.fwd[sl] = k;
     slugToKey.rev[k] = sl;
   });
+  buildRelatedGroups();
 }
 
 function areaStat(key) {
@@ -469,26 +631,21 @@ function cityOrder(first) {
   });
 }
 
-/* The national list is an editorial comparison, not the city picker. Put the
- * places where a measured share is strongest first, keep places without a
- * measured share neutral in the middle, and leave the weaker measured shares
- * last.  Do not reuse this for navigation: the picker deliberately preserves
- * its own stable order. */
-function countryCityRank(c) {
-  var s = c.stats || {};
-  var share = s.reliable > 0 ? s.below / s.reliable : null;
-  return { tier: share == null ? 1 : share >= 0.3 ? 0 : 2, share: share };
-}
-
-function countryCityComparator(a, b) {
-  var x = countryCityRank(a), y = countryCityRank(b);
-  return x.tier - y.tier ||
-    (x.share == null ? 0 : y.share - x.share) ||
-    String(a.nome).localeCompare(String(b.nome), "pt-BR");
-}
-
-function countryCityOrder(cities) {
-  return cities.slice().sort(countryCityComparator);
+/* The country verdict list is evidence-ranked, independently of the header
+ * and current-city controls. Cities without a reliable sample stay in the
+ * quiet coverage line below it. */
+function homeMeasuredCityOrder() {
+  return D.cities.filter(function (c) {
+    return !marketOnly(c) && c.stats.reliable > 0;
+  }).sort(function (a, b) {
+    var shareA = a.stats.below / a.stats.reliable;
+    var shareB = b.stats.below / b.stats.reliable;
+    if (shareA !== shareB) return shareB - shareA;
+    if (a.stats.reliable !== b.stats.reliable) return b.stats.reliable - a.stats.reliable;
+    var nameA = String(a.nome || a.slug), nameB = String(b.nome || b.slug);
+    if (nameA !== nameB) return nameA < nameB ? -1 : 1;
+    return a.slug === b.slug ? 0 : a.slug < b.slug ? -1 : 1;
+  });
 }
 
 function cityList(kind) {
@@ -549,6 +706,10 @@ function wireCity(root) {
  * last in — a country page showing Rio's median would be a lie told by a
  * cache. */
 function homeMap(main) {
+  // The country page opens on the product, not on prose: every city we cover,
+  // full width and first — a visitor must see in one glance what exists — and
+  // the default city's own map beside them. The default is the biggest city;
+  // its page is one tap away and the header menu switches to any other.
   if (city.slug !== main.slug) indexCity(main);
   var areas = allAreas().filter(function (a) { return city.shapes && city.shapes.d[a.key]; });
   var cells = areas.map(function (a) {
@@ -559,30 +720,26 @@ function homeMap(main) {
   });
   return cells.length ? '<div class="mapcard home-city-fragment" data-home-city="' + esc(main.slug) + '">' +
     '<div class="maphead"><span class="t">' + esc(main.nome) + " · " +
-      t("city.map.tap", {
-        n: cells.length, unit: plur("unit." + city.shapes.unit, cells.length),
-      }) + "</span></div>" +
-    drawMap(cells, {
-      aria: t("map.aria.city", { city: main.nome }),
-      box: frame(cells.map(function (c) { return c.key; })),
-      pad: 0.07,
-    }) +
-    legend() +
-    '<a class="cta" href="' + esc(cityBase(main)) + '">' +
-      t("home.city.open", { city: esc(main.nome) }) + "</a>" +
-  "</div>" : "";
+      t("city.map.tap", { n: cells.length, unit: plur("unit." + city.shapes.unit, cells.length) }) + "</span></div>" +
+    drawMap(cells, { aria: t("map.aria.city", { city: main.nome }), box: frame(cells.map(function (c) { return c.key; })), pad: 0.07 }) +
+    legend() + '<a class="cta" href="' + esc(cityBase(main)) + '">' +
+      t("home.city.open", { city: esc(main.nome) }) + "</a></div>" : "";
 }
 
 function screenHome() {
   var n = national();
   var main = DEFAULT_CITY;
   var featured = homeMap(main);
+  var measuredCities = homeMeasuredCityOrder();
+  var quietCities = D.cities.filter(function (c) {
+    return measuredCities.indexOf(c) === -1;
+  });
   return '' +
     '<section class="hero home">' +
       '<p class="kicker"><i></i>' + t("brand.kicker") +
         b(t("brand.kicker.free")) + "</p>" +
       "<h1>" + t("home.h1", { br: '<span class="mark">' + t("home.br") + "</span>" }) + "</h1>" +
-      '<p class="lede">' + t("home.lede") + "</p>" +
+      '<p class="lede">' + t("home.lede") + "</p>" + inventoryNotice() +
     "</section>" +
 
     // Only cities with a measured verdict get a slot here: the page's promise
@@ -593,11 +750,11 @@ function screenHome() {
     '<section class="sec"><div class="sechead"><h2>' + t("home.cities.h2") +
       '</h2><span class="n">' + t("home.cities.note") + "</span></div>" +
       '<div class="rowlist">' +
-        countryCityOrder(D.cities.filter(function (c) { return !marketOnly(c); })).map(cityRow).join("") +
+        measuredCities.map(cityRow).join("") +
       "</div>" +
-      (D.cities.some(marketOnly)
+      (quietCities.length
         ? '<p class="foot" style="margin-top:10px">' + t("home.more", {
-            links: D.cities.filter(marketOnly).map(function (c) {
+            links: quietCities.map(function (c) {
               return '<a href="' + esc(cityBase(c)) + '">' + esc(c.nome) + "</a>";
             }).join(" · "),
           }) + "</p>"
@@ -675,6 +832,22 @@ function marketCard(key) {
       (mk.basis === "base_value" ? " " + t("mkt.note.base") : "") + "</p></section>";
 }
 
+/* A map or an undated asking-price hint alone does not make an empty district
+ * useful for indexing. Historical ITBI remains useful when year and sample
+ * are present; its age does not turn it into an empty page. */
+function hasAreaMarket(key) {
+  var mk = city.market || {}, d = (mk.d || {})[key] || {};
+  return /^\d{4}$/.test(String(mk.year || "")) && Number(mk.year) <= Number(dateReference.slice(0, 4)) &&
+    [d.f, d.h, d.r].some(function (x) { return x && x[0] > 0 && x[1] > 0; });
+}
+
+function emptyAreaText(key) {
+  var text = t("seo.area.empty") + " ";
+  if ((historyByArea[key] || []).length) return text + t("archive.area.notice");
+  return text + (hasAreaMarket(key)
+    ? t("seo.area.history") : t("seo.area.nohistory"));
+}
+
 function mktLine(kind, own, base) {
   var value = own[0], n = own[1];
   var rel = base ? Math.round(100 * (value / base - 1)) : null;
@@ -728,7 +901,24 @@ function screenStreet(code) {
         return link("/a/" + encodeURIComponent(k), esc(areaName(k)));
       }).join(" · "),
     }) + "</p>" : "") +
+    marketAvailabilityNote(lotsByStreet[code] || []) +
+    streetLotLists(code) +
     footer();
+}
+
+/* A street statistic and its current inventory answer different questions.
+ * The former comes from deeds; the latter is the published catalogue, split
+ * so a removed offer is never presented as still available. */
+function streetLotLists(code) {
+  var rows = lotsByStreet[code] || [];
+  var current = rows.filter(isCurrent), archived = rows.filter(function (r) { return !isCurrent(r); });
+  function section(key, items) {
+    if (!items.length) return "";
+    return '<section class="sec street-lots"><div class="sechead"><h2>' +
+      esc(t(key)) + '</h2><span class="n">' + esc(num(items.length)) +
+      '</span></div><div class="rowlist">' + items.map(lotRow).join("") + "</div></section>";
+  }
+  return section("street.lots.current", current) + section("street.lots.archive", archived);
 }
 
 function streetLine(kind, own, base) {
@@ -816,7 +1006,7 @@ function national() {
     n.lots += c.stats.lots || 0;
     n.deals += c.stats.paid_deals || 0;
     n.listings += c.stats.listings || 0;
-    offerRows(c).forEach(function (r) { if (reliable(r)) rel.push(r); });
+    currentRows(c).forEach(function (r) { if (reliable(r)) rel.push(r); });
   });
   var loud = rel.filter(function (r) { return (r[C.promised] || 0) >= 45; });
   var promised = rel.map(function (r) { return r[C.promised]; })
@@ -851,7 +1041,7 @@ function screenCity() {
   var best = areas.filter(function (a) { return a.rel >= 5; })
     .sort(function (x, y) { return y.share - x.share || y.below - x.below; })
     .slice(0, 8);
-  var top = offerRows().filter(reliable).slice(0, 3);
+  var top = currentRows().filter(reliable).slice(0, 3);
 
   return '' +
     '<section class="hero">' +
@@ -866,8 +1056,8 @@ function screenCity() {
         city: '<span class="mark">' + esc(city.nome) + "</span>",
       }) +
         "</h1>" +
-      '<p class="lede">' + t(marketOnly() ? "city.lede.market" : "city.lede") + "</p>" + inventoryNotice() +
-      '<p class="foot">' + link("/archive", t("lifecycle.archive.link")) + '</p>' +
+      '<p class="lede">' + t(marketOnly() ? "city.lede.market" : "city.lede") + "</p>" +
+      inventoryNotice() + marketAvailabilityNote(city.rows) + '<p class="foot">' + link("/archive", esc(t("archive.nav"))) + '</p>' +
       '<div class="strip">' + cityList("strip") + "</div>" +
     "</section>" +
 
@@ -949,9 +1139,7 @@ function tile(n, sub) {
 }
 
 function catchCard(s) {
-  // No loud cohort means there is no honest "worth hunting" comparison to
-  // make.  In particular, never publish a noisy "0 of 0" paragraph.
-  if (s.promised_med == null || !s.promised_hi_n) return "";
+  if (s.promised_med == null) return "";
   var up = s.real_med > 0;
   return '<div class="catch">' +
     '<div><span class="lab">' + t("catch.promised") + "</span>" +
@@ -1033,13 +1221,12 @@ function screenArea(key) {
     '<div class="hero">' + back(href(), city.nome) +
       "<h1>" + esc(areaName(key)) + "</h1>" +
       '<p class="lede">' + (!a.n
-        ? t("area.lede.nolots", { all: link("/all", t("area.nolots.cta")) }) +
-          ((historyByArea[key] || []).length ? ' ' + t("lifecycle.area.archive_note") : '')
+        ? esc(emptyAreaText(key)) + " " + link("/all", t("area.nolots.cta"))
         : a.rel
           ? t("area.lede", { lots: lots(a.n), rel: a.rel, below: b(a.below) })
           : t(marketOnly() ? "area.lede.market" : "area.lede.nodata",
               { lots: lots(a.n) })) + "</p></div>" + mini +
-    inventoryNotice() + marketCard(key) + upkeepCard(key) + streetList(key) +
+    inventoryNotice() + marketAvailabilityNote(byArea[key] || []) + marketCard(key) + upkeepCard(key) + streetList(key) +
     (a.n ? '<section class="sec"><div class="rowlist">' +
       a.rows.slice().sort(function (x, y) {
         var rx = reliable(x), ry = reliable(y);
@@ -1048,8 +1235,11 @@ function screenArea(key) {
       // No cap. This is the only page that lists a district in full, and a lot
       // that is on no page is a lot that does not exist.
       }).map(lotRow).join("") + "</div></section>" : "") +
-    ((historyByArea[key] || []).length ? '<section class="sec"><h2>' + t("lifecycle.archive.title") + '</h2><p>' + t("lifecycle.area.archive_body") + '</p><div class="rowlist">' +
-      historyByArea[key].slice(0, 20).map(lotRow).join('') + '</div><p class="foot">' + link("/archive", t("lifecycle.archive.view")) + '</p></section>' : '') + footer();
+    ((historyByArea[key] || []).length ? '<section class="sec"><h2>' + esc(t("archive.nav")) + '</h2>' +
+      '<p>' + esc(t("archive.area.notice")) + '</p><div class="rowlist">' +
+      historyByArea[key].slice(0, ALL_PAGE_SIZE).map(lotRow).join("") + '</div><p class="foot">' +
+      link("/archive", esc(t("archive.all", { n: num(historyByArea[key].length) }))) + '</p></section>' : '') +
+    footer();
 }
 
 /* What winning actually costs. The advertised price is never the cheque: the
@@ -1119,6 +1309,120 @@ function lotLine(r) {
   return bits.join(" · ");
 }
 
+/* Related lots use only rows already published in this page's payload. A
+ * street is usable only when it has a street page, so partial or misspelled
+ * addresses cannot manufacture dead links. Tiers describe place, not distance:
+ * the dataset does not publish a distance between these records. */
+function streetCodeForLot(r) {
+  var id = String(r[C.id]);
+  if (Object.prototype.hasOwnProperty.call(streetCodeByLotId, id)) return streetCodeByLotId[id];
+  var address = normKey(r[C.end]);
+  if (!address || !city.streets || !city.streets.d) return null;
+  var codes = Object.keys(city.streets.d).sort(function (a, b) {
+    return String(city.streets.d[b].name || "").length - String(city.streets.d[a].name || "").length;
+  });
+  for (var i = 0; i < codes.length; i++) {
+    var st = city.streets.d[codes[i]], name = normKey(st.name);
+    if (name && (address === name || address.indexOf(name + " ") === 0 ||
+        (" " + address).indexOf(" " + name + ",") === 0)) return codes[i];
+  }
+  return null;
+}
+
+function relatedPlace(r) {
+  var id = String(r[C.id]);
+  if (relatedPlaceCache[id]) return relatedPlaceCache[id];
+  var area = areaOf(r), street = streetCodeForLot(r);
+  return relatedPlaceCache[id] = { area: area || normKey(r[C.bairro]), street: street };
+}
+
+function relatedRelationship(tier) {
+  return t(tier === 0 ? "related.street" : tier === 1 ? "related.area" : "related.city");
+}
+
+function relatedTrail(place) {
+  var bits = ['<a href="' + esc(cityBase()) + '">' + esc(city.nome) + "</a>"];
+  if (place.area && slugToKey.rev[place.area]) {
+    bits.push('<a href="' + esc(href("/a/" + encodeURIComponent(place.area))) + '">' +
+      esc(areaName(place.area)) + "</a>");
+  }
+  if (place.street && city.streets && city.streets.d[place.street]) {
+    var st = city.streets.d[place.street];
+    if (streetBySlug[st.slug]) bits.push('<a href="' + esc(href("/r/" + encodeURIComponent(place.street))) + '">' +
+      esc(title(st.name)) + "</a>");
+  }
+  return bits.join(" · ");
+}
+
+function relatedPrice(r) {
+  var value = isCurrent(r) ? r[C.preco] : lastAdvertisedPrice(r);
+  return priceKnown(value) ? money(value) : "";
+}
+
+var RELATED_LOT_LIMIT = 6;
+var relatedLotCache = {}, relatedPlaceCache = {}, relatedCandidates = {};
+var relatedGroups = { street: {}, area: {}, city: [] };
+function relatedOrder(a, b) {
+  return (isCurrent(a) ? 0 : 1) - (isCurrent(b) ? 0 : 1) ||
+    String(a[C.id]).localeCompare(String(b[C.id]));
+}
+function buildRelatedGroups() {
+  var groups = { street: {}, area: {}, city: lotsByCity.slice().sort(relatedOrder) };
+  Object.keys(lotsByStreet).forEach(function (key) {
+    groups.street[key] = lotsByStreet[key].slice();
+  });
+  Object.keys(lotsByArea).forEach(function (key) {
+    groups.area[key] = lotsByArea[key].slice();
+  });
+  Object.keys(groups.street).forEach(function (key) { groups.street[key].sort(relatedOrder); });
+  Object.keys(groups.area).forEach(function (key) { groups.area[key].sort(relatedOrder); });
+  relatedGroups = groups;
+
+  /* Materialize the original stage order once. The old renderer walked the
+   * whole city for every lot and relied on add() to stop after six rows. Keep
+   * that exact de-duplication behavior, but do the walk during city indexing. */
+  relatedCandidates = {};
+  lotsByCity.forEach(function (origin) {
+    var originId = String(origin[C.id]), place = relatedPlace(origin), rows = [], seen = {};
+    var add = function (candidate, tier) {
+      var id = String(candidate[C.id]);
+      if (id === originId || seen[id] || rows.length >= RELATED_LOT_LIMIT) return;
+      seen[id] = true;
+      rows.push({ row: candidate, place: relatedPlace(candidate), tier: tier });
+    };
+    var addGroup = function (group, tier) {
+      for (var i = 0; i < group.length && rows.length < RELATED_LOT_LIMIT; i++) add(group[i], tier);
+    };
+    addGroup(place.street ? groups.street[place.street] || [] : [], 0);
+    addGroup(place.area ? groups.area[place.area] || [] : [], 1);
+    addGroup(groups.city, 2);
+    relatedCandidates[originId] = rows;
+  });
+}
+function relatedLots(r) {
+  var rows = relatedCandidates[String(r[C.id])] || [];
+  if (!rows.length) return "";
+  return '<section class="sec related-lots" aria-labelledby="related-lots-title">' +
+    '<div class="sechead"><h2 id="related-lots-title">' + esc(t("related.title")) + '</h2></div>' +
+    '<div class="rowlist">' + rows.map(function (item) {
+      var candidate = item.row, historical = !isCurrent(candidate), price = relatedPrice(candidate);
+      var facts = [item.tier === 0 && item.place.street && city.streets.d[item.place.street]
+        ? title(city.streets.d[item.place.street].name) : null,
+        item.place.area && slugToKey.rev[item.place.area] ? areaName(item.place.area) : null,
+        price ? price : null, candidate[C.area] ? candidate[C.area] + " " + t("unit.m2") : null]
+        .filter(Boolean).filter(function (value, index, all) { return all.indexOf(value) === index; });
+      return '<a class="row related-lot" href="' + esc(href("/l/" + encodeURIComponent(candidate[C.id]))) + '">' +
+        '<div class="r1"><div class="nm">' + esc(title(candidate[C.end] || candidate[C.tipo] || t("lot.fallback"))) +
+          '</div><span class="pill ' + (historical ? "mute" : "good") + '">' +
+          esc(t(historical ? "related.archive" : "related.current")) + "</span></div>" +
+        '<div class="sub">' + esc(candidate[C.tipo] || t("lot.fallback")) + " · " +
+          esc(relatedRelationship(item.tier)) + "</div>" +
+        (facts.length ? '<div class="sub related-facts">' + esc(facts.join(" · ")) + "</div>" : "") +
+        '<div class="related-trail" aria-label="' + esc(t("lot.breadcrumb")) + '">' + relatedTrail(item.place) + "</div>" +
+      "</a>";
+    }).join("") + "</div></section>";
+}
+
 /* `i` arrives free from every call site's .map(lotRow). It decides one thing:
  * whether this row's photo waits. Deferring the picture the reader is already
  * looking at is the classic own-goal of lazy loading — it delays the largest
@@ -1137,18 +1441,19 @@ function lotRow(r, i) {
     // size is stated so the row does not jump when the picture lands.
     '<div class="ph">' + (ph
       ? '<img src="' + esc(ph) + '" alt="" decoding="async" width="82" height="82"' +
-        (eager ? "" : ' loading="lazy"') + ' data-lot-thumb>'
+        (eager ? "" : ' loading="lazy"') + ' onerror="this.remove()">'
       : "<span>" + t("lot.nophoto") + "</span>") + "</div>" +
     '<div class="body">' +
       '<div class="r1"><div class="ttl">' + lotLine(r) + "</div>" +
         '<span class="pill ' + (vd ? vd[1] : "mute") + '">' +
-          (historical ? esc(statusText(r)) : vd ? pct(r[C.margin]) : "?") + "</span></div>" +
+          (historical ? esc(t(STATUS_KEY[lotStatus(r)])) : vd ? pct(r[C.margin]) : "?") + "</span></div>" +
       '<div class="meta">' + esc(title(r[C.end] || r[C.bairro] || "")) + "</div>" +
+      '<div class="meta">' + esc(historical ? t("archive.removal.notice") : t(STATUS_KEY[lotStatus(r)]) + '. ' + auctionNote(r)) + "</div>" +
       // One line, not two columns: on a phone the two labelled prices sat in
       // 70px each and broke "R$ 33 635" across lines.
       '<div class="nums"><div class="k">' +
-        (historical ? t("lifecycle.fact.last_price") : t(vd ? "lot.nums.both" : "lot.nums.open")) + "</div>" +
-        '<div class="v">' + money(historical ? lastAdvertisedPrice(r) : r[C.preco]) +
+        t(historical ? "archive.price.last" : vd ? "lot.nums.both" : "lot.nums.open") + "</div>" +
+        '<div class="v">' + (historical ? priceText(lastAdvertisedPrice(r)) : money(r[C.preco])) +
         (vd ? " <em>→</em> " + b(money(r[C.hammer])) : "") +
         "</div></div>" +
     "</div></a>";
@@ -1174,16 +1479,12 @@ function idFromSlug(sl) {
  * prerender slice read literal dotted strings: "why." + code would ship a page
  * whose text exists in no language file. */
 var WHY_KEY = {
+  data_changed: "why.data_changed",
   no_area: "why.no_area",
   no_type: "why.no_type",
   city_only: "why.city_only",
   no_coords: "why.no_coords",
   no_comps: "why.no_comps",
-  identity_mismatch: "why.identity_mismatch",
-  no_price: "why.no_price",
-  no_chain: "why.no_chain",
-  geometry_changed: "why.geometry_changed",
-  current_fields_changed: "why.current_fields_changed",
 };
 var CONF_KEY = {
   restricted: "why.conf.restricted",
@@ -1218,18 +1519,16 @@ function whyBlock(r) {
   if (reliable(r)) return "";
   var ring = r[C.ring] || 0;
   var out = "";
-  var valuation = valuationLotMeta(r);
-  var why = r[C.why] || (valuation && valuation.status === "abstained" ? valuation.reason : null);
 
   // One cause, named. A withheld verdict has either a missing input (why) or a
   // failed cross-check (conf); "ok but the comps are 1-5 km out" is its own case.
-  var body = WHY_KEY[why] ? t(WHY_KEY[why], { tipo: esc(title(r[C.tipo] || t("lot.fallback"))) })
+  var body = WHY_KEY[r[C.why]] ? t(WHY_KEY[r[C.why]], { tipo: esc(title(r[C.tipo] || t("lot.fallback"))) })
     : CONF_KEY[r[C.conf]] ? t(CONF_KEY[r[C.conf]])
     : (!r[C.why] && ring > 1000 && ring <= CONTEXT_RING_M)
       ? t("why.ring", { ring: num(ring) })
       : "";
   if (body) {
-    var hint = (why === "no_area" || why === "no_comps") ? askingHint(r) : "";
+    var hint = (r[C.why] === "no_area" || r[C.why] === "no_comps") ? askingHint(r) : "";
     out += '<div class="why"><div class="wh">' + t("why.h") + "</div><p>" + body + "</p>" +
       hint + "</div>";
   }
@@ -1246,45 +1545,82 @@ function whyBlock(r) {
   return out;
 }
 
-/* The estimate is a model output, not an auction outcome.  The export keeps
- * the model-level contract separate from per-lot fingerprints so this notice
- * remains useful even when only one of those layers is present. */
-function valuationProvenance(r) {
-  // Per-lot fingerprints remain a separate backend concern while the compact
-  // public notice is driven only by the top-level contract.
-  return D.valuation_provenance || null;
+/* Market reports are a separate, already-validated public payload. The AI
+ * placeholder below remains owned by analyze.js; this renderer only adds the
+ * synchronous human-readable market facts when the build embedded one. */
+function marketReportBlock(id) {
+  var reports = D.market_reports;
+  if (!reports || typeof reports !== "object" ||
+      !Object.prototype.hasOwnProperty.call(reports, String(id)) ||
+      !window.MARKET || typeof window.MARKET.renderReport !== "function" ||
+      typeof document === "undefined") return "";
+  var rendered = window.MARKET.renderReport(reports[String(id)], document);
+  return rendered && typeof rendered.outerHTML === "string" ? rendered.outerHTML : "";
 }
-function valuationLotMeta(r) {
-  var root = valuationProvenance(r), cities = root && root.cities;
-  if (typeof city === "undefined" || !city) return null;
-  var owner = city;
-  // `refreshStats` also runs once for every city before navigation has picked
-  // one; resolve the row's owner so one city's lot cannot borrow another's
-  // abstention metadata during build-time aggregation.
-  D.cities.some(function (candidate) {
-    if ((candidate.rows || []).indexOf(r) >= 0) { owner = candidate; return true; }
-    return false;
+
+/* A count of qualified lot reports is useful navigation context.  It is not
+ * an area/street valuation and never combines individual price ranges. */
+function marketAvailabilityCount(rows) {
+  var reports = D.market_reports;
+  if (!reports || typeof reports !== "object" || !Array.isArray(rows)) return 0;
+  var seen = {}, count = 0;
+  rows.forEach(function (row) {
+    var id = String(row && row[C.id]);
+    if (!seen[id] && Object.prototype.hasOwnProperty.call(reports, id)) {
+      seen[id] = true;
+      count++;
+    }
   });
-  var c = cities && owner && cities[owner.slug], lots = c && c.lots;
-  return lots && lots[String(r[C.id])] || null;
+  return count;
 }
-function valuationAbstained(r) {
-  var meta = valuationLotMeta(r);
-  return !!(meta && meta.status === "abstained");
+
+function marketAvailabilityNote(rows) {
+  var count = marketAvailabilityCount(rows);
+  return count ? '<p class="foot market-availability">' +
+    esc(t("market.availability", { count: num(count) })) + "</p>" : "";
 }
-function shownModelValue(v) {
-  return typeof v === "number" && isFinite(v) && v > 0;
+
+function lotBreadcrumb(r) {
+  var place = relatedPlace(r), bits = ['<a href="' + esc(cityBase()) + '">' + esc(city.nome) + "</a>"];
+  if (place.area && slugToKey.rev[place.area]) {
+    bits.push('<a href="' + esc(href("/a/" + encodeURIComponent(place.area))) + '">' +
+      esc(areaName(place.area)) + "</a>");
+  }
+  if (place.street && city.streets && city.streets.d[place.street] && streetBySlug[city.streets.d[place.street].slug]) {
+    bits.push('<a href="' + esc(href("/r/" + encodeURIComponent(place.street))) + '">' +
+      esc(title(city.streets.d[place.street].name)) + "</a>");
+  }
+  return '<nav class="lot-breadcrumb" aria-label="' + esc(t("lot.breadcrumb")) + '">' + bits.join(" · ") + "</nav>";
 }
-function valuationNotice(r) {
-  // The notice follows values actually shown by the lot page, including
-  // lower-confidence and wider-radius context values; it is not a ranking
-  // badge. Historical lots use the asking-price renderer and never reach this
-  // path, so their archived price is not mislabeled as a recalculation.
-  var meta = valuationLotMeta(r);
-  if (!valuationProvenance(r) || !isCurrent(r) || valuationAbstained(r) ||
-      (!shownModelValue(r[C.hammer]) && !shownModelValue(r[C.mkt]))) return "";
-  return '<p class="note valuation-provenance">' +
-    t(meta ? "valuation.notice" : "valuation.notice.generic") + "</p>";
+
+/* Map access stays user-initiated. The normal link is always useful and sends
+ * nothing to Google until it is followed. A configured public Embed API key
+ * adds a second explicit choice; its iframe is created only after that click. */
+function lotMapQuery(r) {
+  var address = String(r[C.end] || "").replace(/\s+/g, " ").trim();
+  if (!address) return "";
+  return [address, city.nome, city.uf ? String(city.uf).toUpperCase() : "", "Brasil"]
+    .filter(Boolean).join(", ");
+}
+function mapsEmbedKey() {
+  var value = window.__MAPS__ && window.__MAPS__.embedKey;
+  return typeof value === "string" && /^[A-Za-z0-9_-]{1,200}$/.test(value) ? value : "";
+}
+function lotMapsLink(r) {
+  var query = lotMapQuery(r);
+  if (!query) return "";
+  return '<a class="maps-link" href="https://www.google.com/maps/search/?api=1&amp;query=' +
+    esc(encodeURIComponent(query)) + '" target="_blank" rel="noopener noreferrer">' +
+    esc(t("lot.maps")) + "</a>";
+}
+function lotMapsBlock(r) {
+  var query = lotMapQuery(r);
+  if (!query) return "";
+  var button = mapsEmbedKey() ? '<button type="button" class="map-embed-button" data-lot-map-load>' +
+    esc(t("lot.maps.embed.button")) + "</button>" : "";
+  return '<section class="lot-map" data-lot-map data-map-query="' + esc(query) + '">' +
+    '<h2>' + esc(t("lot.maps.heading")) + '</h2><div class="lot-map-actions">' +
+    lotMapsLink(r) + button + '</div><div class="lot-map-frame" data-lot-map-frame></div></section>';
 }
 
 function screenLot(id) {
@@ -1316,12 +1652,16 @@ function screenLot(id) {
     '<div class="hero">' + (key
       ? back(href("/a/" + encodeURIComponent(key)), areaName(key))
       : back(href(), city.nome)) +
-      '<h1 class="lot-address">' + esc(title(r[C.end] || r[C.tipo] || t("lot.fallback"))) + "</h1>" +
+      '<h1><span class="lot-title" title="' + esc(title(r[C.end] || r[C.tipo] || t("lot.fallback"))) + '">' + esc(title(r[C.end] || r[C.tipo] || t("lot.fallback"))) + "</span></h1>" +
       '<p class="lede">' + lotLine(r) + " · " +
-        esc(title(r[C.bairro] || (key ? areaName(key) : city.nome))) + "</p></div>" +
-    lifecycleBanner(r) +
+        esc(title(r[C.bairro] || (key ? areaName(key) : city.nome))) + "</p>" +
+      lotBreadcrumb(r) +
+      '<p class="note">' + esc(auctionNote(r)) + "</p></div>" + lifecycleBanner(r) +
 
-    gallery(r) + lotMap(r) +
+    // The first exported photo stays in the prerendered HTML. If no media
+    // payload is present, lotGallery() falls back to the historical one-photo
+    // Caixa URL, preserving the old build's visible behaviour.
+    lotGallery(r) + lotMapsBlock(r) +
 
     '<div class="verdict">' +
       (vd
@@ -1329,7 +1669,7 @@ function screenLot(id) {
             pct(r[C.margin]) + "</div>" +
           '<p class="word ' + vd[1] + '">' + t(vd[2]) + "</p>" +
           '<p class="say">' + t("lot.say", {
-            n: r[C.n], deals: plur("unit.comparable", r[C.n]), ring: num(r[C.ring]),
+            n: r[C.n], deals: plur("unit.deal", r[C.n]), ring: num(r[C.ring]),
           }) + "</p>"
         : '<p class="word mute">' + t("lot.verdict.none") + "</p>" +
           whyBlock(r)) +
@@ -1340,7 +1680,7 @@ function screenLot(id) {
       '<div class="scale"><div class="track">' +
         pts.map(function (p) {
           return '<div class="tick" style="left:' + ((p.val / hi) * 100).toFixed(1) + '%">' +
-            '<span class="dot" style="background:' + p.col + '"></span></div>';
+            '<span class="dot ' + p.cls + '"></span></div>';
         }).join("") +
       "</div>" +
       '<div class="keys">' + pts.map(function (p) {
@@ -1369,23 +1709,23 @@ function screenLot(id) {
 
       (r[C.jud] ? '<p class="note">' + t("lot.note.court") + "</p>" : "") +
 
-      valuationNotice(r) +
-
       entryCard(r) +
 
       '<section class="mkt" data-lot-report="' + esc(r[C.id]) + '"></section>' +
+      marketReportBlock(r[C.id]) +
 
       // Caixa publishes an edital PDF for every sale; the worker only trusts
       // Caixa's own domains, so the reader pastes that link and gets the
       // dossiê free. Other sources' documents live behind auctioneers' sites
       // the allowlist does not know — no box rather than a box that fails.
       (r[C.src] === "caixa"
-        ? '<section class="mkt azbox" data-az="' + esc(r[C.id]) + '"></section>' : "") +
+        ? '<section class="mkt azbox" data-az="' + esc(r[C.id]) + '" data-az-source="' +
+          esc(r[C.link] || "") + '"></section>' : "") +
 
       (r[C.link] ? '<a class="cta" href="' + esc(r[C.link]) +
         '" target="_blank" rel="noopener" data-out="' + esc(r[C.src] || "lot") + '">' +
         t("lot.cta") + "</a>" : "") +
-    "</div>" + footer();
+    "</div>" + lotHistory(r) + relatedLots(r) + footer();
 }
 
 function fact(k, val) {
@@ -1395,43 +1735,69 @@ function fact(k, val) {
 
 var ALL_PAGE_SIZE = 200;
 function allPageCount() { return Math.max(1, Math.ceil(currentRows().length / ALL_PAGE_SIZE)); }
-function archivePageCount() { return Math.max(1, Math.ceil(archiveRows().length / ALL_PAGE_SIZE)); }
-function pageHref(kind, page) { return href(kind) + (page > 1 ? "pagina/" + page + "/" : ""); }
-function pageNumber(kind, path, count) {
-  if (path === pageHref(kind, 1)) return 1;
-  var wire = kind === "/all" ? SEG.all : SEG.archive;
-  var m = new RegExp("/" + wire + "/pagina/([1-9][0-9]*)/$").exec(path), n = m ? Number(m[1]) : 0;
-  return Number.isSafeInteger(n) && n >= 2 && n <= count && path === pageHref(kind, n) ? n : 0;
+function allPageHref(page) {
+  return href("/all") + (page > 1 ? "pagina/" + page + "/" : "");
 }
-function pagination(kind, page, count) {
-  if (count < 2) return "";
-  return '<nav class="foot" aria-label="' + t("lifecycle.pagination.label") + '">' +
-    (page > 1 ? '<a rel="prev" href="' + pageHref(kind, page - 1) + '">' + t("lifecycle.pagination.previous") + '</a> · ' : '') +
-    '<span>' + t("lifecycle.pagination.page", { page: page, pages: count }) + '</span>' +
-    (page < count ? ' · <a rel="next" href="' + pageHref(kind, page + 1) + '">' + t("lifecycle.pagination.next") + '</a>' : '') + '</nav>';
+function allPageNumber(path) {
+  if (path === allPageHref(1)) return 1;
+  var match = /\/todos-os-lotes\/pagina\/([1-9][0-9]*)\/$/.exec(path);
+  var n = match ? Number(match[1]) : 0;
+  return Number.isSafeInteger(n) && n >= 2 && n <= allPageCount() && path === allPageHref(n) ? n : 0;
 }
-function screenAll(page) {
-  page = page == null ? 1 : page;
+function pageLabel(page) { return t("seo.page", { page: page }); }
+function allPagination(page) {
   var count = allPageCount();
-  if (!Number.isSafeInteger(page) || page < 1 || page > count) return null;
-  var mo = marketOnly();
-  return '<div class="hero">' + back(href(), city.nome) +
-    "<h1>" + t(mo ? "all.h1.market" : "all.h1") + "</h1>" +
-    '<p class="lede">' + t(mo ? "all.lede.market" : "all.lede") + "</p>" + inventoryNotice() +
-      '<p class="foot">' + link("/archive", t("lifecycle.archive.link")) + '</p></div>' + pagination("/all", page, count) +
-    '<section class="sec"><div class="rowlist">' +
-    currentRows().slice((page - 1) * ALL_PAGE_SIZE, page * ALL_PAGE_SIZE).map(lotRow).join("") + "</div></section>" + pagination("/all", page, count) + footer();
+  if (count < 2) return "";
+  return '<nav class="foot" aria-label="' + esc(t("seo.pagination")) + '">' +
+    (page > 1 ? '<a rel="prev" href="' + allPageHref(page - 1) + '">' +
+      esc(t("seo.previous")) + "</a> · " : "") +
+    '<span aria-current="page">' + esc(pageLabel(page)) + " / " + count + "</span>" +
+    (page < count ? ' · <a rel="next" href="' + allPageHref(page + 1) + '">' +
+      esc(t("seo.next")) + "</a>" : "") + "</nav>";
 }
 
+function screenAll(page) {
+  page = page == null ? 1 : page;
+  if (!Number.isSafeInteger(page) || page < 1 || page > allPageCount()) return null;
+  var mo = marketOnly();
+  return '<div class="hero">' + back(href(), city.nome) +
+    "<h1>" + t(mo ? "all.h1.market" : "all.h1") +
+      (page > 1 ? " · " + esc(pageLabel(page)) : "") + "</h1>" +
+    '<p class="lede">' + t(mo ? "all.lede.market" : "all.lede") + "</p>" + inventoryNotice() +
+    '<p class="foot">' + link("/archive", esc(t("archive.nav"))) + '</p></div>' +
+    allPagination(page) +
+    '<section class="sec"><div class="rowlist">' +
+    currentRows().sort(function (x, y) {
+      return mo ? x[C.preco] - y[C.preco] : (y[C.margin] || 0) - (x[C.margin] || 0);
+    }).slice((page - 1) * ALL_PAGE_SIZE, page * ALL_PAGE_SIZE).map(lotRow).join("") +
+    "</div></section>" + allPagination(page) + footer();
+}
+
+function archivePageCount() { return Math.max(1, Math.ceil(archiveRows().length / ALL_PAGE_SIZE)); }
+function archivePageHref(page) { return href("/archive") + (page > 1 ? "pagina/" + page + "/" : ""); }
+function archivePageNumber(path) {
+  if (path === archivePageHref(1)) return 1;
+  var match = /\/arquivo\/pagina\/([1-9][0-9]*)\/$/.exec(path);
+  var n = match ? Number(match[1]) : 0;
+  return Number.isSafeInteger(n) && n >= 2 && n <= archivePageCount() && path === archivePageHref(n) ? n : 0;
+}
+function archivePagination(page) {
+  var count = archivePageCount();
+  if (count < 2) return "";
+  return '<nav class="foot" aria-label="' + esc(t("seo.pagination")) + '">' +
+    (page > 1 ? '<a rel="prev" href="' + archivePageHref(page - 1) + '">' + esc(t("seo.previous")) + '</a> · ' : '') +
+    '<span aria-current="page">' + esc(pageLabel(page)) + ' / ' + count + '</span>' +
+    (page < count ? ' · <a rel="next" href="' + archivePageHref(page + 1) + '">' + esc(t("seo.next")) + '</a>' : '') + '</nav>';
+}
 function screenArchive(page) {
   page = page == null ? 1 : page;
-  var rows = archiveRows(), count = archivePageCount();
-  if (!Number.isSafeInteger(page) || page < 1 || page > count) return null;
-  return '<div class="hero">' + back(href("/all"), t("lifecycle.current_lists")) +
-    '<h1>' + t("lifecycle.archive.title") + '</h1><p class="lede">' + t("lifecycle.archive.body") + '</p></div>' +
-    pagination("/archive", page, count) + '<section class="sec"><div class="rowlist">' +
-    rows.slice((page - 1) * ALL_PAGE_SIZE, page * ALL_PAGE_SIZE).map(lotRow).join("") + "</div></section>" +
-    pagination("/archive", page, count) + footer();
+  if (!Number.isSafeInteger(page) || page < 1 || page > archivePageCount()) return null;
+  var rows = archiveRows();
+  return '<div class="hero">' + back(href("/all"), t("archive.current")) +
+    '<h1>' + esc(t("archive.h1", { city: city.nome })) + (page > 1 ? ' · ' + esc(pageLabel(page)) : '') + '</h1>' +
+    '<p class="lede">' + esc(t("archive.lede", { n: num(rows.length) })) + '</p></div>' + archivePagination(page) +
+    '<section class="sec"><div class="rowlist">' + rows.slice((page - 1) * ALL_PAGE_SIZE, page * ALL_PAGE_SIZE).map(lotRow).join("") +
+    '</div>' + (!rows.length ? '<p>' + esc(t("archive.empty")) + '</p>' : '') + '</section>' + archivePagination(page) + footer();
 }
 
 function screenHonest() {
@@ -1502,7 +1868,7 @@ function ladder() {
 
 function footer() {
   return '<p class="foot">' +
-    link("/all", t("nav.all")) + " · " + link("/archive", t("lifecycle.archive.short")) + " · " + link("/honest", t("nav.honest")) + "<br>" +
+    link("/all", t("nav.all")) + " · " + link("/archive", esc(t("archive.nav"))) + " · " + link("/honest", t("nav.honest")) + "<br>" +
     footNote() + "</p>" + langbar();
 }
 
@@ -1510,7 +1876,11 @@ function footer() {
  * a site that measures its readers without cookies can say so in one line
  * instead of sending them to a policy nobody opens. */
 function footNote() {
-  return t("foot.note", { date: esc(D.generated) }) + " " + t("foot.privacy");
+  var stamp = D.generated
+    ? t("seo.dataset.date", { date: D.generated }) + " "
+    : t("seo.dataset.unknown") + " ";
+  return esc(stamp + t("seo.dataset.notice")) + " " + t("foot.privacy") +
+    ' <a href="' + (window.__BASE__ || "") + '/privacidade/">' + esc(t("az.queue.privacy")) + '</a>';
 }
 
 /* Down here on purpose. The runtime already picks the visitor's language from
@@ -1629,6 +1999,7 @@ function screenFor(path) {
   var p = String(path || "/").replace(/^\/+|\/+$/g, "").split("/").filter(Boolean);
   if (p[0] === ROOT.replace(/^\//, "")) {
     p = p.slice(1);
+    if (!p.length) return null; // No catalogue or UF-only landing pages exist.
   }
 
   // <uf>/<cidade>, with the old glued form still understood so a link that is
@@ -1649,19 +2020,18 @@ function screenFor(path) {
   p = p.slice(1);
 
   if (!p.length) return screenCity();
-  if (p[0] === SEG.all) {
-    var allPage = pageNumber("/all", path, allPageCount());
-    return allPage ? screenAll(allPage) : null;
-  }
   if (p[0] === SEG.archive) {
-    var archivePage = pageNumber("/archive", path, archivePageCount());
+    var archivePage = archivePageNumber(path);
     return archivePage ? screenArchive(archivePage) : null;
+  }
+  if (p[0] === SEG.all) {
+    var page = allPageNumber(path);
+    return page ? screenAll(page) : null;
   }
   if (p.length === 1 && p[0] === SEG.honest) return screenHonest();
   if (p.length === 2 && p[0] === SEG.lot) {
-    var id = idFromSlug(decodeURIComponent(p[1] || ""));
-    var lot = lotById[id];
-    return lot && lotSlug(lot) === p[1] ? screenLot(id) : null;
+    var lot = lotById[idFromSlug(decodeURIComponent(p[1]))];
+    return lot && lotSlug(lot) === p[1] ? screenLot(lot[C.id]) : null;
   }
   if (p.length === 2 && p[0] === SEG.rua) {
     var sc = streetBySlug[decodeURIComponent(p[1] || "")];
@@ -1669,6 +2039,77 @@ function screenFor(path) {
   }
   var key = slugToKey.fwd[p[0]];
   return p.length === 1 && key ? screenArea(key) : null;
+}
+
+function pageTrail(path) {
+  if (!atCity || path === "/404") return [];
+  var trail = [{ path: "/", name: t("seo.brazil") },
+    { path: cityBase(), name: city.nome }];
+  if (path === cityBase()) return trail;
+  var archivedPage = archivePageNumber(path);
+  if (archivedPage) {
+    if (archivedPage > 1) trail.push({ path: archivePageHref(1), name: t("archive.nav") });
+    trail.push({ path: path, name: archivedPage > 1 ? pageLabel(archivedPage) : t("archive.nav") });
+    return trail;
+  }
+  var page = allPageNumber(path);
+  if (page > 1) {
+    trail.push({ path: allPageHref(1), name: t("nav.all") });
+    trail.push({ path: path, name: pageLabel(page) });
+    return trail;
+  }
+  var parts = path.split("/").filter(Boolean), last = parts[parts.length - 1];
+  var key = null, name = "";
+  if (parts[parts.length - 2] === SEG.lot) {
+    var r = lotById[idFromSlug(last)];
+    if (!r) return [];
+    key = areaOf(r);
+    name = title(r[C.end] || r[C.tipo] || t("lot.fallback"));
+    var lotStreet = streetCodeForLot(r);
+  } else if (parts[parts.length - 2] === SEG.rua) {
+    var st = city.streets.d[streetBySlug[last]];
+    if (!st) return [];
+    key = st.bairro;
+    name = title(st.name);
+  } else if (slugToKey.fwd[last]) {
+    name = areaName(slugToKey.fwd[last]);
+  } else {
+    name = t(last === SEG.all ? "nav.all" : "nav.honest");
+  }
+  if (key && slugToKey.rev[key]) {
+    trail.push({ path: href("/a/" + encodeURIComponent(key)), name: areaName(key) });
+  }
+  if (lotStreet && city.streets && city.streets.d[lotStreet]) {
+    var lotSt = city.streets.d[lotStreet];
+    if (streetBySlug[lotSt.slug]) {
+      trail.push({ path: href("/r/" + encodeURIComponent(lotStreet)), name: title(lotSt.name) });
+    }
+  }
+  trail.push({ path: path, name: name });
+  return trail;
+}
+
+/* A sitemap date may describe only the exact lot whose lifecycle evidence
+ * carries it. Scope observations cannot date city/list pages because a
+ * partial source does not prove anything about lots it did not return. */
+function lotLastmod(path) {
+  var parts = String(path || "").split("/").filter(Boolean);
+  if (parts.length < 2 || parts[parts.length - 2] !== SEG.lot) return null;
+  var r = lotById[idFromSlug(parts[parts.length - 1])];
+  if (!r || lotSlug(r) !== parts[parts.length - 1]) return null;
+  var lc = lifecycle(r), dates = [];
+  function remember(value) {
+    var valid = archiveDate(value), day = valid && valid.slice(0, 10);
+    if (day && day <= dateReference) dates.push(day);
+  }
+  [lc.first_seen_at, lc.last_seen_at, lc.last_checked_at, lc.missing_since,
+    lc.archived_at].forEach(remember);
+  if (lc.outcome) remember(lc.outcome.observed_at);
+  (Array.isArray(lc.history) ? lc.history : []).forEach(function (event) {
+    if (event) remember(event.observed_at);
+  });
+  dates.sort();
+  return dates.length ? dates[dates.length - 1] : null;
 }
 
 /* The build's only entry point. Loads once with the whole dataset, is then
@@ -1693,14 +2134,14 @@ window.__render__ = function (path) {
   return {
     body: html,
     city: atCity ? city.slug : "",
-    split: !!box.querySelector(".side, .mapcard:not(.maparea), .shot, .gallery"),
+    split: !!box.querySelector(".side, .mapcard:not(.maparea), .shot"),
     head: headFor(path),
+    breadcrumbs: pageTrail(path),
+    lastmod: lotLastmod(path),
     links: links,
   };
 };
 
-// Map-only fragments are generated for the small, current city set. They are
-// not pages: no head, canonical, route, or sitemap entry accompanies them.
 window.__homeCityFragment__ = function (slug) {
   var chosen = D.cities.filter(function (c) { return c.slug === slug; })[0];
   if (!chosen) return null;
@@ -1719,7 +2160,7 @@ function headFor(path) {
   var last = p[p.length - 1] || "";
   var base = { title: t("meta.title"), desc: t("meta.desc"), canonical: path };
   if (p.length === 1 && p[0] === "404") {
-    return { title: t("head.nf.title"), desc: t("nf.p"), canonical: path };
+    return { title: t("head.nf.title"), desc: t("nf.p"), canonical: path, noindex: true };
   }
   if (!p.length) {
     var n = national();
@@ -1732,15 +2173,7 @@ function headFor(path) {
   }
   if (!city) return base;
   var name = city.nome;
-  var allPage = pageNumber("/all", path, allPageCount());
-  var archivePage = pageNumber("/archive", path, archivePageCount());
-  if (archivePage) {
-    base.title = t("head.archive.title", { city: name, page: archivePage > 1 ? t("head.page", { page: archivePage }) : "" });
-    base.desc = t("head.archive.desc", { count: num(archiveRows().length), page: archivePage > 1 ? t("head.page.of", { page: archivePage, pages: archivePageCount() }) : "" });
-  } else if (allPage) {
-    base.title = t("head.all.lifecycle.title", { city: name, page: allPage > 1 ? t("head.page", { page: allPage }) : "" });
-    base.desc = t("head.all.lifecycle.desc", { known: num(currentRows().length), active: num(city.stats.lots), unverified: num(city.stats.unverified_lots || 0), page: allPage > 1 ? t("head.page.of", { page: allPage, pages: allPageCount() }) : "" });
-  } else if (p[p.length - 2] === SEG.rua && streetBySlug[last]) {
+  if (p[p.length - 2] === SEG.rua && streetBySlug[last]) {
     var stx = city.streets.d[streetBySlug[last]];
     var main = stx.f || stx.h;
     base.title = t("head.street.title", { street: title(stx.name), city: name });
@@ -1755,6 +2188,10 @@ function headFor(path) {
       name: areaName(st.key), city: name,
       lots: lots(st.n), below: num(st.below), rel: num(st.rel),
     });
+    if (!st.n) {
+      base.noindex = !hasAreaMarket(st.key) && !(historyByArea[st.key] || []).length;
+      base.desc = areaName(st.key) + ", " + name + ". " + emptyAreaText(st.key);
+    }
   } else if (last === SEG.honest) {
     base.title = t("head.honest.title", { city: name });
     base.desc = t("head.honest.desc", { city: name });
@@ -1762,15 +2199,28 @@ function headFor(path) {
     var r = lotById[idFromSlug(last)];
     var what = r ? title(r[C.end] || r[C.tipo] || t("lot.fallback")) : t("lot.fallback");
     var where = r && r[C.bairro] ? title(r[C.bairro]) : name;
+    base.title = t("head.lot.title", { what: what, where: where });
+    base.desc = t("head.lot.desc", { what: what, where: where, city: name });
     if (r && !isCurrent(r)) {
-      base.title = t("head.lot.historical.title", { what: what, where: where });
-      base.desc = t("head.lot.historical.desc", { price: lastAdvertisedPrice(r) == null ? t("lifecycle.date.unknown") : money(lastAdvertisedPrice(r)) });
-    } else if (r && lotStatus(r) === "unverified") {
-      base.title = t("head.lot.unverified.title", { what: what, where: where });
-      base.desc = t("head.lot.unverified.desc", { city: name });
-    } else {
-      base.title = t("head.lot.title", { what: what, where: where });
-      base.desc = t("head.lot.desc", { what: what, where: where, city: name });
+      base.title = t(STATUS_KEY[lotStatus(r)]) + ' · ' + what + ' · ' + name;
+      base.desc = what + ', ' + where + '. ' + t("archive.removal.notice") + ' ' +
+        t("archive.price.last") + ': ' + priceText(lastAdvertisedPrice(r));
+    }
+  } else if (archivePageNumber(path)) {
+    var archivePage = archivePageNumber(path);
+    base.title = t("archive.h1", { city: name });
+    base.desc = t("archive.lede", { n: num(archiveRows().length) });
+    if (archivePage > 1) {
+      base.title += ' · ' + pageLabel(archivePage);
+      base.desc = pageLabel(archivePage) + ' / ' + archivePageCount() + '. ' + base.desc;
+    }
+  } else if (allPageNumber(path)) {
+    var page = allPageNumber(path);
+    base.title = t("head.all.title", { city: name });
+    base.desc = t("head.all.desc", { city: name, lots: lots(city.stats.lots) });
+    if (page > 1) {
+      base.title += " · " + pageLabel(page);
+      base.desc = pageLabel(page) + " / " + allPageCount() + ". " + base.desc;
     }
   } else {
     base.title = t("head.city.title", { prep: cityPrep(), city: name });
@@ -1797,9 +2247,85 @@ function render() {
   view.innerHTML = html;
   // Two columns only when there is something to put in the second one; a lot
   // list has no map, and an empty sticky column is just a wide margin.
-  view.className = "wrap" + (view.querySelector(".side, .mapcard:not(.maparea), .shot, .gallery") ? " split" : "");
+  view.className = "wrap" + (view.querySelector(".side, .mapcard:not(.maparea), .shot") ? " split" : "");
   window.scrollTo(0, 0);
   wire();
+}
+
+function wireGallery(root) {
+  var gallery = root && root.querySelector ? root.querySelector("[data-gallery]") : null;
+  if (!gallery) return;
+  var hero = gallery.querySelector("[data-gallery-hero]");
+  var thumbs = [].slice.call(gallery.querySelectorAll("[data-gallery-index]"));
+  var prev = gallery.querySelector("[data-gallery-prev]");
+  var next = gallery.querySelector("[data-gallery-next]");
+  var count = gallery.querySelector("[data-gallery-count]");
+  var total = Number(gallery.getAttribute("data-gallery-total")) || thumbs.length;
+  if (!hero || total < 2 || thumbs.length < 2) return;
+  gallery.setAttribute("tabindex", "0");
+
+  function select(index, moveFocus) {
+    index = Math.max(0, Math.min(total - 1, index));
+    var button = thumbs[index], image = button && button.querySelector("img");
+    if (!button || !image) return;
+    hero.setAttribute("src", image.getAttribute("src") || "");
+    hero.setAttribute("alt", button.getAttribute("data-gallery-alt") || button.getAttribute("aria-label") || "");
+    thumbs.forEach(function (item, i) {
+      item.setAttribute("aria-current", i === index ? "true" : "false");
+    });
+    if (count) count.textContent = galleryText("count", index + 1, total);
+    if (prev) prev.disabled = index === 0;
+    if (next) next.disabled = index === total - 1;
+    if (moveFocus) button.focus();
+  }
+  thumbs.forEach(function (button, index) {
+    button.addEventListener("click", function () { select(index, false); });
+  });
+  if (prev) prev.addEventListener("click", function () {
+    var current = thumbs.findIndex(function (item) { return item.getAttribute("aria-current") === "true"; });
+    select(current - 1, true);
+  });
+  if (next) next.addEventListener("click", function () {
+    var current = thumbs.findIndex(function (item) { return item.getAttribute("aria-current") === "true"; });
+    select(current + 1, true);
+  });
+  gallery.addEventListener("keydown", function (event) {
+    var current = thumbs.findIndex(function (item) { return item.getAttribute("aria-current") === "true"; });
+    if (event.key === "ArrowLeft" || event.key === "ArrowUp") {
+      event.preventDefault(); select(current - 1, true);
+    } else if (event.key === "ArrowRight" || event.key === "ArrowDown") {
+      event.preventDefault(); select(current + 1, true);
+    } else if (event.key === "Home") {
+      event.preventDefault(); select(0, true);
+    } else if (event.key === "End") {
+      event.preventDefault(); select(total - 1, true);
+    }
+  });
+  select(0, false);
+}
+
+function wireLotMap(root) {
+  var block = root && root.querySelector ? root.querySelector("[data-lot-map]") : null;
+  if (!block) return;
+  var button = block.querySelector("[data-lot-map-load]");
+  var frame = block.querySelector("[data-lot-map-frame]");
+  if (!button || !frame) return;
+  button.addEventListener("click", function () {
+    if (frame.querySelector("iframe")) return;
+    var key = mapsEmbedKey();
+    var query = block.getAttribute("data-map-query") || "";
+    if (!key || !query) return;
+    var iframe = document.createElement("iframe");
+    iframe.setAttribute("src", "https://www.google.com/maps/embed/v1/place?key=" +
+      encodeURIComponent(key) + "&q=" + encodeURIComponent(query));
+    iframe.setAttribute("title", t("lot.maps.embed.title"));
+    iframe.setAttribute("loading", "lazy");
+    iframe.setAttribute("referrerpolicy", "strict-origin-when-cross-origin");
+    iframe.setAttribute("allowfullscreen", "");
+    frame.appendChild(iframe);
+    button.disabled = true;
+    button.hidden = true;
+  });
 }
 
 function wire() {
@@ -1807,6 +2333,8 @@ function wire() {
   var near = $("near");
   if (near) near.addEventListener("click", askNear);
   wireCity($("view"));
+  wireGallery($("view"));
+  wireLotMap($("view"));
 }
 
 /* Asked for only on a tap, used only in the browser, never sent anywhere. */

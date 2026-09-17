@@ -19,6 +19,12 @@ on:
     branches: [main]
   # Data changes without the code changing; this is how a refresh ships.
   workflow_dispatch:
+    inputs:
+      legacy_baseline_release:
+        description: 'One-time strict observed-partial lifecycle baseline (no source date)'
+        required: false
+        type: boolean
+        default: false
   # Rebuilds age availability from the committed snapshot only: no Caixa
   # fetch, database pull, or paid call runs in this workflow.
   schedule:
@@ -41,6 +47,18 @@ concurrency:
 jobs:
   build:
     runs-on: ubuntu-latest
+    env:
+      # No fallback: production must fail closed when SITE_URL is absent or wrong.
+      SITE_URL: ${{ vars.SITE_URL }}
+      MAPS_EMBED_API_KEY: ${{ vars.MAPS_EMBED_API_KEY }}
+      BRAZIL_PUBLIC_ANALYSIS_ENABLED: ${{ vars.BRAZIL_PUBLIC_ANALYSIS_ENABLED }}
+      PUBLIC_OPERATOR_NAME: ${{ vars.PUBLIC_OPERATOR_NAME }}
+      PUBLIC_OPERATOR_CONTACT: ${{ vars.PUBLIC_OPERATOR_CONTACT }}
+      ANALYSIS_API_BASE: ${{ vars.ANALYSIS_API_BASE }}
+      LOT_REPORTS_ENABLED: ${{ vars.LOT_REPORTS_ENABLED }}
+      GA4_ID: ${{ vars.GA4_ID }}
+      GA4_ENHANCED_MEASUREMENT_DISABLED: ${{ vars.GA4_ENHANCED_MEASUREMENT_DISABLED }}
+      CF_BEACON: ${{ vars.CF_BEACON }}
     steps:
       - uses: actions/checkout@v4
 
@@ -52,64 +70,79 @@ jobs:
         run: pip install --disable-pip-version-check websockets numpy scipy pillow
 
       - name: Build the payload
-        run: python proto_build.py
-
-      - name: Check freshness and archive regressions
+        # A release must have a documented source date. Rebuilding an old
+        # export is not a data refresh; missing metadata must stop publication.
+        env:
+          # proto_build calls public_config.snippet; keep every public build
+          # switch in this step so push, schedule and manual runs share the
+          # same production configuration. Values are never printed.
+          MAPS_EMBED_API_KEY: ${{ vars.MAPS_EMBED_API_KEY }}
+          BRAZIL_PUBLIC_ANALYSIS_ENABLED: ${{ vars.BRAZIL_PUBLIC_ANALYSIS_ENABLED }}
+          LOT_REPORTS_ENABLED: ${{ vars.LOT_REPORTS_ENABLED }}
+          GA4_ID: ${{ vars.GA4_ID }}
+          GA4_ENHANCED_MEASUREMENT_DISABLED: ${{ vars.GA4_ENHANCED_MEASUREMENT_DISABLED }}
+          CF_BEACON: ${{ vars.CF_BEACON }}
+          ANALYSIS_API_BASE: ${{ vars.ANALYSIS_API_BASE }}
+          PUBLIC_OPERATOR_NAME: ${{ vars.PUBLIC_OPERATOR_NAME }}
+          PUBLIC_OPERATOR_CONTACT: ${{ vars.PUBLIC_OPERATOR_CONTACT }}
         run: |
+          if [ "${{ inputs.legacy_baseline_release || 'false' }}" = "true" ]; then
+            BUILD_MODE=--legacy-baseline-release
+          else
+            BUILD_MODE=--release
+          fi
+          python proto_build.py "$BUILD_MODE"
+          printf '%s\n' "$BUILD_MODE" > .release-build-mode
+
+      - name: Check release validator
+        run: |
+          python test/test_pages_workflow_contract.py
           python test/test_freshness.py
+          python -m unittest discover -s release_tests -v
+          python -m unittest discover -s test -p 'test_seo.py' -v
           python test/test_sitemap_freshness.py
-          node test/archive_refresh.mjs site/v2/index.html
-
-      - name: Check homepage geoselection
-        run: node --test site/test/geo.test.mjs
-
-      - name: Check country city order
-        run: node test/country_city_order.mjs
-
-      - name: Check lifecycle and inventory translations
-        run: node test/lifecycle_i18n.mjs
-
-      - name: Check valuation provenance UI
-        run: node test/valuation_ui.mjs
-
-      - name: Check consent and public analytics configuration
-        run: |
+          python test/test_asset_versioning.py
+          node test/seo_app.mjs
+          node test/archive_app.mjs
+          node test/country_city_order.mjs
+          node test/lifecycle_i18n.mjs
+          node --test site/test/funnel.test.mjs
           node --test site/test/analytics.test.mjs
           node --test site/test/lot-reports.test.mjs
-          python test/test_public_config.py
-          # Owned by the maps/media agents. Run automatically when their
-          # concurrently delivered files land; keep this baseline green first.
-          if test -f test/lot_media.mjs; then node --test test/lot_media.mjs; fi
-          if test -f test/test_lot_media_projection.py; then python test/test_lot_media_projection.py; fi
-
-      - name: Check stylesheet cache versioning
-        run: python test/test_asset_versioning.py
+          node --test site/test/matricula-upload.test.mjs
+          node --test site/test/matricula-e2e.test.mjs
+          node --test site/test/geo.test.mjs
+          node --test site/test/gallery.test.mjs
+          node --test site/test/related-lots.test.mjs
+          node --test site/test/lot-map.test.mjs
+          node --test site/test/market.test.mjs
 
       # Chrome is preinstalled on ubuntu-latest; prerender drives it over CDP.
       - name: Serve and pre-render
         env:
-          # Set SITE_URL as a repository variable once the domain is decided.
-          # Canonical links, the sitemap and robots.txt all read it, and a
-          # wrong value here is the one mistake a static site cannot correct
-          # after the fact.
-          # Until the domain decision lands in the SITE_URL repository
-          # variable, the site lives on the repo's own github.io address —
-          # a project page, so under /casa-brazil/; prerender derives the
-          # base path from this URL and prefixes every asset and link.
-          SITE: ${{ vars.SITE_URL || 'https://yunoshev.github.io/casa-brazil' }}
-          # Public settings, never credentials. Set the readiness assertion to
-          # true only after disabling GA automatic enhanced measurement.
-          # Visitors must also accept statistics before any Google tag loads.
-          GA4_ID: ${{ vars.GA4_ID }}
-          GA4_ENHANCED_MEASUREMENT_DISABLED: ${{ vars.GA4_ENHANCED_MEASUREMENT_DISABLED }}
-          # Optional public Maps Embed API key. Maps remain button-triggered
-          # by page code; this variable alone loads no map.
+          # Canonicals, OG URLs, sitemap and robots are production-only here.
+          # The release gate accepts exactly https://precodemartelo.com.
+          SITE: ${{ vars.SITE_URL }}
+          # Measurement is a repository variable, not a commit. Unset means the
+          # pages ship with no counter at all — which is what a fork, a local
+          # checkout and a preview build should be. Set both under
+          # Settings → Secrets and variables → Actions → Variables:
+          #   GA4_ID     the "G-" measurement ID of a GA4 web data stream
+          #   CF_BEACON  the token from Cloudflare → Web Analytics → the site
+          # Neither is a secret: both ship inside every page by design.
           MAPS_EMBED_API_KEY: ${{ vars.MAPS_EMBED_API_KEY }}
-          # Default-off browser gate; Main enables only after shared-core readiness.
-          BRAZIL_PUBLIC_ANALYSIS_ENABLED: ${{ vars.BRAZIL_PUBLIC_ANALYSIS_ENABLED || 'false' }}
-          # Separate default-off gate for already-cached historical reports.
-          # It does not authorize new PDF fetches or model calls.
-          LOT_REPORTS_ENABLED: ${{ vars.LOT_REPORTS_ENABLED || 'false' }}
+          BRAZIL_PUBLIC_ANALYSIS_ENABLED: ${{ vars.BRAZIL_PUBLIC_ANALYSIS_ENABLED }}
+          LOT_REPORTS_ENABLED: ${{ vars.LOT_REPORTS_ENABLED }}
+          GA4_ID: ${{ vars.GA4_ID }}
+          # Set true only after automatic form/history/outbound/search capture
+          # is disabled in the GA4 web stream. We send explicit safe events.
+          GA4_ENHANCED_MEASUREMENT_DISABLED: ${{ vars.GA4_ENHANCED_MEASUREMENT_DISABLED }}
+          CF_BEACON: ${{ vars.CF_BEACON }}
+          # Public notice/queue configuration. These values are visible to
+          # readers, never API secrets or email-provider credentials.
+          PUBLIC_OPERATOR_NAME: ${{ vars.PUBLIC_OPERATOR_NAME }}
+          PUBLIC_OPERATOR_CONTACT: ${{ vars.PUBLIC_OPERATOR_CONTACT }}
+          ANALYSIS_API_BASE: ${{ vars.ANALYSIS_API_BASE }}
         run: |
           set -o pipefail
           python -u serve.py --port 8899 &
@@ -117,7 +150,8 @@ jobs:
             curl -sf -o /dev/null http://127.0.0.1:8899/v2/index.html && break
             sleep 0.5
           done
-          python -u prerender.py --site "$SITE" 2>&1 | tee prerender.log
+          python -u prerender.py "$(cat .release-build-mode)" --site "$SITE" 2>&1 | tee prerender.log
+          python release_check.py --out dist --site "$SITE" --release
 
       # Failure forensics an anonymous reader can reach: the log rides a
       # throwaway orphan branch instead of the run's own (auth-only) log view.
@@ -150,3 +184,7 @@ jobs:
     steps:
       - id: deploy
         uses: actions/deploy-pages@v4
+      # No credential or callback is deliberately needed here. The private
+      # Brazil worker polls the public manifest and verifies projection bytes
+      # before it advances its local published lifecycle baseline.
+      - run: echo "Lifecycle promotion is verified by the private worker over public HTTPS."

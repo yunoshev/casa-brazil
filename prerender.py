@@ -25,27 +25,34 @@ from __future__ import annotations
 
 import argparse
 import asyncio
-import hashlib
-from datetime import date
-from html import escape, unescape
 import json
 import os
 import re
 import shutil
 import subprocess
-import sys
 import time
 import urllib.error
 import urllib.request
-from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 from pathlib import Path
+from typing import Any, cast
+from urllib.parse import urlsplit
 
 import websockets
+from public_config import privacy_page, snippet
+from release_check import validate_release_site_url
+from release_promotion import observed_partial_without_global_freshness
+from seo import (
+    breadcrumbs,
+    canonical_url,
+    data_date,
+    prerender_date,
+    route_file,
+    sitemap_documents,
+    validate_page,
+    validate_site_url,
+)
 
 HERE = Path(__file__).parent
-sys.path.insert(0, str(HERE))
-from public_config import snippet, privacy_page, validate_site_url
-
 SITE = HERE / "site"
 
 
@@ -67,19 +74,14 @@ def _chrome_bin() -> str:
     raise SystemExit("no Chrome found — install one or point CHROME_BIN at it")
 
 
-CHROME = _chrome_bin()
-
-#: The one language that gets its own files. Search demand for Brazilian
-#: auction property outside Portuguese is not small, it is absent: Google
-#: Autocomplete returns nothing for five English and five Russian phrasings
-#: where `leilao de imoveis` returns ten, and Trends has data for the Russian
-#: query in one week out of 262. The other languages stay available to a reader
-#: through the switcher, on these same URLs, with a canonical pointing here.
+#: Static files are published in Brazilian Portuguese. The source shell also
+#: supports other languages; this build does not emit separate locale URLs.
 LANG = "pt"
 
 #: Everything a page needs that is not the page. Copied, not linked, so the
 #: output directory is the whole site.
 ASSETS = (
+    "favicon.svg",
     "v2/style.css",
     "v2/fonts/bricolage.woff2",
     "v2/fonts/instrument.woff2",
@@ -88,9 +90,31 @@ ASSETS = (
     "parts/chrome.js",
     "parts/geo.js",
     "parts/analyze.js",
-    "parts/lot-media.js",
     "parts/analytics.js",
+    "parts/market.js",
+    "data/market_reports.json",
 )
+
+# A local preview must not need a release candidate/receipt. Strict releases
+# add these byte-attested files after proto_build has generated them.
+RELEASE_ASSETS = ("lifecycle-release.json", "lifecycle-projection.json")
+
+
+def asset_paths(*, release: bool) -> tuple[str, ...]:
+    return (*ASSETS, *RELEASE_ASSETS) if release else ASSETS
+
+
+def payload_date(payload: dict[str, Any], *, asserted: str, release: bool) -> str | None:
+    """Keep the release date rule aligned with the lifecycle release mode."""
+    if not isinstance(payload, dict):
+        raise ValueError("runtime payload must be an object")
+    partial_release = release and observed_partial_without_global_freshness(payload)
+    return cast(
+        str | None,
+        prerender_date(
+            payload.get("generated"), asserted=asserted, release=release and not partial_release
+        ),
+    )
 
 
 def chrome(port: int, profile: Path) -> subprocess.Popen:
@@ -98,7 +122,7 @@ def chrome(port: int, profile: Path) -> subprocess.Popen:
         lock.unlink(missing_ok=True)
     return subprocess.Popen(
         [
-            CHROME,
+            _chrome_bin(),
             "--headless=new",
             "--disable-gpu",
             # Ubuntu 24.04 (today's ubuntu-latest) blocks unprivileged user
@@ -119,11 +143,14 @@ def chrome(port: int, profile: Path) -> subprocess.Popen:
     )
 
 
-def wait_for(url: str, tries: int = 200) -> dict:
+def wait_for(url: str, tries: int = 200) -> dict[str, Any]:
     for _ in range(tries):
         try:
             with urllib.request.urlopen(url, timeout=1) as r:
-                return json.load(r)
+                response = json.load(r)
+                if isinstance(response, dict):
+                    return response
+                raise ValueError("Chrome version response is not an object")
         except (urllib.error.URLError, OSError, TimeoutError):
             time.sleep(0.1)
     raise SystemExit(f"Chrome не поднялся на {url}")
@@ -216,7 +243,14 @@ def rebase(html: str) -> str:
     """
     if not BASE:
         return html
-    return re.sub(r'\b(href|src)="/(?!/)', f'\\1="{BASE}/', html)
+
+    def add_base(match: re.Match[str]) -> str:
+        attribute, value = match.group(1), match.group(2)
+        if value == BASE or value.startswith(BASE + "/"):
+            return match.group(0)
+        return f'{attribute}="{BASE}{value}"'
+
+    return re.sub(r'\b(href|src)="(/(?!/)[^"]*)"', add_base, html)
 
 
 #: Codepoints the shipped webfonts were cut to (`fonts_build.py` writes it).
@@ -242,52 +276,22 @@ def missing_glyphs(text: str, allowed: set[str]) -> set[str]:
     return {c for c in set(text) if c not in allowed and c.isprintable() and not c.isspace()}
 
 
-def analytics() -> str:
-    """Versioned consent module; Google additionally requires stream readiness."""
-    return snippet()
+def analytics(site: str) -> str:
+    """Public API/privacy config is independent of optional consent-gated GA."""
+    rendered = snippet(site)
+    if not isinstance(rendered, str):
+        raise TypeError("public analytics snippet must be text")
+    return rendered
 
 
 ANALYTICS = ""
 
 
-def version_stylesheet(tpl: str) -> str:
-    """Version only the shell stylesheet, before root URLs are rebased."""
-    digest = hashlib.sha256((SITE / "v2/style.css").read_bytes()).hexdigest()[:12]
-
-    def version_link(match: re.Match) -> str:
-        tag = match.group(0)
-        if not re.search(r'\brel\s*=\s*([\"\'])stylesheet\1', tag, re.IGNORECASE):
-            return tag
-
-        def version_href(attribute: re.Match) -> str:
-            url = urlsplit(unescape(attribute.group(2)))
-            if url.scheme or url.netloc or url.path != "/v2/style.css":
-                return attribute.group(0)
-            query = [(key, value) for key, value in parse_qsl(url.query, keep_blank_values=True) if key != "v"]
-            query.append(("v", digest))
-            versioned = urlunsplit(url._replace(query=urlencode(query)))
-            quote = attribute.group(1)
-            return "href=" + quote + escape(versioned, quote=True) + quote
-
-        return re.sub(r'\bhref\s*=\s*([\"\'])(.*?)\1', version_href, tag, flags=re.IGNORECASE)
-
-    return re.sub(r"<link\b[^>]*>", version_link, tpl, flags=re.IGNORECASE)
-
-
-def write_privacy(out: Path, site: str) -> None:
-    target = out / "privacidade" / "index.html"
-    target.parent.mkdir(parents=True, exist_ok=True)
-    target.write_text(rebase(version_stylesheet(privacy_page(site))))
-
-
-def shell(tpl: str, head: dict, body: str, split: bool, ld: list, chrome: dict, home: bool = False) -> str:
+def shell(
+    tpl: str, head: dict, body: str, split: bool, ld: list, chrome: dict, home: bool = False
+) -> str:
     """One rendered screen, wrapped in the page it ships as."""
-    tpl = version_stylesheet(tpl)
-    scripts = "\n".join(
-        f'<script type="application/ld+json">{json.dumps(x, ensure_ascii=False)}</script>'
-        for x in ld
-        if x
-    )
+    scripts = "\n".join(f'<script type="application/ld+json">{blob(x)}</script>' for x in ld if x)
     return (
         tpl.replace("__I18N_DATA__", blob(chrome["i18n"]))
         .replace("__CITIES_DATA__", blob(chrome["cities"]))
@@ -296,12 +300,25 @@ def shell(tpl: str, head: dict, body: str, split: bool, ld: list, chrome: dict, 
         .replace("__TITLE__", esc_attr(head["title"]))
         .replace("__DESC__", esc_attr(head["desc"]))
         .replace("__CANONICAL__", esc_attr(head["canonical"]))
+        .replace("__ROBOTS__", "noindex, follow" if head.get("noindex") else "index, follow")
         .replace("__LD__", scripts)
         .replace("__CLASS__", "wrap split" if split else "wrap")
         .replace("__BODY__", body)
         .replace("__COUNTERS__", ANALYTICS)
         .replace("__HOME_GEO__", '<script src="/parts/geo.js" defer></script>' if home else "")
     )
+
+
+def complete_head(html: str) -> str:
+    """Apply required static head links to auxiliary generated pages."""
+    additions: list[str] = []
+    if 'rel="icon"' not in html:
+        additions.append('<link rel="icon" href="/favicon.svg" type="image/svg+xml">')
+    if 'property="og:url"' not in html:
+        match = re.search(r'<link rel="canonical" href="([^"]+)">', html)
+        if match:
+            additions.append(f'<meta property="og:url" content="{match.group(1)}">')
+    return html if not additions else html.replace("</head>", "\n".join(additions) + "\n</head>", 1)
 
 
 #: Every hole the template has. Listed rather than pattern-matched, because
@@ -318,6 +335,7 @@ MARKERS = (
     "__TITLE__",
     "__DESC__",
     "__CANONICAL__",
+    "__ROBOTS__",
     "__LD__",
     "__CLASS__",
     "__BODY__",
@@ -338,36 +356,6 @@ def esc_attr(s: str) -> str:
         .replace(">", "&gt;")
         .replace('"', "&quot;")
     )
-
-
-def breadcrumbs(path: str, site: str) -> dict:
-    """The one structured-data type in this niche that yields a rich result.
-
-    There is no real-estate rich result at all — the whole gallery is 25 types
-    and "real estate" is not among them, and it has been shrinking (Vehicle
-    Listing killed 2025-06, FAQ 2026-05). Breadcrumbs and ItemList are what is
-    left that Google actually shows, so those are what we emit. Notably absent:
-    Offer.price carrying our estimate. Structured data has to be a true
-    representation of the page, and our number is a model output, not a price
-    anybody is offering.
-    """
-    parts = [p for p in path.strip("/").split("/") if p]
-    # A trail of one is not a trail: the front page is the crumb, and the
-    # not-found page is not anywhere in the tree.
-    if len(parts) < 2:
-        return {}
-    items, acc = [], ""
-    for i, seg in enumerate(parts):
-        acc += "/" + seg
-        items.append(
-            {
-                "@type": "ListItem",
-                "position": i + 1,
-                "name": seg.replace("-", " "),
-                "item": site + acc + "/",
-            }
-        )
-    return {"@context": "https://schema.org", "@type": "BreadcrumbList", "itemListElement": items}
 
 
 #: Anything in `parts/` that looks like a catalogue key. A flat page's body was
@@ -429,62 +417,25 @@ SITEMAP_MAX = 45_000
 FLAT = {"/404": "404.html"}
 
 
-def kind_of(path: str) -> str:
-    parts = [p for p in path.strip("/").split("/") if p]
-    if "lote" in parts:
-        return "lotes"
-    return "ruas" if "rua" in parts else "areas"
-
-
-def sitemap_date(value: str | None) -> str | None:
-    """A source date is optional; unknown freshness is honest sitemap metadata."""
-    if not isinstance(value, str) or not re.fullmatch(r"\d{4}-\d{2}-\d{2}", value):
-        return None
-    try:
-        date.fromisoformat(value)
-    except ValueError:
-        return None
-    return value
-
-
-def write_sitemap(out: Path, paths: list[str], site: str, when: str | None) -> None:
-    """An index and two files: the districts, and the lots.
-
-    lastmod is the day the data was cut, on every URL, because that is the
-    truth — a rebuild reprices every page. Zukerman's 13 742 district URLs all
-    say 2022-02-18, which tells a crawler nothing except that nobody is
-    watching.
-    """
-    when = sitemap_date(when)
-    lastmod = f"<lastmod>{escape(when)}</lastmod>" if when else ""
-    groups: dict[str, list[str]] = {}
-    for p in paths:
-        groups.setdefault(kind_of(p), []).append(p)
-
-    files = []
-    for kind, urls in sorted(groups.items()):
-        for n in range(0, len(urls), SITEMAP_MAX):
-            chunk = urls[n : n + SITEMAP_MAX]
-            name = (
-                f"sitemap-{kind}.xml"
-                if len(urls) <= SITEMAP_MAX
-                else (f"sitemap-{kind}-{n // SITEMAP_MAX + 1}.xml")
-            )
-            body = "".join(f"<url><loc>{escape(site + u)}</loc>{lastmod}</url>" for u in chunk)
-            (out / name).write_text(
-                '<?xml version="1.0" encoding="UTF-8"?>'
-                '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">'
-                f"{body}</urlset>\n"
-            )
-            files.append(name)
-
-    index = "".join(f"<sitemap><loc>{escape(site + '/' + f)}</loc>{lastmod}</sitemap>" for f in files)
-    (out / "sitemap.xml").write_text(
-        '<?xml version="1.0" encoding="UTF-8"?>'
-        '<sitemapindex xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">'
-        f"{index}</sitemapindex>\n"
-    )
-    print("  " + ", ".join(f"{k}: {len(v)}" for k, v in sorted(groups.items())), flush=True)
+def write_sitemap(
+    out: Path,
+    emitted: dict,
+    site: str,
+    when: str | None,
+    *,
+    route_dates: dict[str, str] | None = None,
+) -> None:
+    """Only validated, indexable files written during THIS run enter the sitemap."""
+    pages = {}
+    urls = {canonical_url(site, p) for p in emitted if route_file(p) != "404.html"}
+    for path in emitted:
+        html = (out / route_file(path)).read_text()
+        facts = validate_page(html, path, site, emitted_urls=urls)
+        pages[path] = not facts.noindex
+    for name, xml in sitemap_documents(
+        pages, site, when, route_dates=route_dates, chunk_size=SITEMAP_MAX
+    ).items():
+        (out / name).write_text(xml)
 
 
 def write_robots(out: Path, site: str) -> None:
@@ -497,8 +448,8 @@ def write_robots(out: Path, site: str) -> None:
     """
     out.joinpath("robots.txt").write_text(
         "User-agent: *\n"
+        f"Disallow: {BASE}/_home/\n"
         "Allow: /\n\n"
-        f"Disallow: {BASE}/_home/\n\n"
         "# Named on purpose. This site exists to be quoted.\n"
         f"User-agent: GPTBot\nDisallow: {BASE}/_home/\nAllow: /\n\n"
         f"User-agent: OAI-SearchBot\nDisallow: {BASE}/_home/\nAllow: /\n\n"
@@ -581,11 +532,13 @@ async def run(a, ws_url: str, tpl: str, out: Path) -> None:
                 raise SystemExit(f"каталог {LANG} не знает ключей рантайма: {missing}")
             i18n = {LANG: {k: v for k, v in whole.items() if k in want or k == "_meta"}}
             menu = json.loads(await tab.settled("JSON.stringify(window.__CITIES__ || [])"))
-            if not a.generated:
-                a.generated = await tab.js("__D__.generated") or ""
+            runtime_payload = json.loads(await tab.settled("JSON.stringify(__D__)"))
+            a.generated = payload_date(runtime_payload, asserted=a.generated, release=a.release)
 
             queue += list(FLAT)
-            seen, emitted, written, t0 = set(queue), set(), 0, time.time()
+            seen, written, t0 = set(queue), 0, time.time()
+            emitted = {}
+            route_dates = {}
 
             while queue:
                 path = queue.pop(0)
@@ -594,14 +547,19 @@ async def run(a, ws_url: str, tpl: str, out: Path) -> None:
                     print(f"  пропуск (не маршрут): {path}", flush=True)
                     continue
                 page = json.loads(got)
-                head = dict(page["head"], canonical=a.site + path)
+                head = dict(page["head"], canonical=canonical_url(a.site, path))
+                head["noindex"] = path in FLAT or head.get("noindex", False)
                 html = shell(
                     tpl,
                     head,
                     page["body"],
                     page["split"],
-                    [breadcrumbs(path, a.site)],
-                    {"i18n": i18n, "cities": menu, "here": {"city": page["city"] or ("sao-paulo-sp" if path == "/" else "")}},
+                    [],  # Add entity breadcrumbs once the actual-write set is known.
+                    {
+                        "i18n": i18n,
+                        "cities": menu,
+                        "here": {"city": page["city"] or ("sao-paulo-sp" if path == "/" else "")},
+                    },
                     path == "/",
                 )
                 left = [m for m in MARKERS if m in html]
@@ -615,11 +573,15 @@ async def run(a, ws_url: str, tpl: str, out: Path) -> None:
                 # `out / "/index.html"` is not out at all — pathlib treats an
                 # absolute right-hand side as the whole answer, and this one
                 # points at the root of the disk.
-                rel = FLAT.get(path) or (path.strip("/") + "/index.html").lstrip("/")
+                rel = route_file(path)
                 target = out / rel
                 target.parent.mkdir(parents=True, exist_ok=True)
-                target.write_text(rebase(html))
-                emitted.add(path)
+                html = rebase(complete_head(html))
+                validate_page(html, path, a.site)
+                target.write_text(html)
+                emitted[path] = page.get("breadcrumbs", [])
+                if page.get("lastmod"):
+                    route_dates[path] = page["lastmod"]
                 written += 1
                 if written % 250 == 0:
                     rate = written / max(time.time() - t0, 1e-6)
@@ -632,11 +594,11 @@ async def run(a, ws_url: str, tpl: str, out: Path) -> None:
                         seen.add(href)
                         queue.append(href)
 
-            # Small map-only partials for the current city set. These files
-            # have no document shell/canonical and never enter the sitemap.
-            slugs = json.loads(await tab.settled(
-                "JSON.stringify(__D__.cities.map(function(c){return c.slug;}))"
-            ))
+            # Map fragments are not routes: no document shell/canonical and no
+            # sitemap entry. The current payload contains five supported cities.
+            slugs = json.loads(
+                await tab.settled("JSON.stringify(__D__.cities.map(function(c){return c.slug;}))")
+            )
             for slug in slugs:
                 fragment = await tab.settled(
                     "window.__homeCityFragment__(" + json.dumps(slug) + ")"
@@ -655,14 +617,32 @@ async def run(a, ws_url: str, tpl: str, out: Path) -> None:
                     f"  добавьте их в EXTRA в fonts_build.py и пересоберите шрифты",
                     flush=True,
                 )
-            if not a.limit:
-                missing_pages = sorted(seen - emitted)
-                if missing_pages:
-                    raise SystemExit(f"páginas descobertas mas não geradas: {missing_pages[:10]}")
-            write_sitemap(out, sorted(p for p in emitted if p not in FLAT), a.site, a.generated)
+            # The notice is a real static route even before collection is enabled.
+            # Missing operator settings produce a noindex notice and no email form.
+            privacy_path = "/privacidade/"
+            target = out / route_file(privacy_path)
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_text(rebase(complete_head(privacy_page(a.site))))
+            emitted[privacy_path] = []
+            written += 1
+
+            # Partial builds may not reach a district linked by an early lot.
+            # Such ancestors must not become nonexistent JSON-LD targets.
+            urls = {canonical_url(a.site, p) for p in emitted if route_file(p) != "404.html"}
+            for path, trail in emitted.items():
+                ld = breadcrumbs(trail, a.site, emitted)
+                if ld:
+                    target = out / route_file(path)
+                    html = target.read_text().replace(
+                        "</head>",
+                        f'<script type="application/ld+json">{blob(ld)}</script>\n</head>',
+                    )
+                    validate_page(html, path, a.site, emitted_urls=urls)
+                    target.write_text(html)
+            write_sitemap(out, emitted, a.site, a.generated, route_dates=route_dates)
             write_robots(out, a.site)
 
-            for rel in ASSETS:
+            for rel in asset_paths(release=a.release or a.legacy_baseline_release):
                 dst = out / rel
                 dst.parent.mkdir(parents=True, exist_ok=True)
                 shutil.copy(SITE / rel, dst)
@@ -680,25 +660,45 @@ def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--out", default=str(HERE / "dist"))
     ap.add_argument("--base", default="http://127.0.0.1:8899")
-    ap.add_argument("--site", default="https://example.invalid")
+    ap.add_argument(
+        "--site",
+        default=os.environ.get("SITE_URL", ""),
+        help="public HTTPS site URL, including GitHub Pages subpath if used",
+    )
+    release_mode = ap.add_mutually_exclusive_group()
+    release_mode.add_argument(
+        "--release", action="store_true", help="require documented payload date"
+    )
+    release_mode.add_argument(
+        "--legacy-baseline-release",
+        action="store_true",
+        help="strict lifecycle baseline with intentionally null source freshness",
+    )
     ap.add_argument("--shell", default="/v2/index.html")
     ap.add_argument(
         "--generated",
         default="",
-        help="the data cut date for <lastmod>; defaults to what the payload says",
+        help="optional assertion of payload date; never overrides missing/different metadata",
     )
     ap.add_argument("--port", type=int, default=9340)
     ap.add_argument("--limit", type=int, default=0, help="stop after N pages (a smoke run)")
     a = ap.parse_args()
-    a.site = validate_site_url(a.site)
+    try:
+        a.site = (
+            validate_release_site_url(a.site)
+            if a.release or a.legacy_baseline_release
+            else validate_site_url(a.site)
+        )
+        a.generated = data_date(a.generated)
+    except ValueError as exc:
+        ap.error(str(exc))
     global BASE, ANALYTICS
-    BASE = __import__("urllib.parse", fromlist=["urlparse"]).urlparse(a.site).path.rstrip("/")
-    ANALYTICS = analytics()
+    BASE = urlsplit(a.site).path
+    ANALYTICS = analytics(a.site)
     if BASE:
         print(f"базовый путь: {BASE} (сайт живёт в подпапке)", flush=True)
     out = Path(a.out)
     prepare(out)
-    write_privacy(out, a.site)
     tpl = (SITE / "v2" / "page.tpl.html").read_text()
 
     profile = HERE / ".prerender-profile"

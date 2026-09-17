@@ -8,16 +8,17 @@ import sys
 import tempfile
 import types
 import unittest
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from unittest import mock
-
 
 ROOT = Path(__file__).resolve().parents[1]
 SPEC = importlib.util.spec_from_file_location("proto_build_freshness", ROOT / "proto_build.py")
 assert SPEC and SPEC.loader
 proto_build = importlib.util.module_from_spec(SPEC)
-with mock.patch.dict(sys.modules, {"build": types.ModuleType("build"), "shapes": types.ModuleType("shapes")}):
+with mock.patch.dict(
+    sys.modules, {"build": types.ModuleType("build"), "shapes": types.ModuleType("shapes")}
+):
     SPEC.loader.exec_module(proto_build)
 
 
@@ -30,11 +31,13 @@ class FreshnessTest(unittest.TestCase):
             return json.loads(path.read_text())
 
     def test_projection_generated_is_authoritative_and_verbatim(self):
-        source = self.source({
-            "site_projection": {"generated": "2025-08-27T14:03:02Z"},
-            "generated": {"source": "2025-08-01"},
-            "cities": [{"generated": "2099-01-01"}],
-        })
+        source = self.source(
+            {
+                "site_projection": {"generated": "2025-08-27T14:03:02Z"},
+                "generated": {"source": "2025-08-01"},
+                "cities": [{"generated": "2099-01-01"}],
+            }
+        )
         self.assertEqual(proto_build.source_freshness(source), "2025-08-27T14:03:02Z")
 
     def test_explicit_generated_source_is_used_without_date_inference(self):
@@ -60,7 +63,7 @@ class FreshnessTest(unittest.TestCase):
             proto_build.source_freshness(self.source({"generated": "2999-01-01"}))
 
     def test_lifecycle_ages_only_active_records_without_mutating_input(self):
-        as_of = datetime(2025, 8, 30, tzinfo=timezone.utc)
+        as_of = datetime(2025, 8, 30, tzinfo=UTC)
         lifecycle = {
             "old": {"status": "active", "last_seen_at": "2025-08-26T23:59:59Z"},
             "fresh": {"status": "active", "last_seen_at": "2025-08-27T00:00:00Z"},
@@ -81,19 +84,27 @@ class FreshnessTest(unittest.TestCase):
     def test_city_statistics_are_active_only_and_report_unverified_separately(self):
         cols = {"id": 0, "conf": 1, "ring": 2, "promised": 3, "margin": 4}
         city = {
-            "slug": "rio-de-janeiro-rj", "cidade": "RIO DE JANEIRO", "nome": "Rio",
-            "rows": [["fresh", "ok", 0, 50, 10], ["old", "ok", 0, 50, 10], ["gone", "ok", 0, 50, 10]],
+            "slug": "rio-de-janeiro-rj",
+            "cidade": "RIO DE JANEIRO",
+            "nome": "Rio",
+            "rows": [
+                ["fresh", "ok", 0, 50, 10],
+                ["old", "ok", 0, 50, 10],
+                ["gone", "ok", 0, 50, 10],
+            ],
             "lifecycle": {
                 "fresh": {"status": "active", "last_seen_at": "2025-08-29T00:00:00Z"},
                 "old": {"status": "active", "last_seen_at": "2025-08-20T00:00:00Z"},
                 "gone": {"status": "missing"},
             },
         }
-        with mock.patch.object(proto_build, "outlines", return_value=None), \
-             mock.patch.object(proto_build, "market", return_value={}), \
-             mock.patch.object(proto_build, "upkeep", return_value={}), \
-             mock.patch.object(proto_build, "streets", return_value={}):
-            built = proto_build.build_city(city, cols, as_of=datetime(2025, 8, 30, tzinfo=timezone.utc))
+        with (
+            mock.patch.object(proto_build, "outlines", return_value=None),
+            mock.patch.object(proto_build, "market", return_value={}),
+            mock.patch.object(proto_build, "upkeep", return_value={}),
+            mock.patch.object(proto_build, "streets", return_value={}),
+        ):
+            built = proto_build.build_city(city, cols, as_of=datetime(2025, 8, 30, tzinfo=UTC))
         self.assertEqual(len(built["rows"]), 3)
         self.assertEqual(built["stats"]["lots"], 1)
         self.assertEqual(built["stats"]["unverified"], 1)

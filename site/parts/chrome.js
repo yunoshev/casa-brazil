@@ -73,8 +73,6 @@
     paintMenu(here);
   }
 
-  // Used only by the flat country homepage after its small featured-map
-  // fragment changes. This is display state, deliberately not a preference.
   function setCity(slug) {
     global.__HERE__ = global.__HERE__ || {};
     global.__HERE__.city = slug || "";

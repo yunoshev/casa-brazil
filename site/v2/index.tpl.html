@@ -1,3 +1,6 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
 <meta charset="utf-8">
 <!-- Overwritten by the runtime once it knows the reader's language. -->
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
@@ -6,9 +9,12 @@
      static routes; until then a crawler that runs no JS sees one language. -->
 <title data-i18n="meta.title">__TITLE__</title>
 <meta name="description" data-i18n-content="meta.desc" content="__DESC__">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
 <link rel="preload" href="/v2/fonts/instrument.woff2" as="font" type="font/woff2" crossorigin>
 <link rel="preload" href="/v2/fonts/bricolage.woff2" as="font" type="font/woff2" crossorigin>
 <link rel="stylesheet" href="/v2/style.css">
+</head>
+<body>
 
 <header class="top">
   <div class="wrap">
@@ -29,7 +35,6 @@
 </header>
 
 <main class="wrap" id="view"></main>
-<p class="wrap foot"><a href="/privacidade/">Privacidade</a></p>
 
 <script>window.__I18N__ = __I18N_DATA__;</script>
 <script src="/parts/lang.js"></script>
@@ -37,5 +42,7 @@ __COUNTERS__
 <script src="/parts/chrome.js"></script>
 <script src="/parts/analyze.js"></script>
 <script>window.__D__ = __PAYLOAD__;</script>
+<script src="/parts/market.js"></script>
 <script src="/v2/app.js"></script>
-<script src="/parts/lot-media.js"></script>
+</body>
+</html>

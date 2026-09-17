@@ -20,77 +20,260 @@ Run: .venv/bin/python -u experiments/brazil/proto_build.py
 
 from __future__ import annotations
 
-import json
+import argparse
 import ipaddress
+import json
+import math
+import os
 import re
 import sqlite3
 import statistics
 import sys
 import unicodedata
-from datetime import date, datetime, timedelta, timezone
+from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlsplit, urlunsplit
 
 sys.path.insert(0, str(Path(__file__).parent))
 sys.path.insert(0, str(Path(__file__).parent / "site"))
 import build as classic
 import shapes
+from market_release import compact_json as market_compact_json
+from market_release import lifecycle_binding, public_artifact
 from public_config import snippet
+from release_check import validate_release_site_url
+from release_promotion import (
+    MANIFEST_NAME,
+    PROJECTION_NAME,
+    atomic_write,
+    candidate_contract,
+    emit_manifest,
+)
+from seo import source_date, validate_site_url
 
 HERE = Path(__file__).parent
 SITE = HERE / "site" / "v2"
 DATA = HERE / "data" / "site.json"
-MEDIA = HERE / "data" / "lot-media.json"
+MARKET_REPORTS = HERE / "data" / "market_reports.json"
+PUBLIC_MARKET_REPORTS = HERE / "site" / "data" / "market_reports.json"
+# Generated offline by export_lot_media.py from already saved auction
+# snapshots.  This file is deliberately optional: a catalogue refresh must
+# never stop publishing just because no approved photo projection exists yet.
+LOT_MEDIA = HERE / "data" / "lot-media.json"
+LIFECYCLE_RECEIPT = HERE / "data" / "site.json.release.json"
+
+MARKET_KEYS = {
+    "schema",
+    "currency",
+    "sale_asking",
+    "discount_pct",
+    "rent_monthly",
+    "yield_pct",
+    "condo_monthly",
+    "sample",
+    "disclaimer",
+}
+MARKET_RANGE_KEYS = {"min", "max"}
+MARKET_SAMPLE_KEYS = {"count", "radius_m", "freshness_days", "confidence"}
+MARKET_CONFIDENCE = {"high", "medium", "low"}
+MAX_MEDIA_PER_LOT = 24
 
 
-def load_lot_media(path: Path = MEDIA) -> dict[str, dict[str, dict[str, Any]]]:
-    """Load the additive, snapshot-scoped media projection if present."""
+def _safe_public_media_url(value: Any) -> str | None:
+    """Return one image URL safe to place in a public HTML payload.
+
+    ``export_lot_media.py`` has a stricter source-side allowlist.  This
+    second, independent boundary matters because this module is the final
+    writer of the browser payload: no source-only query token, credential,
+    fragment, local address or script-looking value can pass through merely
+    because a stale or hand-edited artifact contains it.
+    """
+    if not isinstance(value, str) or not value or len(value) > 2048:
+        return None
+    if any(char.isspace() for char in value) or any(char in value for char in "<>'\\\""):
+        return None
+    try:
+        parsed = urlsplit(value)
+        hostname = (parsed.hostname or "").lower().rstrip(".")
+        # Accessing .port also validates malformed ports such as :not-a-port.
+        port = parsed.port
+    except ValueError:
+        return None
+    if (
+        parsed.scheme.lower() != "https"
+        or not hostname
+        or parsed.username is not None
+        or parsed.password is not None
+        or parsed.query
+        or parsed.fragment
+        or port not in (None, 443)
+    ):
+        return None
+    try:
+        address = ipaddress.ip_address(hostname)
+    except ValueError:
+        if hostname in {"localhost", "localhost.localdomain"} or hostname.endswith(".local"):
+            return None
+    else:
+        if (
+            address.is_private
+            or address.is_loopback
+            or address.is_link_local
+            or address.is_reserved
+            or address.is_multicast
+            or address.is_unspecified
+        ):
+            return None
+    path = parsed.path or "/"
+    return urlunsplit(("https", hostname, path, "", ""))
+
+
+def _public_media_urls(values: Any) -> list[str]:
+    """Normalise a list of media values without changing its visible order."""
+    if not isinstance(values, list):
+        return []
+    result: list[str] = []
+    seen: set[str] = set()
+    for value in values:
+        # New media uses gallery entries; legacy media used plain URL arrays.
+        candidate = value.get("url") if isinstance(value, dict) else value
+        url = _safe_public_media_url(candidate)
+        if url and url not in seen:
+            seen.add(url)
+            result.append(url)
+        if len(result) >= MAX_MEDIA_PER_LOT:
+            break
+    return result
+
+
+def load_lot_media(path: Path, published_lots: dict[str, set[str]]) -> dict[str, Any]:
+    """Return the minimal, safe media projection for currently published lots.
+
+    The exporter has emitted version 1 since its first release.  Earlier
+    reviewed artifacts did not always carry a version field, so that shape is
+    deliberately accepted as a legacy input.  Unknown cities and lot IDs are
+    stale data, not a reason to make the whole public catalogue disappear.
+    """
     if not path.exists():
         return {}
-    value = json.loads(path.read_text(encoding="utf-8"))
-    if not isinstance(value, dict) or value.get("version") != 1 or not isinstance(value.get("cities"), dict):
-        raise ValueError("lot-media.json must have version 1 and a cities map")
-    out: dict[str, dict[str, dict[str, Any]]] = {}
-    for slug, lots in value["cities"].items():
-        if not isinstance(slug, str) or not isinstance(lots, dict):
-            raise ValueError("lot-media.json has invalid city map")
-        out[slug] = {}
-        for lot_id, media in lots.items():
-            if not isinstance(lot_id, str) or not isinstance(media, dict):
-                raise ValueError("lot-media.json has invalid lot media")
-            if set(media) != {"photos", "scope"} or media["scope"] != "source_snapshot":
-                raise ValueError("lot media must be source_snapshot scoped")
-            photos = media["photos"]
-            def safe_photo(photo: object) -> bool:
-                if not isinstance(photo, str) or len(photo) > 2048:
-                    return False
-                try:
-                    parsed = __import__("urllib.parse", fromlist=["urlsplit"]).urlsplit(photo)
-                    if parsed.scheme != "https" or not parsed.hostname or parsed.username or parsed.password:
-                        return False
-                    if parsed.query or parsed.fragment:
-                        return False
-                    try:
-                        address = ipaddress.ip_address(parsed.hostname)
-                        if address.is_private or address.is_loopback or address.is_link_local or address.is_reserved or address.is_multicast:
-                            return False
-                    except ValueError:
-                        if parsed.hostname in {"localhost", "localhost.localdomain"} or parsed.hostname.endswith(".local"):
-                            return False
-                    return True
-                except ValueError:
-                    return False
-            if not isinstance(photos, list) or len(photos) > 24 or any(not safe_photo(photo) for photo in photos):
-                raise ValueError("lot media photos must be bounded HTTPS URLs")
-            if len(set(photos)) != len(photos):
-                raise ValueError("lot media photos must be deduplicated")
-            out[slug][lot_id] = {"photos": list(photos), "scope": "source_snapshot"}
-    return out
+    try:
+        raw = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise ValueError(f"cannot read lot media {path}: {exc}") from exc
+    if not isinstance(raw, dict) or not isinstance(raw.get("cities"), dict):
+        raise ValueError("lot media root must contain a cities object")
+    version = raw.get("version")
+    if version not in (None, 1):
+        raise ValueError("lot media version must be 1")
+
+    cities: dict[str, dict[str, dict[str, Any]]] = {}
+    for city_slug in sorted(published_lots):
+        source_city = raw["cities"].get(city_slug)
+        if not isinstance(source_city, dict):
+            continue
+        lots: dict[str, dict[str, Any]] = {}
+        for lot_id in sorted(published_lots[city_slug]):
+            record = source_city.get(lot_id)
+            if not isinstance(record, dict):
+                continue
+            # Preserve the ordered gallery for new exports.  We intentionally
+            # omit exporter provenance here: it is not needed by the reader
+            # and would make every public lot carry private snapshot names.
+            gallery = _public_media_urls(record.get("gallery"))
+            photos = _public_media_urls(record.get("photos"))
+            primary = _safe_public_media_url(record.get("primary_photo"))
+            if not gallery and not photos and not primary:
+                continue
+            compact: dict[str, Any] = {}
+            if gallery:
+                compact["gallery"] = [{"url": url} for url in gallery]
+            if photos:
+                compact["photos"] = photos
+            if primary:
+                compact["primary_photo"] = primary
+            lots[lot_id] = compact
+        if lots:
+            cities[city_slug] = lots
+    return {"version": 1, "cities": cities}
 
 
-def merge_lot_media(city: dict[str, Any], media: dict[str, dict[str, dict[str, Any]]]) -> None:
-    """Attach additive media without changing rows, lifecycle, or valuation."""
-    city["media"] = media.get(city["slug"], {})
+def _market_number(value: Any) -> bool:
+    return type(value) in (int, float) and math.isfinite(value)
+
+
+def _market_range(value: Any, maximum: float, label: str) -> None:
+    if not isinstance(value, dict) or set(value) != MARKET_RANGE_KEYS:
+        raise ValueError(f"market report {label} must contain only min and max")
+    if not _market_number(value["min"]) or not _market_number(value["max"]):
+        raise ValueError(f"market report {label} values must be finite numbers")
+    if value["min"] < 0 or value["max"] < value["min"] or value["max"] > maximum:
+        raise ValueError(f"market report {label} range is invalid")
+
+
+def _validate_market_report(value: Any, label: str) -> None:
+    if not isinstance(value, dict) or set(value) != MARKET_KEYS:
+        raise ValueError(f"{label} has unsupported or missing market fields")
+    if value["schema"] != "market-v1" or value["currency"] != "BRL":
+        raise ValueError(f"{label} must be market-v1 in BRL")
+    _market_range(value["sale_asking"], 100_000_000_000, f"{label}.sale_asking")
+    discount = value["discount_pct"]
+    if discount is not None and (not _market_number(discount) or discount < -100 or discount > 100):
+        raise ValueError(f"{label}.discount_pct is invalid")
+    for key, maximum in (("rent_monthly", 100_000_000), ("condo_monthly", 10_000_000)):
+        current = value[key]
+        if current is not None:
+            _market_range(current, maximum, f"{label}.{key}")
+    yield_pct = value["yield_pct"]
+    if yield_pct is not None and (
+        not _market_number(yield_pct) or yield_pct < 0 or yield_pct > 1000
+    ):
+        raise ValueError(f"{label}.yield_pct is invalid")
+    sample = value["sample"]
+    if not isinstance(sample, dict) or set(sample) != MARKET_SAMPLE_KEYS:
+        raise ValueError(f"{label}.sample has unsupported or missing fields")
+    for key, maximum in (("count", 1_000_000), ("radius_m", 100_000), ("freshness_days", 3650)):
+        current = sample[key]
+        if type(current) is not int or not 0 <= current <= maximum:
+            raise ValueError(f"{label}.sample.{key} is invalid")
+    if sample["confidence"] not in MARKET_CONFIDENCE:
+        raise ValueError(f"{label}.sample.confidence is invalid")
+    disclaimer = value["disclaimer"]
+    if not isinstance(disclaimer, str) or not disclaimer.strip() or len(disclaimer) > 2000:
+        raise ValueError(f"{label}.disclaimer is invalid")
+
+
+def market_release_binding(data_path: Path, receipt_path: Path) -> dict[str, str]:
+    """Read the two lifecycle inputs once and derive the market binding.
+
+    The receipt is deliberately not inferred from a build date, current DB
+    state, or a previous public page.  Market numbers can only join the exact
+    catalogue bytes they were calculated for.
+    """
+    try:
+        receipt = json.loads(receipt_path.read_text(encoding="utf-8"))
+        data = data_path.read_bytes()
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise ValueError("cannot read lifecycle artifact or receipt for market reports") from exc
+    return lifecycle_binding(data, receipt)
+
+
+def prepare_market_reports(
+    path: Path,
+    lot_ids: set[str],
+    binding: dict[str, str] | None,
+) -> tuple[dict[str, Any], dict[str, dict[str, Any]]]:
+    """Build the one bounded public market file plus its deterministic lookup."""
+    try:
+        source = path.read_bytes() if path.exists() else None
+    except OSError as exc:
+        raise ValueError(f"cannot read market reports {path}: {exc}") from exc
+    return public_artifact(
+        source,
+        binding=binding,
+        known_lot_ids=lot_ids,
+        validate_market=_validate_market_report,
+    )
 
 
 def _valid_source_freshness(value: Any) -> str | None:
@@ -116,13 +299,15 @@ def _valid_source_freshness(value: Any) -> str | None:
 def source_freshness(source: dict[str, Any]) -> str | None:
     """Return only freshness explicitly carried by the public projection.
 
-    The projection is the public export's authority.  Do not substitute a city
+    The projection is the public export's authority. Do not substitute a city
     date, file timestamp, git date, or this build's clock: none says when the
-    underlying whole dataset was observed.  A source timestamp is deliberately
+    underlying whole dataset was observed. A source timestamp is deliberately
     returned verbatim so its precision is not silently changed for the reader.
     """
     projection = source.get("site_projection")
-    projection_generated = projection.get("generated") if isinstance(projection, dict) else projection
+    projection_generated = (
+        projection.get("generated") if isinstance(projection, dict) else projection
+    )
     generated = source.get("generated")
     candidates = (
         projection_generated,
@@ -135,6 +320,38 @@ def source_freshness(source: dict[str, Any]) -> str | None:
     return None
 
 
+def strict_release_freshness(source: dict[str, Any], release_mode: str) -> str | None:
+    """Validate global freshness only after the attested mode is known."""
+    generated = source_freshness(source)
+    if release_mode == "observed_partial":
+        if generated is not None:
+            raise ValueError("observed-partial release cannot claim global source freshness")
+        return None
+    if release_mode != "trusted":
+        raise ValueError("unsupported lifecycle release mode")
+    # A common date on all city objects and catalog-cycle source_as_of are not
+    # a declaration about the exact public artifact. Trusted publication needs
+    # the projection's explicit whole-export date.
+    source_date({"generated": source.get("generated"), "cities": []}, release=True)
+    if generated is None:
+        raise ValueError("trusted release requires top-level generated source metadata")
+    return generated
+
+
+def load_release_candidate(data_path: Path, receipt_path: Path) -> tuple[dict[str, Any], str]:
+    """Bind candidate bytes, provenance and receipt before any output is written."""
+    try:
+        data = data_path.read_bytes()
+        payload = json.loads(data)
+        receipt = json.loads(receipt_path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise ValueError("cannot read lifecycle candidate artifact or receipt") from exc
+    if not isinstance(payload, dict) or not isinstance(receipt, dict):
+        raise ValueError("lifecycle candidate artifact or receipt has an invalid schema")
+    candidate_contract(data, receipt, payload)
+    return payload, receipt["release_mode"]
+
+
 def projected_lifecycle(lifecycle: dict, *, as_of: datetime | None = None) -> dict:
     """Copy lifecycle state and age only stale active availability in UTC.
 
@@ -143,11 +360,13 @@ def projected_lifecycle(lifecycle: dict, *, as_of: datetime | None = None) -> di
     while an active record without a recent, non-future observation becomes
     unverified after three days.
     """
-    as_of = as_of or datetime.now(timezone.utc)
+    as_of = as_of or datetime.now(UTC)
     if as_of.tzinfo is None:
         raise ValueError("as_of must be an explicit UTC timestamp")
-    as_of = as_of.astimezone(timezone.utc)
-    copied = {key: dict(value) if isinstance(value, dict) else value for key, value in lifecycle.items()}
+    as_of = as_of.astimezone(UTC)
+    copied = {
+        key: dict(value) if isinstance(value, dict) else value for key, value in lifecycle.items()
+    }
     for value in copied.values():
         if not isinstance(value, dict) or value.get("status") != "active":
             continue
@@ -158,7 +377,7 @@ def projected_lifecycle(lifecycle: dict, *, as_of: datetime | None = None) -> di
             observed = datetime.fromisoformat(seen.replace("Z", "+00:00"))
             if observed.tzinfo is None:
                 raise ValueError
-            observed = observed.astimezone(timezone.utc)
+            observed = observed.astimezone(UTC)
             if observed > as_of or as_of - observed > timedelta(days=3):
                 value["status"] = "unverified"
         except ValueError:
@@ -178,17 +397,10 @@ def catalogue_for_freshness(catalogues: dict[str, dict], generated: str | None) 
 
 def copy_top_metadata(payload: dict, source: dict) -> None:
     """Pass renderer contracts through exactly when the export supplies them."""
-    # Valuation provenance is deliberately separate from source/lifecycle
-    # provenance: it describes how an estimate was produced, not whether the
-    # listing feed is current. Per-lot fingerprints are a separate backend
-    # contract and are not folded into this top-level metadata.
-    for key in (
-        "provenance",
-        "lifecycle_schema_version",
-        "valuation_provenance",
-    ):
+    for key in ("provenance", "lifecycle_schema_version"):
         if key in source:
             payload[key] = source[key]
+
 
 #: Same reliability gate the page draws with, so the headline counts and the
 #: per-lot verdicts can never disagree.
@@ -354,7 +566,7 @@ def _cached_outline(cidade: str) -> dict | None:
     hit = _shape_cache.get(cidade)
     if hit:
         print(f"  {cidade}: геометрии-источника нет — контуры из shapes_cache.json", flush=True)
-    return hit
+    return hit if isinstance(hit, dict) else None
 
 
 def save_shape_cache() -> None:
@@ -556,8 +768,12 @@ def build_city(c: dict, cols: dict[str, int], *, as_of: datetime | None = None) 
     rows = c["rows"]
     lifecycle = projected_lifecycle(c.get("lifecycle") or {}, as_of=as_of)
     current = [r for r in rows if lifecycle.get(str(r[cols["id"]]), {}).get("status") == "active"]
-    unverified = [r for r in rows if lifecycle.get(str(r[cols["id"]]), {}).get("status")
-                  not in {"active", "missing", "archived"}]
+    unverified = [
+        r
+        for r in rows
+        if lifecycle.get(str(r[cols["id"]]), {}).get("status")
+        not in {"active", "missing", "archived"}
+    ]
 
     def reliable(r):
         return r[cols["conf"]] == "ok" and (r[cols["ring"]] or 0) <= TIGHT_RING_M
@@ -589,8 +805,7 @@ def build_city(c: dict, cols: dict[str, int], *, as_of: datetime | None = None) 
 
     shp = outlines(c["cidade"], rows, cols)
 
-    # The UF is its own path segment, not a suffix glued to the city: that is
-    # what ranks in Brazil, and it buys a state-level hub page for free.
+    # UF disambiguates cities; it does not imply that a state hub exists.
     slug = c["slug"]
     uf = slug.rsplit("-", 1)[-1] if len(slug.rsplit("-", 1)[-1]) == 2 else ""
     return {
@@ -616,8 +831,9 @@ def build_city(c: dict, cols: dict[str, int], *, as_of: datetime | None = None) 
         "upkeep": upkeep(norm(c["cidade"]), set((shp or {}).get("nice") or ())),
         "streets": streets(norm(c["cidade"]), set((shp or {}).get("nice") or ())),
         "rows": rows,
-        # Rows remain addressable in history; current statistics count active
-        # records only, with aged availability reported separately.
+        # Keep every row and the source's dates/evidence, including stable URLs.
+        # A missing lifecycle is unverified, never inferred active; current
+        # statistics count active records only.
         "lifecycle": lifecycle,
     }
 
@@ -644,39 +860,150 @@ def check_prepositions(payload: dict, cats: dict[str, dict]) -> None:
 
 
 def main() -> None:
-    src = json.loads(DATA.read_text())
+    ap = argparse.ArgumentParser(description=__doc__)
+    ap.add_argument(
+        "--data",
+        type=Path,
+        default=DATA,
+        help="source JSON export (default: data/site.json); does not modify the input",
+    )
+    ap.add_argument(
+        "--market-reports",
+        type=Path,
+        default=MARKET_REPORTS,
+        help="optional strict market report export (default: data/market_reports.json)",
+    )
+    ap.add_argument(
+        "--lot-media",
+        type=Path,
+        default=LOT_MEDIA,
+        help="optional approved photo projection (default: data/lot-media.json)",
+    )
+    release_mode = ap.add_mutually_exclusive_group()
+    release_mode.add_argument(
+        "--release",
+        action="store_true",
+        help="require documented generated metadata from the source export",
+    )
+    release_mode.add_argument(
+        "--legacy-baseline-release",
+        action="store_true",
+        help="strict one-time observed-partial baseline; generated source date must be absent",
+    )
+    ap.add_argument(
+        "--lifecycle-receipt",
+        type=Path,
+        default=LIFECYCLE_RECEIPT,
+        help="candidate lifecycle receipt; required by --release",
+    )
+    ap.add_argument(
+        "--site",
+        default=os.environ.get("SITE_URL", ""),
+        help="public site URL used for the privacy notice and API settings",
+    )
+    args = ap.parse_args()
+    strict_release = args.release or args.legacy_baseline_release
+    # Preview builds retain the project-page default for local development.
+    # Releases have no fallback: an unset or legacy SITE_URL fails closed.
+    if not args.site and not strict_release:
+        args.site = "https://yunoshev.github.io/casa-brazil"
+    try:
+        args.site = (
+            validate_release_site_url(args.site) if strict_release else validate_site_url(args.site)
+        )
+    except ValueError as exc:
+        ap.error(str(exc))
+    try:
+        if strict_release:
+            src, candidate_mode = load_release_candidate(args.data, args.lifecycle_receipt)
+            if args.legacy_baseline_release and candidate_mode != "observed_partial":
+                raise ValueError("legacy baseline requires an observed-partial candidate")
+            generated = strict_release_freshness(src, candidate_mode)
+        else:
+            src = json.loads(args.data.read_text())
+            generated = source_freshness(src)
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError, ValueError) as exc:
+        ap.error(str(exc))
+    if not generated:
+        notice = (
+            "LEGACY BASELINE: source freshness is intentionally null"
+            if args.legacy_baseline_release
+            else (
+                "OBSERVED PARTIAL: global source freshness is intentionally null"
+                if strict_release
+                else "PREVIEW: source snapshot date unknown; no lastmod may be inferred from build time"
+            )
+        )
+        print(notice, flush=True)
     cols = {name: i for i, name in enumerate(src["cols"])}
-    media = load_lot_media()
 
+    cities = [build_city(c, cols) for c in src["cities"]]
     payload = {
-        "generated": source_freshness(src),
+        "preview": not strict_release,
         "cols": src["cols"],
-        "cities": [build_city(c, cols) for c in src["cities"]],
+        "cities": cities,
     }
-    for city in payload["cities"]:
-        merge_lot_media(city, media)
+    if generated is not None:
+        payload["generated"] = generated
+    lot_ids = {str(row[cols["id"]]) for city in src["cities"] for row in city["rows"]}
+    market_binding = (
+        market_release_binding(args.data, args.lifecycle_receipt) if strict_release else None
+    )
+    try:
+        public_market_reports, market_reports = prepare_market_reports(
+            args.market_reports, lot_ids, market_binding
+        )
+    except ValueError as exc:
+        ap.error(str(exc))
+    # This is an intentional public artifact, not a fetch-at-render-time
+    # cache.  It is always present — including the explicit insufficient-data
+    # shape — so readers, crawlers and the release attestation see the same
+    # honest state.
+    atomic_write(PUBLIC_MARKET_REPORTS, market_compact_json(public_market_reports) + b"\n")
+    if market_reports:
+        payload["market_reports"] = market_reports
+    # The media projection joins against the post-build cities.  That means a
+    # stale photo record for a city/lifecycle row that is no longer published
+    # cannot make the payload larger or produce an orphan URL.
+    published_lots = {
+        city["slug"]: {str(row[cols["id"]]) for row in city["rows"]} for city in cities
+    }
+    lot_media = load_lot_media(args.lot_media, published_lots)
+    if lot_media:
+        payload["media"] = lot_media
     copy_top_metadata(payload, src)
     save_shape_cache()
 
     cats = classic.load_catalogues()
     classic.check("v2", cats)
-    cats = catalogue_for_freshness(cats, payload["generated"])
+    cats = catalogue_for_freshness(cats, generated)
     check_prepositions(payload, cats)
     ref = cats[DEFAULT_LANG]
 
     tpl = (SITE / "index.tpl.html").read_text()
     out = (
         tpl.replace("__PAYLOAD__", classic.blob(payload))
+        .replace("__COUNTERS__", snippet(args.site))
         # A plain "__I18N__" would also match the `window.__I18N__ =` it is
         # being assigned to, and replace both halves of the line.
         .replace("__I18N_DATA__", classic.blob(cats))
-        .replace("__COUNTERS__", snippet())
         # The <title> and description are rewritten by the runtime, but a
         # crawler that runs no JS has to find something better than a marker.
         .replace("__TITLE__", ref["meta.title"])
         .replace("__DESC__", ref["meta.desc"])
     )
     (SITE / "index.html").write_text(out)
+    if strict_release:
+        # Serve the source projection beside its attestation. The private
+        # promoter compares these exact bytes; HTML embedding is not evidence.
+        atomic_write(HERE / "site" / PROJECTION_NAME, args.data.read_bytes())
+        emit_manifest(
+            args.data,
+            args.lifecycle_receipt,
+            HERE / "site" / MANIFEST_NAME,
+            legacy_baseline=args.legacy_baseline_release,
+            public_artifacts={"data/market_reports.json": PUBLIC_MARKET_REPORTS.read_bytes()},
+        )
 
     kb = len(out) / 1024
     langs = ", ".join(sorted(cats))

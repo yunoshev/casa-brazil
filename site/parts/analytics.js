@@ -1,6 +1,4 @@
-/* Local consent: no Google script, dataLayer or pings before acceptance.
- * The same first-party settings window is used in every country. GA starts
- * only after the visitor explicitly grants analytics for this policy revision.
+/* Basic consent: no Google script, dataLayer or pings before acceptance.
  * Read-only build config: __ANALYTICS__.ga4 and
  * __ANALYTICS__.enhancedMeasurementDisabled === true. The latter asserts that
  * automatic history, form, outbound, download and search measurement are OFF
@@ -13,10 +11,7 @@
 (function (global) {
   "use strict";
   var CFG = global.__ANALYTICS__ || {};
-  // This record intentionally has no continuity with prior consent schemes.
-  // The new all-country first-party policy asks every returning visitor once.
-  var LOCAL_KEY = "brazil-analytics-local-consent-v2";
-  var LOCAL_REVISION = "local-all-countries-v2";
+  var KEY = "brazil-analytics-consent-v1";
   var choice = null, started = false, panel = null, preferences = null, pageSeen = false;
   var ctaSeen = false, lotSeen = false, observer = null;
   var lastPath = null;
@@ -41,22 +36,11 @@
       h === "127.0.0.1" || h === "[::1]" || /^192\.168\./.test(h) ||
       global.navigator.webdriver === true;
   }
-  var gaReady = !offline() && /^G-[A-Z0-9]+$/.test(CFG.ga4 || "") && CFG.enhancedMeasurementDisabled === true;
-  var ready = gaReady;
-
-  function readLocalChoice() {
-    try {
-      var saved = JSON.parse(global.localStorage.getItem(LOCAL_KEY) || "null");
-      return saved && saved.revision === LOCAL_REVISION &&
-        (saved.value === "accepted" || saved.value === "rejected") ? saved.value : null;
-    } catch (e) { return null; }
-  }
-
-  function saveLocalChoice(value) {
-    try { global.localStorage.setItem(LOCAL_KEY, JSON.stringify({ revision: LOCAL_REVISION, value: value })); }
-    catch (e) { /* session choice still works */ }
-  }
-  choice = readLocalChoice();
+  var ready = !offline() && /^G-[A-Z0-9]+$/.test(CFG.ga4 || "") && CFG.enhancedMeasurementDisabled === true;
+  try {
+    var saved = global.localStorage.getItem(KEY);
+    if (saved === "accepted" || saved === "rejected") choice = saved;
+  } catch (e) { /* session choice still works */ }
 
   function includes(xs, value) { return xs.indexOf(value) !== -1; }
 
@@ -123,10 +107,10 @@
   global.track = track;
 
   function start() {
-    if (!gaReady || choice !== "accepted" || started) return;
+    if (!ready || choice !== "accepted" || started) return;
     try {
       global.dataLayer = global.dataLayer || [];
-      if (typeof global.gtag !== "function") global.gtag = function () { global.dataLayer.push(arguments); };
+      global.gtag = function () { global.dataLayer.push(arguments); };
       global["ga-disable-" + CFG.ga4] = false;
       global.gtag("consent", "default", {
         ad_storage: "denied", ad_user_data: "denied", ad_personalization: "denied", analytics_storage: "granted",
@@ -149,24 +133,10 @@
     } catch (e) { /* blocked tag never affects the product */ }
   }
 
-  function stopGoogleAnalytics() {
-    if (started) {
-      global["ga-disable-" + CFG.ga4] = true;
-      try { global.gtag("consent", "update", { analytics_storage: "denied" }); } catch (e) { /* optional */ }
-    }
-  }
-
-  function localPanel() {
-    if (!panel) return;
-    panel.hidden = false;
-    var first = panel.querySelector("button");
-    if (first) first.focus();
-  }
-
   function setConsent(value) {
-    if (value !== "accepted" && value !== "rejected") return false;
+    if (value !== "accepted" && value !== "rejected") return;
     choice = value;
-    saveLocalChoice(value);
+    try { global.localStorage.setItem(KEY, value); } catch (e) { /* keep in memory */ }
     if (panel) panel.hidden = true;
     if (preferences) preferences.focus();
     if (value === "accepted") {
@@ -175,62 +145,51 @@
         try { global.gtag("consent", "update", { analytics_storage: "granted" }); } catch (e) { /* optional */ }
       } else start();
       wire(document);
-    } else stopGoogleAnalytics();
-    return true;
+    } else if (started) {
+      global["ga-disable-" + CFG.ga4] = true;
+      try { global.gtag("consent", "update", { analytics_storage: "denied" }); } catch (e) { /* optional */ }
+    }
   }
 
   function banner() {
-    if (!gaReady || !document.body) return;
+    if (!ready || !document.body) return;
     if (!preferences) {
       preferences = document.createElement("button");
       preferences.type = "button";
-      preferences.setAttribute("class", "analytics-preferences");
       preferences.textContent = t("analytics.preferences");
+      preferences.setAttribute("style", "display:block;margin:16px auto;padding:10px 16px;cursor:pointer");
       preferences.addEventListener("click", function () {
-        localPanel();
+        if (panel) {
+          panel.hidden = false;
+          panel.querySelector("button").focus();
+        }
       });
       document.body.appendChild(preferences);
     }
     if (panel) return;
     panel = document.createElement("aside");
     panel.hidden = !!choice;
-    panel.setAttribute("class", "analytics-banner");
-    panel.setAttribute("role", "dialog");
-    panel.setAttribute("aria-modal", "false");
+    panel.setAttribute("role", "region");
     panel.setAttribute("aria-label", t("analytics.title"));
-    var close = document.createElement("button");
-    close.type = "button";
-    close.setAttribute("class", "analytics-close");
-    close.setAttribute("aria-label", t("analytics.close"));
-    close.setAttribute("title", t("analytics.close"));
-    close.textContent = "×";
-    close.addEventListener("click", function () { setConsent("rejected"); });
-    panel.appendChild(close);
-    var title = document.createElement("h2");
-    title.setAttribute("class", "analytics-banner-title");
-    title.textContent = t("analytics.title");
-    panel.appendChild(title);
+    panel.setAttribute("style", "position:fixed;bottom:12px;left:12px;right:12px;z-index:1000;max-width:36rem;margin:auto;padding:16px;background:var(--paper,#fff);color:var(--ink,#222);border:1px solid currentColor;border-radius:8px;box-shadow:0 2px 16px #0002");
     var text = document.createElement("p");
-    text.setAttribute("class", "analytics-banner-copy");
     text.textContent = t("analytics.consent");
     panel.appendChild(text);
-    var actions = document.createElement("div");
-    actions.setAttribute("class", "analytics-actions");
     ["rejected", "accepted"].forEach(function (value) {
       var button = document.createElement("button");
       button.type = "button";
       button.textContent = value === "accepted" ? t("analytics.accept") : t("analytics.reject");
-      button.setAttribute("class", "analytics-action " + (value === "accepted" ? "analytics-accept" : "analytics-reject"));
+      button.setAttribute("style", "margin:4px;padding:10px 16px;cursor:pointer");
       button.addEventListener("click", function () { setConsent(value); });
-      actions.appendChild(button);
+      panel.appendChild(button);
     });
-    panel.appendChild(actions);
     document.body.appendChild(panel);
   }
 
   function wire(root) {
+    if (!ready) return;
     banner();
-    if (!ready || !started || choice !== "accepted") return;
+    if (!started || choice !== "accepted") return;
     if (lastPath !== global.location.pathname) {
       lastPath = global.location.pathname;
       pageSeen = lotSeen = ctaSeen = false;
@@ -265,8 +224,7 @@
 
   global.ANALYTICS = Object.freeze({ wire: wire, setConsent: setConsent, getConsent: function () { return choice; } });
   function boot() {
-    if (choice === "accepted") start();
-    wire(document);
+    start(); wire(document);
     // The existing analysis module inserts its form after DOMContentLoaded;
     // shell navigation replaces #view. Observe both without changing its API.
     if (ready && global.MutationObserver) {

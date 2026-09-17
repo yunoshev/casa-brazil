@@ -17,6 +17,7 @@
     (CFG.apiBase === undefined || CFG.apiBase === BASE) &&
     ["https://precodemartelo.com", "https://www.precodemartelo.com"].indexOf(global.location.origin) !== -1;
   var enabled = CFG.enabled === true && trustedEndpoint;
+  var uploadEnabled = CFG.uploadEnabled === true && trustedEndpoint;
   var reportsEnabled = CFG.reportsEnabled === true && trustedEndpoint;
   // Client-side mirror of the worker's PDF_ALLOWED_HOSTS — not security
   // (the worker enforces its own), just a better error before a round trip.
@@ -31,6 +32,15 @@
   var PREFIX = "brazil-analysis-v1-";
   var UUID = /^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/i;
   var TICKET = /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}\.[0-9]{10,11}\.[a-f0-9]{64}$/;
+  var UPLOAD_CONSENT = "brazil-matricula-paid-ai-v1";
+  var MAX_UPLOAD_BYTES = 5 * 1024 * 1024;
+  // Exact mirror of the server-owned matrícula warning contract. Keep this
+  // literal stable: a translated or shortened variant is not accepted.
+  var MATRICULA_WARNING =
+    "Análise automatizada da matrícula, sujeita a erros e omissões. Não constitui " +
+    "certidão atualizada, parecer jurídico ou garantia sobre titularidade, ônus, " +
+    "cancelamentos ou disponibilidade do imóvel. Confira o documento integral e " +
+    "consulte o cartório e um profissional independente antes de decidir.";
 
   function track(name, params) {
     try { if (global.track) global.track(name, params); } catch (e) { /* optional */ }
@@ -97,6 +107,31 @@
           method: payload === null ? "GET" : "POST", headers: { "Content-Type": "application/json" },
           credentials: "omit", referrerPolicy: "no-referrer", cache: "no-store", redirect: "error",
           body: payload === null ? undefined : JSON.stringify(payload), signal: controller ? controller.signal : undefined,
+        });
+      }).then(async function (r) {
+        var body = null;
+        try { body = await r.json(); } catch (e) { /* HTTP status still matters */ }
+        return { status: r.status, body: body, hit: r.headers.get("X-Cache") === "hit" };
+      }).then(function (r) { global.clearTimeout(timer); resolve(r); }, function (e) {
+        global.clearTimeout(timer); reject(e);
+      });
+    });
+  }
+
+  function postPDF(path, file, state, timeout) {
+    var controller = global.AbortController ? new global.AbortController() : null;
+    return new Promise(function (resolve, reject) {
+      var timer = global.setTimeout(function () {
+        if (controller) controller.abort();
+        reject(new Error("timeout"));
+      }, timeout);
+      Promise.resolve().then(function () {
+        return global.fetch(BASE + path, {
+          method: "POST", body: file, headers: { "Content-Type": "application/pdf",
+            "X-Visitor-Id": state.visitor, "X-Idempotency-Key": state.key,
+            "X-Analysis-Lang": lang, "X-Analysis-Consent": UPLOAD_CONSENT },
+          credentials: "omit", referrerPolicy: "no-referrer",
+          cache: "no-store", redirect: "error", signal: controller ? controller.signal : undefined,
         });
       }).then(async function (r) {
         var body = null;
@@ -196,6 +231,136 @@
       '<p class="foot">' + esc(a.aviso || "") + (hit ? " · " + t("az.cache") : "") + "</p>";
   }
 
+  function validUploadResult(a) {
+    function object(value, keys) { return value && typeof value === "object" && !Array.isArray(value) &&
+      Object.keys(value).length === keys.length && keys.every(function (key) { return Object.prototype.hasOwnProperty.call(value, key); }); }
+    function text(value, max) { return typeof value === "string" && !!value.trim() && value.length <= max; }
+    function citation(value) { return object(value, ["page", "quote"]) && Number.isInteger(value.page) &&
+      value.page > 0 && value.page <= 150 && text(value.quote, 360); }
+    function identity(value) { return object(value, ["status", "catalog_value", "document_value", "citations"]) &&
+      ["match", "omitted"].indexOf(value.status) !== -1 && Array.isArray(value.citations) && value.citations.length <= 3 &&
+      (value.catalog_value === null || text(value.catalog_value, 500)) &&
+      (value.status === "omitted" ? value.document_value === null && value.citations.length === 0 :
+        text(value.document_value, 500) && value.citations.length > 0 && value.citations.every(citation)); }
+    function entry(value) { return object(value, ["kind", "number", "title", "summary", "effect", "citations"]) &&
+      ["R", "AV"].indexOf(value.kind) !== -1 && Number.isInteger(value.number) && value.number > 0 && value.number <= 999999 &&
+      text(value.title, 160) && text(value.summary, 1200) && ["active", "cancelled", "unclear"].indexOf(value.effect) !== -1 &&
+      Array.isArray(value.citations) && value.citations.length > 0 && value.citations.length <= 4 && value.citations.every(citation); }
+    return object(a, ["contract", "document_type", "identity", "entries", "summary", "warnings", "confidence", "disclaimer", "_meta"]) &&
+      a.contract === "brazil_matricula_v1" && a.document_type === "matricula" &&
+      object(a.identity, ["matricula", "address"]) && identity(a.identity.matricula) && identity(a.identity.address) &&
+      [a.identity.matricula, a.identity.address].some(function (value) { return value.status === "match"; }) &&
+      Array.isArray(a.entries) && a.entries.length <= 80 && a.entries.every(entry) && text(a.summary, 3000) &&
+      Array.isArray(a.warnings) && a.warnings.length > 0 && a.warnings.length <= 20 && a.warnings.every(function (x) { return text(x, 1200); }) &&
+      ["high", "medium", "low"].indexOf(a.confidence) !== -1 && a.disclaimer === MATRICULA_WARNING &&
+      object(a._meta, ["cached", "analyzed_at"]) && typeof a._meta.cached === "boolean" &&
+      typeof a._meta.analyzed_at === "string" && !isNaN(Date.parse(a._meta.analyzed_at));
+  }
+
+  function renderUploadResult(a, hit) {
+    function citations(values) { return '<ol class="azlist">' + values.map(function (citation) {
+      return '<li><span class="foot">' + esc(t("az.upload.page", { page: citation.page })) +
+        '</span><blockquote class="foot">' + esc(citation.quote) + '</blockquote></li>'; }).join("") + '</ol>'; }
+    function identity(name, value) { return '<div class="fact"><span class="k">' + esc(t("az.upload.identity." + name)) +
+      '</span><span class="v">' + esc(t("az.upload.identity." + value.status)) + '</span></div>' +
+      (value.status === "match" ? '<p class="foot">' + esc(value.document_value) + '</p>' + citations(value.citations) : ''); }
+    var entries = a.entries.map(function (entry) { return '<li><p><b>' + esc(entry.kind + '-' + entry.number + ' · ' + entry.title) +
+      '</b></p><p>' + esc(entry.summary) + '</p><p class="foot">' + esc(t("az.upload.effect." + entry.effect)) +
+      '</p>' + citations(entry.citations) + '</li>'; }).join("");
+    return '<p class="say">' + esc(a.summary) + '</p><div class="facts">' + identity("matricula", a.identity.matricula) +
+      identity("address", a.identity.address) + '<div class="fact"><span class="k">' + esc(t("az.conf")) +
+      '</span><span class="v">' + esc(t("az.upload.confidence." + a.confidence)) + '</span></div></div>' +
+      (entries ? '<section class="azcitations"><h3>' + esc(t("az.upload.entries")) + '</h3><ol class="azlist">' + entries + '</ol></section>' : '') +
+      '<section><h3>' + esc(t("az.upload.warnings")) + '</h3><ul class="azlist">' + items(a.warnings) + '</ul></section>' +
+      '<p class="note">' + esc(MATRICULA_WARNING) + (hit ? " · " + esc(t("az.cache")) : "") + '</p>';
+  }
+
+  function caixaSource(value) {
+    try {
+      var u = new URL(value);
+      return u.protocol === "https:" && HOSTS[u.hostname] && !u.username && !u.password && !u.port ? u.href : null;
+    } catch (e) { return null; }
+  }
+
+  async function validPDF(file) {
+    if (!file || typeof file.name !== "string" || !/\.pdf$/i.test(file.name) ||
+        typeof file.size !== "number" || file.size < 5 || file.size > MAX_UPLOAD_BYTES ||
+        (file.type && file.type !== "application/pdf") || typeof file.slice !== "function") return false;
+    try {
+      var bytes = new Uint8Array(await file.slice(0, 5).arrayBuffer());
+      return bytes.length === 5 && bytes[0] === 37 && bytes[1] === 80 && bytes[2] === 68 && bytes[3] === 70 && bytes[4] === 45;
+    } catch (e) { return false; }
+  }
+
+  function bootUpload(box) {
+    var id = box.getAttribute("data-az");
+    if (!/^[a-f0-9]{16}$/.test(id || "")) return;
+    var source = caixaSource(box.getAttribute("data-az-source") || "");
+    box.innerHTML = '<div class="sechead"><h2>' + esc(t("az.upload.h2")) + '</h2><span class="n">' +
+      esc(t("az.free")) + '</span></div><p class="foot">' + esc(t("az.upload.lede")) + '</p>' +
+      (source ? '<p><a class="azdownload" href="' + esc(source) + '" target="_blank" rel="noopener noreferrer">' +
+        esc(t("az.upload.download")) + '</a></p>' : '') +
+      '<p class="foot">' + esc(t("az.upload.manual")) + '</p>' +
+      '<form class="azupload"><label class="azdrop" tabindex="0"><span class="azdrop-title">' +
+        esc(t("az.upload.drop")) + '</span><span class="foot">' + esc(t("az.upload.rules")) +
+        '</span><input type="file" accept="application/pdf,.pdf" required aria-describedby="az-upload-message az-upload-consent"></label>' +
+      '<p class="azfile foot" aria-live="polite"></p><label id="az-upload-consent" class="foot azconsent"><input type="checkbox" required> ' +
+        esc(t("az.upload.consent")) + '</label><button type="submit" class="cta" disabled>' +
+        esc(t("az.upload.go")) + '</button></form><p id="az-upload-message" class="foot azmsg" role="status" aria-live="polite" hidden></p>' +
+      '<div class="azout"></div><p class="foot">' + esc(t("az.upload.historical")) + '</p>';
+    var form = box.querySelector("form"), input = box.querySelector("input"), drop = box.querySelector("label");
+    var consent = form.querySelectorAll("input")[1];
+    var btn = box.querySelector("button"), msg = box.querySelector(".azmsg"), fileName = box.querySelector(".azfile");
+    var out = box.querySelector(".azout"), selected = null, requestKey = null, visitor = randomID(), busy = false;
+    function say(key) { msg.hidden = false; msg.textContent = t(key); }
+    function mode(value, key) { box.setAttribute("data-az-state", value); if (key) say(key); }
+    function lock(value) { busy = value; input.disabled = value; consent.disabled = value; btn.disabled = value || !selected || !consent.checked; form.setAttribute("aria-busy", String(value)); }
+    async function choose(file) {
+      selected = null; requestKey = null; btn.disabled = true; out.innerHTML = ""; mode("verifying", "az.upload.verifying");
+      if (!(await validPDF(file))) { mode("error", "az.upload.invalid"); fileName.textContent = ""; return; }
+      selected = file; requestKey = randomID(); fileName.textContent = file.name; btn.disabled = !consent.checked; mode("ready", "az.upload.ready");
+    }
+    input.addEventListener("change", function () { return choose(input.files && input.files[0]); });
+    consent.addEventListener("change", function () { btn.disabled = busy || !selected || !consent.checked; });
+    drop.addEventListener("keydown", function (ev) {
+      if ((ev.key === "Enter" || ev.key === " ") && !busy) { ev.preventDefault(); input.click(); }
+    });
+    ["dragenter", "dragover"].forEach(function (name) { drop.addEventListener(name, function (ev) { ev.preventDefault(); if (!busy) drop.classList.add("is-dragging"); }); });
+    ["dragleave", "drop"].forEach(function (name) { drop.addEventListener(name, function (ev) { ev.preventDefault(); drop.classList.remove("is-dragging"); }); });
+    drop.addEventListener("drop", function (ev) { if (!busy) return choose(ev.dataTransfer && ev.dataTransfer.files && ev.dataTransfer.files[0]); });
+    form.addEventListener("submit", async function (ev) {
+      ev.preventDefault(); if (busy || !selected || !consent.checked) { if (!consent.checked) say("az.upload.consent_required"); return; }
+      lock(true); out.innerHTML = ""; mode("verifying", "az.upload.verifying"); track("analyze_edital", { stage: "start" });
+      var ticket = null, deadline = Date.now() + 120000;
+      try {
+        for (var attempt = 0; attempt < 12; attempt++) {
+          var r = ticket ? await post("/analyze/" + ticket, null, Math.max(1, Math.min(30000, deadline - Date.now()))) :
+            await postPDF("/analyze/lots/" + id, selected, { visitor: visitor, key: requestKey }, Math.max(1, Math.min(30000, deadline - Date.now())));
+          if (box.isConnected === false) return;
+          var body = r.body && typeof r.body === "object" && !Array.isArray(r.body) ? r.body : {};
+          if (r.status === 200 && validUploadResult(body)) {
+            out.innerHTML = renderUploadResult(body, r.hit); mode("complete", "az.upload.complete");
+            track("analyze_edital", { stage: "ok" }); selected = null; requestKey = null; input.value = ""; consent.checked = false; fileName.textContent = ""; return;
+          }
+          if (r.status === 202 && ["verifying", "queued", "pending"].indexOf(body.status) !== -1 &&
+              typeof body.job_ticket === "string" && TICKET.test(body.job_ticket)) {
+            ticket = body.job_ticket;
+            mode(body.status === "pending" ? "analyzing" : body.status,
+              body.status === "pending" ? "az.upload.analyzing" : body.status === "queued" ? "az.upload.queued" : "az.upload.verifying");
+            var delay = Math.max(1, Math.min(15, Number(body.retry_after_seconds) || 2)) * 1000;
+            if (Date.now() + delay >= deadline) throw new Error("timeout");
+            await new Promise(function (resolve) { global.setTimeout(resolve, delay); }); continue;
+          }
+          mode("error", body.error === "document_mismatch" ? "az.upload.mismatch" :
+            body.error === "too_large" ? "az.upload.too_large" : "az.upload.error");
+          track("analyze_edital", { stage: "error", reason: typeof body.error === "string" ? body.error : "invalid_response" }); return;
+        }
+        throw new Error("timeout");
+      } catch (e) { if (box.isConnected !== false) { mode("error", e.message === "timeout" ? "az.upload.timeout" : "az.upload.error"); track("analyze_edital", { stage: "error", reason: e.message === "timeout" ? "timeout" : "network" }); } }
+      finally { lock(false); }
+    });
+  }
+
   function validReport(a, id) {
     function time(value) {
       return typeof value === "string" && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?(Z|[+-]\d{2}:\d{2})$/.test(value) && !isNaN(Date.parse(value));
@@ -280,6 +445,7 @@
   }
 
   function boot(box) {
+    if (uploadEnabled) { bootUpload(box); return; }
     if (!enabled) {
       box.setAttribute("data-az-state", "unavailable");
       box.innerHTML = '<div class="sechead"><h2>' + t("az.h2") + '</h2></div>' +

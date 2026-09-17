@@ -141,9 +141,10 @@ a{color:inherit}
 .hero{padding:22px 0 6px}
 h1{font-size:30px; font-weight:800; line-height:1.08}
 h1 .q{color:var(--bad)}
-/* Addresses need room for their identifying detail without competing with the
- * home-page headline scale. */
-h1.lot-address{font-size:24px; line-height:1.2; max-width:none; text-wrap:pretty}
+.lot-title{font-size:clamp(24px,7vw,30px); overflow-wrap:anywhere}
+.lot-breadcrumb{display:flex; flex-wrap:wrap; gap:3px; margin-top:10px; color:var(--ink2); font-size:13px}
+.lot-breadcrumb a{min-height:28px; display:inline-flex; align-items:center}
+.maps-link{display:inline-flex; align-items:center; min-height:36px; margin-top:5px; color:var(--ink2); font-size:13px}
 .mark{
   background:var(--mark); color:#0F1310;
   padding:0 .2em; border-radius:5px;
@@ -240,6 +241,11 @@ svg.map.shapes{max-height:62vh}
 .row .nm{font-weight:700; font-size:16px; flex:1; min-width:0;
   overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
 .row .sub{font-size:13px; color:var(--ink2); margin-top:3px}
+.related-lots{border-top:1px solid var(--line); padding-top:18px}
+.related-lot .nm{font-family:var(--display); font-weight:700}
+.related-lot .related-facts{font-variant-numeric:tabular-nums}
+.related-trail{color:var(--ink3); font-size:12px; margin-top:7px; overflow-wrap:anywhere}
+.related-trail a{color:var(--ink2)}
 .bar{height:5px; border-radius:99px; background:var(--sunk); margin-top:9px; overflow:hidden}
 .bar i{display:block; height:100%; border-radius:99px}
 
@@ -391,52 +397,57 @@ svg.map.shapes{max-height:62vh}
 .foot{color:var(--ink3); font-size:12.5px; margin:26px 0 10px; line-height:1.5}
 .hid{display:none !important}
 
-/* ---- analytics consent ---------------------------------------- */
-
-.analytics-preferences{
-  display:block; min-height:44px; margin:16px auto; padding:10px 16px;
-  border:1px solid var(--line); border-radius:99px; background:var(--card);
-  color:var(--ink); font-size:14px; font-weight:650;
-}
-.analytics-banner{
-  position:fixed; z-index:1000; right:12px; bottom:12px; left:12px;
-  max-width:38rem; margin:auto; padding:16px 16px 14px;
-  border:1px solid var(--line); border-radius:var(--r); background:var(--card);
-  color:var(--ink); box-shadow:var(--shadow);
-}
-.analytics-banner-title{padding-right:38px; font-size:19px}
-.analytics-banner-copy{margin:8px 0 12px; color:var(--ink2); font-size:14px; line-height:1.4}
-.analytics-actions{display:grid; grid-template-columns:1fr 1fr; gap:8px}
-.analytics-action{
-  min-height:44px; padding:8px 12px; border:1px solid var(--ink); border-radius:10px;
-  font-weight:700; text-align:center;
-}
-.analytics-reject{background:var(--card); color:var(--ink)}
-.analytics-accept{background:var(--ink); color:var(--paper)}
-.analytics-close{
-  position:absolute; top:8px; right:8px; display:grid; width:40px; height:40px;
-  place-items:center; border:1px solid var(--line); border-radius:99px; background:var(--card);
-  color:var(--ink); font-size:25px; line-height:1;
-}
-.analytics-preferences:focus-visible,.analytics-action:focus-visible,.analytics-close:focus-visible{
-  outline:3px solid var(--mark); outline-offset:2px;
-}
 /* height:auto so the intrinsic 640x480 in the markup reserves the right box
    before the file arrives, without pinning the rendered height to it. */
 .shot{width:100%; height:auto; border-radius:16px; display:block; margin-top:6px}
-.gallery{margin-top:6px}
-.gallery-stage{position:relative; min-height:1px}
-.gallery .shot{margin-top:0}
-.gallery-controls,.lot-map-actions{display:flex; align-items:center; gap:8px; margin-top:8px}
-.gallery-controls button,.map-load,.map-external{
-  min-height:40px; padding:8px 11px; border:1px solid var(--line); border-radius:10px;
-  background:var(--card); font-weight:650; font-size:14px; text-decoration:none;
+
+/* Lot gallery: one stable hero in the HTML, with the optional controls kept
+   short enough that a second or third image does not push the useful facts
+   below the fold. The thumbnails are buttons, not links, so keyboard and
+   touch users share one interaction model. */
+.lot-gallery{margin-top:6px; min-width:0}
+.gallery-hero{position:relative; min-width:0}
+.gallery-hero .shot{margin-top:0}
+.gallery-count{
+  position:absolute; right:10px; bottom:10px; padding:4px 8px;
+  border-radius:999px; background:rgba(15,19,16,.72); color:#fff;
+  font:500 11px/1 var(--label); font-variant-numeric:tabular-nums;
 }
-.gallery-count{min-width:44px; text-align:center; color:var(--ink3); font-variant-numeric:tabular-nums; font-size:13px}
-.lot-map{margin-top:14px}
-.lot-map .foot{margin:7px 0 0}
-.lot-map-frame:empty{display:none}
-.lot-map-embed{display:block; width:100%; height:300px; border:0; border-radius:12px; margin-top:10px; background:var(--sunk)}
+.gallery-controls{display:flex; align-items:center; justify-content:center; gap:10px; margin-top:7px}
+.gallery-control{
+  width:42px; height:38px; border:1px solid var(--line); border-radius:10px;
+  background:var(--card); font-size:24px; line-height:1; cursor:pointer;
+}
+.gallery-control:hover,.gallery-control:focus-visible,.gallery-thumb:hover,.gallery-thumb:focus-visible{
+  border-color:var(--ink); outline:2px solid var(--mark); outline-offset:1px;
+}
+.gallery-control:disabled{opacity:.42; cursor:default; outline:0}
+.gallery-hint{font:500 11px/1 var(--label); color:var(--ink3); min-width:58px; text-align:center}
+.gallery-thumbs{
+  display:flex; gap:6px; overflow-x:auto; scrollbar-width:none;
+  padding:5px 2px 2px; -webkit-overflow-scrolling:touch;
+}
+.gallery-thumbs::-webkit-scrollbar{display:none}
+.gallery-thumb{
+  flex:0 0 64px; width:64px; height:48px; padding:0; overflow:hidden;
+  border:2px solid transparent; border-radius:9px; background:var(--sunk); cursor:pointer;
+}
+.gallery-thumb[aria-current="true"]{border-color:var(--ink)}
+.gallery-thumb img{display:block; width:100%; height:100%; object-fit:cover}
+.gallery-thumb:focus-visible{outline-offset:2px}
+
+/* Maps are deliberately opt-in: the empty frame has no size and no third-party
+   request occurs until the reader asks to load it. */
+.lot-map{margin-top:18px; padding:16px; border:1px solid var(--line); border-radius:16px; background:var(--card)}
+.lot-map h2{margin:0 0 10px; font:700 20px/1.25 var(--display)}
+.lot-map-actions{display:flex; flex-wrap:wrap; align-items:center; gap:10px}
+.lot-map .maps-link{margin:0; min-height:42px; padding:0 4px}
+.map-embed-button{
+  min-height:42px; padding:0 14px; border:1px solid var(--line); border-radius:11px;
+  background:var(--ink); color:var(--paper); font:700 14px/1.2 var(--display); cursor:pointer;
+}
+.map-embed-button:hover,.map-embed-button:focus-visible{outline:2px solid var(--mark); outline-offset:2px}
+.lot-map-frame iframe{display:block; width:100%; min-height:320px; margin-top:14px; border:0; border-radius:12px}
 
 /* Desktop keeps the same DOM — the map (or, on a lot, its photo) simply moves
  * into a sticky second column and stays put while the reading column scrolls.
@@ -446,10 +457,6 @@ svg.map.shapes{max-height:62vh}
   :root{--pad:28px}
   .wrap{max-width:1120px}
   h1{font-size:44px; max-width:16ch}
-  /* An address is an identifier, not a display slogan.  Lot pages may use the
-   * full reading column and a slightly more compact scale; natural wrapping
-   * remains the safe fallback for genuinely long addresses. */
-  h1.lot-address{font-size:clamp(22px,2vw,28px); max-width:none; text-wrap:pretty}
   .kicker{font-size:12px}
   .cbtn b{font-size:16px}
   .lede{font-size:18.5px; max-width:52ch}
@@ -460,12 +467,12 @@ svg.map.shapes{max-height:62vh}
     column-gap:34px; align-items:start;
   }
   .split > *{grid-column:1; min-width:0}
-  .split > .side, .split > .mapcard, .split > .shot, .split > .gallery{
+  .split > .side, .split > .mapcard, .split > .shot{
     grid-column:2; grid-row:1 / span 99; margin-top:36px;
   }
   /* Only a column shorter than the viewport may stick — a tall one would pin
      its own bottom out of reach. */
-  .split > .mapcard, .split > .shot, .split > .gallery{position:sticky; top:78px}
+  .split > .mapcard, .split > .shot{position:sticky; top:78px}
   .split > .side > .mapcard:first-child{margin-top:0}
   .maparea svg.map{height:440px}
   .maparea svg.map .lbl.wide{display:inline}
@@ -617,9 +624,41 @@ svg.map .lbl{fill:var(--ink); stroke:var(--card)}
 .mkt .erow.tot .el{font-weight:700; color:var(--ink)}
 .mkt .erow.tot .ev{font-family:var(--display); font-weight:800; font-size:18.5px}
 
+/* A lot-level market estimate is readable without colour, hover, or script.
+   Keep the facts as a definition list so screen readers get label/value pairs
+   in the same order as sighted readers. */
+.market-report{
+  margin:18px 0 0; padding:18px; border:1px solid var(--line);
+  border-radius:var(--r); background:var(--card); box-shadow:var(--shadow);
+}
+.market-title{font:700 22px/1.25 var(--display); margin:0}
+.market-intro{margin:6px 0 14px; color:var(--ink2); font-size:14px}
+.market-facts{display:grid; grid-template-columns:minmax(0,1fr) auto; gap:0 14px; margin:0}
+.market-label,.market-value{padding:7px 0; border-top:1px solid var(--line2)}
+.market-label{color:var(--ink2); font-size:14px}
+.market-value{margin:0; font-weight:700; font-variant-numeric:tabular-nums; text-align:right; white-space:nowrap}
+.market-sample{display:flex; flex-wrap:wrap; gap:5px 12px; margin:13px 0 0; color:var(--ink3); font-size:12px}
+.market-sample span+span{border-left:1px solid var(--line); padding-left:12px}
+.market-disclaimer{margin:13px 0 0; color:var(--ink3); font-size:12px; line-height:1.45}
+.market-disclaimer strong,.market-disclaimer span{display:block}
+.market-disclaimer-title{color:var(--ink2); margin-bottom:3px}
+.market-disclaimer-truth{margin-top:3px}
+.market-insufficient{margin:14px 0 0; padding:10px 12px; border-radius:10px; background:var(--mute-bg); color:var(--ink2); font-size:14px}
+
 /* ---- análise de documento (F3) --------------------------------- */
 /* The one form on the site. Same card as the market blocks, because to the
    reader it is the same kind of thing: a fact about this lot, on demand. */
+.lifecycle-banner { margin: 18px 0; padding: 18px; border: 2px solid var(--line); border-radius: 12px; background: var(--sunk); }
+.lifecycle-banner.archived, .lifecycle-banner.missing { border-color: var(--mark); }
+.lifecycle-banner h2, .lot-history h2, .historical-analysis h2 { font: 700 22px/1.3 var(--display); margin: 0 0 10px; }
+.lifecycle-banner p { margin: 0 0 12px; }
+.inventory-note { max-width: 70ch; }
+.lot-history .facts, .lifecycle-banner .facts { overflow-wrap: anywhere; }
+.history-events { margin: 18px 0 0; padding-left: 24px; }
+.history-events li { padding: 12px 0; border-top: 1px solid var(--line); }
+.history-events a, .confirmed-outcome a { display: inline-block; margin-top: 10px; overflow-wrap: anywhere; }
+.confirmed-outcome { margin: 18px 0; padding: 12px; border: 1px solid var(--line); border-radius: 10px; }
+.historical-analysis { border-left: 3px solid var(--mute); }
 .azform { display: flex; gap: 8px; margin: 10px 0 2px; }
 .azform input {
   flex: 1; min-width: 0; padding: 10px 12px;
@@ -630,6 +669,18 @@ svg.map .lbl{fill:var(--ink); stroke:var(--card)}
 .azform input:focus { outline: 2px solid var(--mark); outline-offset: 1px; }
 .azform .cta { margin: 0; padding: 10px 16px; width: auto; white-space: nowrap; }
 .azform button[disabled] { opacity: 0.55; }
+.azupload{margin:12px 0 4px}
+.azdrop{display:flex; flex-direction:column; align-items:center; gap:5px; padding:22px 16px; border:2px dashed var(--line); border-radius:12px; background:var(--sunk); cursor:pointer; text-align:center}
+.azdrop:hover,.azdrop:focus,.azdrop.is-dragging{border-color:var(--mark); outline:2px solid transparent; background:var(--card)}
+.azdrop input{position:absolute; width:1px; height:1px; overflow:hidden; clip:rect(0 0 0 0); clip-path:inset(50%); white-space:nowrap}
+.azdrop-title{font-weight:700}
+.azupload .cta{margin:10px 0 0; width:auto}
+.azupload .cta[disabled]{opacity:.55; cursor:not-allowed}
+.azfile{min-height:1.4em; margin:7px 0 0; overflow-wrap:anywhere}
+.azconsent{display:flex; align-items:flex-start; gap:8px; margin:10px 0 4px; cursor:pointer}
+.azconsent input{flex:0 0 auto; margin-top:3px}
+.azdownload{font-weight:700}
+.azcitations blockquote{margin:4px 0 12px; padding-left:12px; border-left:2px solid var(--line); overflow-wrap:anywhere}
 .azlist { margin: 6px 0 10px; padding-left: 18px; }
 .azlist li { margin: 3px 0; font: 400 14.5px/1.45 var(--body); color: var(--ink); }
 .azout .facts { margin-top: 10px; }
@@ -690,6 +741,12 @@ svg.map .lbl{fill:var(--ink); stroke:var(--card)}
   .mkt .erow .ep{font-size:11.5px}
   .mkt .erow .ev{font-size:16px}
   .mkt .erow.tot .ev{font-size:19.5px}
+
+  .market-report{padding:20px}
+  .market-title{font-size:24px}
+  .market-label{font-size:15px}
+  .market-value{font-size:16px}
+  .market-disclaimer{font-size:13px}
 
   .azform input{font-size:15.5px}
   .azlist li{font-size:15.5px}

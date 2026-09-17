@@ -11,63 +11,6 @@ const validAnalysis = { resumo: 'Valid analysis', dividas: { iptu: 'unknown', co
 const jobTicket = '00000000-0000-4000-8000-000000000001.1790000000.' + 'a'.repeat(64);
 const stages = s => Array.from(emitted(s).filter(e => e[1] === 'analyze_edital'), e => e[2].stage);
 
-test('one first-party banner is the only consent UI in every country', async () => {
-  const cfg = { ga4: 'G-TEST123', enhancedMeasurementDisabled: true };
-  const old = new Map([
-    ['brazil-analytics-consent-v1', 'accepted'],
-    ['brazil-analytics-local-consent-v1', JSON.stringify({ revision: 'google-cmp-fallback-v1', value: 'accepted' })],
-  ]);
-  const s = setup({ analyticsConfig: cfg, storage: old }); s.load('analytics');
-  const panel = s.document.body.querySelector('aside');
-  assert.ok(panel && !panel.hidden, 'the local banner is immediately visible everywhere');
-  assert.equal(s.window.ANALYTICS.getConsent(), null, 'old policies never silently grant analytics');
-  assert.equal(s.window.dataLayer, undefined, 'there is no tag or ping before a fresh choice');
-  assert.equal(s.document.head.querySelector('script'), null);
-  assert.equal(s.document.body.querySelectorAll('aside').length, 1, 'there is only one banner');
-  const close = panel.querySelector('.analytics-close');
-  assert.ok(close && close.getAttribute('aria-label').length > 0);
-  await close.emit('click');
-  assert.equal(s.window.ANALYTICS.getConsent(), 'rejected', 'X is an explicit rejection');
-  assert.equal(s.window.dataLayer, undefined);
-  const preferences = s.document.body.querySelector('.analytics-preferences');
-  await preferences.emit('click');
-  assert.equal(panel.hidden, false, 'persistent preferences reopens the same controls');
-  await panel.querySelector('.analytics-accept').emit('click');
-  assert.ok(s.window.dataLayer, 'only a direct acceptance starts GA');
-  assert.match(old.get('brazil-analytics-local-consent-v2'), /"local-all-countries-v2"/);
-  await preferences.emit('click');
-  await panel.querySelector('.analytics-reject').emit('click');
-  assert.equal(s.window['ga-disable-G-TEST123'], true, 'revoke stops an already-loaded tag immediately');
-});
-
-test('only the current first-party revision persists', () => {
-  const cfg = { ga4: 'G-TEST123', enhancedMeasurementDisabled: true };
-  const accepted = new Map([['brazil-analytics-local-consent-v2', JSON.stringify({ revision: 'local-all-countries-v2', value: 'accepted' })]]);
-  const s = setup({ analyticsConfig: cfg, storage: accepted }); s.load('analytics');
-  assert.ok(s.window.dataLayer, 'a current explicit acceptance persists');
-  assert.equal(s.document.body.querySelector('aside').hidden, true);
-  const rejected = new Map([['brazil-analytics-local-consent-v2', JSON.stringify({ revision: 'local-all-countries-v2', value: 'rejected' })]]);
-  const next = setup({ analyticsConfig: cfg, storage: rejected }); next.load('analytics');
-  assert.equal(next.window.dataLayer, undefined, 'a current rejection persists');
-  assert.equal(next.document.body.querySelector('aside').hidden, true);
-});
-
-test('local consent UI remains visibly styled, keyboard-labelled, and free of inline layout controls', () => {
-  const script = readFileSync(new URL('../parts/analytics.js', import.meta.url), 'utf8');
-  const css = readFileSync(new URL('../v2/style.css', import.meta.url), 'utf8');
-  assert.doesNotMatch(script, /setAttribute\("style"/);
-  for (const selector of ['.analytics-banner{', '.analytics-actions{', '.analytics-action{', '.analytics-close{', '.analytics-preferences{']) {
-    assert.ok(css.includes(selector), selector + ' is present in the shipped stylesheet');
-  }
-  assert.match(css, /min-height:44px/, 'tap targets retain a mobile-accessible minimum');
-  for (const lang of ['pt', 'en', 'ru']) {
-    const catalogue = JSON.parse(readFileSync(new URL('../i18n/' + lang + '.json', import.meta.url)));
-    for (const key of ['analytics.title', 'analytics.preferences', 'analytics.accept', 'analytics.reject', 'analytics.close']) {
-      assert.equal(typeof catalogue[key], 'string', lang + ':' + key);
-    }
-  }
-});
-
 test('definitive pre-dispatch budget failure allows manual same-key POST instead of terminal polling', async () => {
   const s = setup({ fetch: (r, n) => n === 1 ? response(202, { status: 'pending', analysis_id: 'job', job_ticket: jobTicket, retry_after_seconds: 1 }) :
     n === 2 ? response(429, { error: 'budget_exhausted' }) : response(200, validAnalysis) });
