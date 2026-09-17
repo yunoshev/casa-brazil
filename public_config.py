@@ -19,6 +19,13 @@ from seo import validate_site_url
 DEFAULT_API = "https://preco-real-analyze.preco-real.workers.dev"
 
 
+def app_script_src() -> str:
+    """Invalidate cached UI behavior whenever its published content changes."""
+    path = Path(__file__).parent / "site" / "v2" / "app.js"
+    digest = hashlib.sha256(path.read_bytes()).hexdigest()[:12]
+    return f"/v2/app.js?v={digest}"
+
+
 def analysis_script_src() -> str:
     """Cache-bust the analysis controller with its published bytes."""
     path = Path(__file__).parent / "site" / "parts" / "analyze.js"
