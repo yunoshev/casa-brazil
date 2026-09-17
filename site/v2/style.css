@@ -499,7 +499,7 @@ svg.map.shapes{max-height:62vh}
 
   /* Lot pages are deliberately single-column: a gallery, map and evidence
      need room, while prose still stops at a comfortable reading measure. */
-  .lot-page > .hero,
+  .lot-page > .hero h1{max-width:none}
   .lot-page > .verdict,
   .lot-page > .lot-history,
   .lot-page > .same-street-lots,

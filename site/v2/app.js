@@ -551,6 +551,7 @@ function indexCity(c) {
   lotById = {};
   lotBySlug = {};
   refreshStats(c);
+  ensureCatalogStreets(c);
   var streets = (c.streets || {}).d || {};
   // A street URL is a promise.  Do not use a row merely because its text
   // resembles an address: the matching street must have one unambiguous,
@@ -593,6 +594,48 @@ function indexCity(c) {
     slugToKey.rev[k] = sl;
   });
   buildRelatedGroups();
+}
+
+/* The deed dataset covers only some cities and has its own statistical sample
+ * threshold. A street route is useful before it has a valuation: it gives a
+ * reader an honest list of the auction lots at that address. Build those
+ * routes from the already-published catalogue, one per confidently parsed
+ * street, including a street with a single lot. */
+function parsedCatalogStreet(address) {
+  var first = String(address || "").split(",")[0].replace(/\s+/g, " ").trim();
+  if (!/^(?:RUA|R\.?|AVENIDA|AV\.?|ALAMEDA|TRAVESSA|TV\.?|ESTRADA|RODOVIA|ROD\.?|PRACA|PRAÇA|LARGO|VIA|PASSAGEM|BECO)\s+/i.test(first)) return null;
+  if (first.length < 5 || /\d/.test(first)) return null;
+  return first;
+}
+
+function ensureCatalogStreets(c) {
+  var streets = c.streets && typeof c.streets === "object" ? c.streets : (c.streets = {});
+  var data = streets.d && typeof streets.d === "object" ? streets.d : (streets.d = {});
+  var byName = {}, usedSlugs = {};
+  Object.keys(data).forEach(function (code) {
+    var st = data[code] || {}, key = normKey(st.name);
+    if (key) byName[key] = code;
+    if (st.slug) usedSlugs[st.slug] = true;
+  });
+  (c.rows || []).forEach(function (r) {
+    var name = parsedCatalogStreet(r[C.end]);
+    if (!name) return;
+    var key = normKey(name), code = byName[key];
+    if (!code) {
+      var slug = slugify(name), n = 2, base = slug;
+      while (usedSlugs[slug]) slug = base + "-" + n++;
+      code = "catalog-" + slug;
+      data[code] = {
+        name: name,
+        slug: slug,
+        bairro: normKey(r[C.bairro]),
+        bairros: [normKey(r[C.bairro])],
+        catalog_only: true,
+      };
+      byName[key] = code;
+      usedSlugs[slug] = true;
+    }
+  });
 }
 
 function publishedStreetCode(code) {
@@ -928,23 +971,25 @@ function screenStreet(code) {
   var st = city.streets.d[code];
   var year = city.streets.year;
   var dk = st.bairro;
+  var districtRoute = dk && slugToKey.rev[dk];
   var mk = city.market && city.market.d ? city.market.d[dk] : null;
   var lines = [];
   if (st.f) lines.push(streetLine("flat", st.f, mk && mk.f ? mk.f[0] : null));
   if (st.h) lines.push(streetLine("house", st.h, mk && mk.h ? mk.h[0] : null));
+  var bairros = Array.isArray(st.bairros) ? st.bairros : [];
   return '' +
-    '<div class="hero">' + back(href("/a/" + encodeURIComponent(dk)), areaName(dk)) +
+    '<div class="hero">' + back(districtRoute ? href("/a/" + encodeURIComponent(dk)) : cityBase(), districtRoute ? areaName(dk) : city.nome) +
       "<h1>" + esc(title(st.name)) + "</h1>" +
-      '<p class="lede">' + t("street.lede", {
-        district: link("/a/" + encodeURIComponent(dk), esc(areaName(dk))),
+      '<p class="lede">' + (lines.length ? t("street.lede", {
+        district: districtRoute ? link("/a/" + encodeURIComponent(dk), esc(areaName(dk))) : esc(city.nome),
         year: year,
-      }) + "</p></div>" +
-    '<section class="mkt"><div class="sechead"><h2>' + t("mkt.h2") +
+      }) : t("street.catalog.lede")) + "</p></div>" +
+    (lines.length ? '<section class="mkt"><div class="sechead"><h2>' + t("mkt.h2") +
       '</h2><span class="n">' + t("mkt.year", { year: year }) + "</span></div>" +
       lines.join("") +
-      '<p class="foot">' + t("street.note") + "</p></section>" +
-    (st.bairros.length > 1 ? '<p class="foot">' + t("street.spans", {
-      list: st.bairros.map(function (k) {
+      '<p class="foot">' + t("street.note") + "</p></section>" : "") +
+    (bairros.filter(function (k) { return slugToKey.rev[k]; }).length > 1 ? '<p class="foot">' + t("street.spans", {
+      list: bairros.filter(function (k) { return slugToKey.rev[k]; }).map(function (k) {
         return link("/a/" + encodeURIComponent(k), esc(areaName(k)));
       }).join(" · "),
     }) + "</p>" : "") +
@@ -987,7 +1032,10 @@ function streetLine(kind, own, base) {
 function streetList(key) {
   var sts = city.streets;
   if (!sts || !sts.by || !sts.by[key]) return "";
-  var rows = sts.by[key].map(function (code) {
+  var rows = sts.by[key].filter(function (code) {
+    var st = sts.d[code];
+    return st && (st.f || st.h);
+  }).map(function (code) {
     var st = sts.d[code];
     var main = st.f || st.h;
     return '<a class="row" href="' + href("/r/" + encodeURIComponent(code)) + '">' +
@@ -996,6 +1044,7 @@ function streetList(key) {
       '<div class="sub">' + t("mkt.deals", { n: num((st.f ? st.f[1] : 0) + (st.h ? st.h[1] : 0)) }) +
       "</div></a>";
   });
+  if (!rows.length) return "";
   return '<section class="sec"><div class="sechead"><h2>' + t("street.list.h2") +
     '</h2><span class="n">' + t("mkt.year", { year: sts.year }) + "</span></div>" +
     '<div class="rowlist">' + rows.join("") + "</div></section>";
@@ -2281,9 +2330,11 @@ function headFor(path) {
     var stx = city.streets.d[streetBySlug[last]];
     var main = stx.f || stx.h;
     base.title = t("head.street.title", { street: title(stx.name), city: name });
-    base.desc = t("head.street.desc", {
+    base.desc = main ? t("head.street.desc", {
       street: title(stx.name), district: areaName(stx.bairro),
       year: city.streets.year, value: money(main[0]), n: num(main[1]),
+    }) : t("head.street.catalog.desc", {
+      street: title(stx.name), city: name, lots: lots((lotsByStreet[streetBySlug[last]] || []).length),
     });
   } else if (slugToKey.fwd[last]) {
     var st = areaStat(slugToKey.fwd[last]);
