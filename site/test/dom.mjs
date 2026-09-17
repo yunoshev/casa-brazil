@@ -20,10 +20,25 @@ class Element {
   hasAttribute(k) { return k in this.attrs; }
   appendChild(el) { this.children.push(el); el.parent = this; return el; }
   addEventListener(name, fn) { (this.listeners[name] ||= []).push(fn); }
-  click() { this.clicked = true; }
+  async click() {
+    if (this.disabled) return;
+    this.clicked = true;
+    let prevented = false;
+    await this.emit('click', { preventDefault() { prevented = true; } });
+    // Only the native button/form default action needed by the CTA tests.
+    if (!prevented && this.tagName === 'BUTTON' && this.getAttribute('type') === 'submit') {
+      let root = this;
+      while (root.parent) root = root.parent;
+      const form = this.hasAttribute('form')
+        ? root.querySelectorAll('form').find(el => el.getAttribute('id') === this.getAttribute('form'))
+        : this.closest('form');
+      if (form) await form.emit('submit', { submitter: this });
+    }
+  }
   async emit(name, extra = {}) { for (const fn of this.listeners[name] || []) await fn({ preventDefault() {}, target: this, ...extra }); }
   checkValidity() { return true; } // explicit product validators are still tested
   focus() { this.focused = true; }
+  scrollIntoView() { this.scrolled = true; }
   matches(selector) {
     if (selector.startsWith('.')) return (this.attrs.class || '').split(/\s+/).includes(selector.slice(1));
     if (selector.startsWith('[')) return this.hasAttribute(selector.slice(1, -1));

@@ -447,8 +447,13 @@
     box.innerHTML = '<p class="foot" role="status">' + esc(t("az.report.unavailable")) + '</p>';
   }
 
-  function boot(box) {
+  function boot(box, root) {
     if (!enabled && uploadEnabled) { bootUpload(box); return; }
+    var hero = root.querySelector("[data-analysis-cta]");
+    if (hero) {
+      hero.disabled = true;
+      hero.setAttribute("data-az-state", "unavailable");
+    }
     if (!enabled) {
       box.setAttribute("data-az-state", "unavailable");
       box.innerHTML = '<div class="sechead"><h2>' + t("az.h2") + '</h2></div>' +
@@ -467,19 +472,30 @@
       '<div class="sechead"><h2>' + t("az.h2") + '</h2><span class="n">' +
         t("az.free") + "</span></div>" +
       '<p class="foot">' + t("az.lede") + "</p>" +
-      '<form class="azform"><button type="submit" class="cta">' + t("az.go") + "</button></form>" +
+      '<form class="azform" id="az-form-' + id + '">' +
+        (hero ? '' : '<button type="submit" class="cta">' + t("az.go") + '</button>') + '</form>' +
       '<p class="foot azmsg" role="status" aria-live="polite" hidden></p><div class="azout"></div>';
     var form = box.querySelector("form");
-    var btn = box.querySelector("button");
+    var btn = hero || box.querySelector("button");
+    if (hero) {
+      hero.setAttribute("form", form.getAttribute("id"));
+      hero.setAttribute("type", "submit");
+      hero.setAttribute("data-az-state", "ready");
+      hero.disabled = false;
+    }
     var msg = box.querySelector(".azmsg");
     var out = box.querySelector(".azout");
     var busy = false, state = null;
 
     function say(s) { msg.hidden = false; msg.textContent = s; }
-    function mode(value) { box.setAttribute("data-az-state", value); }
+    function mode(value) {
+      box.setAttribute("data-az-state", value);
+      if (hero) hero.setAttribute("data-az-state", value);
+    }
     function lock(value) {
       busy = value;
       btn.disabled = value;
+      btn.setAttribute("aria-busy", String(value));
       form.setAttribute("aria-busy", String(value));
     }
     function failure(reason) {
@@ -595,7 +611,7 @@
     for (var i = 0; i < boxes.length; i++) {
       if (!boxes[i].getAttribute("data-az-on")) {
         boxes[i].setAttribute("data-az-on", "1");
-        boot(boxes[i]);
+        boot(boxes[i], root || document);
       }
     }
     try { if (global.ANALYTICS) global.ANALYTICS.wire(root || document); } catch (e) { /* optional */ }

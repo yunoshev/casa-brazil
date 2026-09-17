@@ -6,6 +6,7 @@ import './analytics.test.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
+import vm from 'node:vm';
 import { setup, response, deferred, until } from './dom.mjs';
 
 const result = { resumo: '<script>unsafe</script>', ocupado: 'incerto',
@@ -13,6 +14,124 @@ const result = { resumo: '<script>unsafe</script>', ocupado: 'incerto',
   aviso: 'Verify the document.', riscos: [], fase: 'Unknown', source_scope: 'lot_specific',
   _meta: { cached: true, analyzed_at: '2026-09-15T12:00:00Z' } };
 const count = (s, name) => s.events.filter(e => e.name === name).length;
+
+const heroHandler = readFileSync(new URL('../v2/app.js', import.meta.url), 'utf8')
+  .match(/function wireAnalysisCTA\(root\) \{[\s\S]*?\n\}/)?.[0];
+function addHero(s) {
+  const hero = s.document.createElement('button');
+  hero.setAttribute('data-analysis-cta', '');
+  hero.setAttribute('type', 'button');
+  s.document.body.appendChild(hero);
+  return hero;
+}
+function wireHero(s) {
+  // Exercise the unchanged app handler alongside native form submission.
+  if (heroHandler) vm.runInNewContext(heroHandler + '\nwireAnalysisCTA(root);', { root: s.document });
+}
+
+test('existing app scroll handler permits the hero native submit', {
+  skip: !heroHandler && 'This checkout does not yet contain the hero app handler',
+}, async () => {
+  const s = setup({ fetch: () => response(200, result) }), hero = addHero(s);
+  s.load('analyze'); wireHero(s); await hero.click();
+  assert.equal(s.box.scrolled, true);
+  assert.equal(s.requests.length, 1);
+  assert.equal(s.requests[0].method, 'POST');
+});
+
+test('hero click submits once with no inner CTA or URL inputs, including re-init and SPA navigation', async () => {
+  const s = setup({ fetch: () => response(200, result) });
+  let hero = addHero(s); s.load('analyze'); wireHero(s);
+  s.window.ANALYZE.wire(); s.load('analyze');
+  assert.equal(s.document.querySelectorAll('button').filter(b => !b.hidden).length, 1);
+  assert.equal(s.box.querySelectorAll('button').length, 0);
+  assert.equal(s.document.querySelectorAll('input').length, 0);
+  assert.equal(hero.getAttribute('form'), s.form().getAttribute('id'));
+  assert.equal(hero.getAttribute('type'), 'submit');
+  assert.equal(hero.listeners.click?.length || 0, heroHandler ? 1 : 0); // Only app.js's scroll handler.
+  await hero.click();
+  assert.equal(s.requests.length, 1);
+  assert.equal(s.requests[0].method, 'POST');
+  assert.ok(s.requests[0].url.endsWith('/analyze/lots/034aa2e652ab4905/one-click'));
+  assert.equal(hero.getAttribute('data-az-state'), 'result');
+  assert.equal(hero.textContent, s.translate('az.again'));
+  assert.equal(hero.disabled, false);
+
+  const oldBox = s.box;
+  oldBox.isConnected = false;
+  s.document.body.innerHTML = '';
+  const nextBox = s.document.createElement('section');
+  nextBox.setAttribute('data-az', '034aa2e652ab4906');
+  nextBox.setAttribute('data-az-source', oldBox.getAttribute('data-az-source'));
+  s.document.body.appendChild(nextBox);
+  hero = addHero(s); s.window.ANALYZE.wire(); wireHero(s); s.window.ANALYZE.wire();
+  await hero.click();
+  assert.equal(s.requests.length, 2);
+  assert.ok(s.requests[1].url.endsWith('/analyze/lots/034aa2e652ab4906/one-click'));
+  assert.equal(hero.listeners.click?.length || 0, heroHandler ? 1 : 0);
+  assert.equal(s.document.querySelectorAll('button').length, 1);
+});
+
+test('hero locks duplicate clicks while busy and exposes unavailable/retry state', async () => {
+  const gate = deferred(), s = setup({ fetch: () => gate.promise });
+  const hero = addHero(s); s.load('analyze'); wireHero(s);
+  const task = hero.click(); await until(() => s.requests.length === 1);
+  assert.equal(hero.disabled, true);
+  assert.equal(hero.getAttribute('aria-busy'), 'true');
+  assert.equal(hero.getAttribute('data-az-state'), 'submitting');
+  await hero.click(); await s.analyze();
+  assert.equal(s.requests.length, 1);
+  gate.resolve(response(503, { error: 'analysis_unavailable' })); await task;
+  assert.equal(hero.disabled, false);
+  assert.equal(hero.getAttribute('aria-busy'), 'false');
+  assert.equal(hero.getAttribute('data-az-state'), 'unavailable');
+  assert.equal(hero.textContent, s.translate('az.retry'));
+  await hero.click();
+  assert.equal(s.requests.length, 2);
+  assert.deepEqual(s.requests[0].json, s.requests[1].json);
+});
+
+test('pending hero stays locked during polling and manual retry polls without another POST', async () => {
+  const ticket = '00000000-0000-4000-8000-000000000001.1790000000.' + 'a'.repeat(64);
+  const s = setup({ fetch: () => response(202, { status: 'pending', reason: 'queued',
+    analysis_id: 'fixture', job_ticket: ticket, retry_after_seconds: 1 }) });
+  const hero = addHero(s); s.load('analyze');
+  const task = hero.click();
+  await until(() => hero.getAttribute('data-az-state') === 'pending');
+  assert.equal(hero.disabled, true);
+  assert.equal(hero.textContent, s.translate('az.retry'));
+  await hero.click(); assert.equal(s.requests.length, 1);
+  for (let n = 2; n <= 4; n++) {
+    await until(() => [...s.timers.values()].some(t => t.ms === 1000));
+    s.runTimers(1000); await until(() => s.requests.length === n);
+  }
+  await task;
+  assert.equal(hero.disabled, false);
+  assert.equal(hero.getAttribute('data-az-state'), 'pending');
+  const retry = hero.click(); await until(() => s.requests.length === 5);
+  assert.equal(s.requests.filter(r => r.method === 'POST').length, 1);
+  assert.ok(s.requests.slice(1).every(r => r.method === 'GET' && r.url.endsWith(ticket)));
+  s.box.isConnected = false; s.runTimers(1000); await retry;
+});
+
+for (const options of [{ analysisConfig: { enabled: false } }, { source: 'https://invalid.test/' }]) {
+  test('unavailable hero fails closed: ' + JSON.stringify(options), async () => {
+    const s = setup(options), hero = addHero(s); s.load('analyze'); wireHero(s);
+    assert.equal(hero.disabled, true);
+    assert.equal(hero.getAttribute('data-az-state'), 'unavailable');
+    assert.equal(s.form(), null);
+    await hero.click(); assert.equal(s.requests.length, 0);
+  });
+}
+
+test('without a hero the inner submit remains the one-click fallback', async () => {
+  const s = setup({ fetch: () => response(200, result) }); s.load('analyze');
+  assert.equal(s.document.querySelectorAll('button').length, 1);
+  assert.equal(s.document.querySelectorAll('input').length, 0);
+  await s.box.querySelector('button').click();
+  assert.equal(s.requests.length, 1);
+  assert.equal(s.requests[0].method, 'POST');
+});
 
 test('all shipped runtime literals exist in each catalogue; no hosts mistaken for i18n keys', () => {
   const prerender = readFileSync(new URL('../../prerender.py', import.meta.url), 'utf8');
