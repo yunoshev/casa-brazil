@@ -145,8 +145,14 @@ function lotReferenceLine(r) {
 }
 function priceText(value) { return priceKnown(value) ? money(value) : t("archive.price.unknown"); }
 function inventoryNotice() { return '<p class="note inventory-note">' + esc(t("archive.inventory.notice")) + '</p>'; }
-function lifecycleBanner(r) {
+function lifecycleBanner(r, compact) {
   var status = lotStatus(r), lc = lifecycle(r);
+  if (compact) {
+    return '<aside class="lifecycle-banner compact ' + status + '" aria-label="' + esc(t(STATUS_KEY[status])) + '">' +
+      '<b>' + esc(t(STATUS_KEY[status])) + '</b><span>' + esc(t(!isCurrent(r)
+        ? "archive.removal.notice" : status === "active" ? "archive.active.notice" : "archive.unverified.notice")) +
+      '</span></aside>';
+  }
   return '<section class="lifecycle-banner ' + status + '" aria-label="' + esc(t(STATUS_KEY[status])) + '">' +
     '<h2>' + esc(t(STATUS_KEY[status])) + '</h2><p>' + esc(t(!isCurrent(r)
       ? "archive.removal.notice" : status === "active" ? "archive.active.notice" : "archive.unverified.notice")) + '</p>' +
@@ -323,9 +329,10 @@ function lotGallery(r) {
   var total = photos.length, label = galleryText("count", 1, total);
   var html = '<section class="lot-gallery" data-gallery data-gallery-total="' + total +
     '" role="region" tabindex="0" aria-label="' + esc(t("lot.gallery.label", null, "Property photos")) + '">' +
-    '<div class="gallery-hero"><img class="shot" data-gallery-hero src="' + esc(photos[0]) +
+    '<div class="gallery-hero"><button type="button" class="gallery-open" data-gallery-open aria-haspopup="dialog" aria-label="' +
+      esc(t("lot.gallery.open", null, "Open larger photo")) + '"><img class="shot" data-gallery-hero src="' + esc(photos[0]) +
     '" alt="' + esc(galleryAlt(r, 1, total)) + '" decoding="async" fetchpriority="high" width="640" height="480"' +
-    ' onerror="this.style.display=\'none\'">' +
+    ' onerror="this.style.display=\'none\'"></button>' +
     '<span class="gallery-count" data-gallery-count aria-live="polite">' + esc(label) + "</span></div>";
   if (total > 1) {
     html += '<div class="gallery-controls">' +
@@ -343,7 +350,18 @@ function lotGallery(r) {
     });
     html += "</div>";
   }
-  return html + "</section>";
+  html += '<div class="gallery-lightbox" data-gallery-lightbox hidden role="dialog" aria-modal="true" aria-label="' +
+    esc(t("lot.gallery.label", null, "Property photos")) + '"><button type="button" class="gallery-lightbox-backdrop" data-gallery-close tabindex="-1" aria-hidden="true"></button>' +
+    '<div class="gallery-lightbox-panel"><button type="button" class="gallery-lightbox-close" data-gallery-close aria-label="' +
+      esc(t("lot.gallery.close", null, "Close gallery")) + '">×</button>' +
+    '<img data-gallery-lightbox-image src="' + esc(photos[0]) + '" alt="' + esc(galleryAlt(r, 1, total)) + '">';
+  if (total > 1) {
+    html += '<div class="gallery-lightbox-controls"><button type="button" class="gallery-control" data-gallery-lightbox-prev aria-label="' +
+      esc(galleryText("previous", 1, total)) + '" disabled>‹</button><span class="gallery-hint" data-gallery-lightbox-count aria-live="polite">' +
+      esc(label) + '</span><button type="button" class="gallery-control" data-gallery-lightbox-next aria-label="' +
+      esc(galleryText("next", 2, total)) + '">›</button></div>';
+  }
+  return html + "</div></div></section>";
 }
 
 /* ---- colour ---------------------------------------------------- */
@@ -1365,19 +1383,26 @@ function saleForm(r) {
   return "direct";
 }
 
-function entryCard(r) {
+function entryCost(r) {
   var base = r[C.preco];
   var rate = ITBI_RATE[city.slug];
-  if (!base || !rate) return "";
+  if (!base || !rate) return null;
   var form = saleForm(r);
   var fee = form === "direct" ? 0 : 0.05;
+  return { base: base, rate: rate, fee: fee, total: base * (1 + fee + rate + NOTARY_RATE) };
+}
+
+function entryCard(r) {
+  var cost = entryCost(r);
+  if (!cost) return "";
+  var base = cost.base, rate = cost.rate, fee = cost.fee, form = saleForm(r);
   var rows = [
     ["entry.bid", base, null],
     ["entry.fee", base * fee, fee ? "5%" : null],
     ["entry.itbi", base * rate, Math.round(rate * 100) + "%"],
     ["entry.notary", base * NOTARY_RATE, "~1,2%"],
   ];
-  var total = base * (1 + fee + rate + NOTARY_RATE);
+  var total = cost.total;
   return '<section class="mkt"><div class="sechead"><h2>' + t("entry.h2") +
       '</h2><span class="n">' + t("entry.head") + "</span></div>" +
     '<div class="mrow">' +
@@ -1393,6 +1418,20 @@ function entryCard(r) {
     "</div>" +
     '<p class="foot">' + t(fee ? "entry.note" : "entry.note.direct") +
       (form === "auction" ? " " + t("entry.note.extrajud") : "") + "</p></section>";
+}
+
+function heroFinance(r, vd) {
+  var cost = entryCost(r);
+  var context = r[C.promised] != null ? pct(-Math.abs(r[C.promised]), false) : vd ? t(vd[2]) : "—";
+  var facts = [
+    [t("lot.price.open"), r[C.preco] ? money(r[C.preco]) : "—"],
+    [t("lot.price.aval"), r[C.aval] ? money(r[C.aval]) : "—"],
+    [t("entry.total"), cost ? money(Math.round(cost.total)) : "—"],
+    [t("lot.hero.context"), context],
+  ];
+  return '<dl class="hero-finance">' + facts.map(function (item) {
+    return '<div><dt>' + esc(item[0]) + '</dt><dd>' + esc(item[1]) + '</dd></div>';
+  }).join("") + "</dl>";
 }
 
 /* The lot's own headline, assembled from what the registry actually knows:
@@ -1685,6 +1724,20 @@ function whyBlock(r) {
 /* Market reports are a separate, already-validated public payload. The AI
  * placeholder below remains owned by analyze.js; this renderer only adds the
  * synchronous human-readable market facts when the build embedded one. */
+function marketHeroSummary(id) {
+  var reports = D.market_reports;
+  var report = reports && typeof reports === "object" ? reports[String(id)] : null;
+  var asking = report && report.sale_asking;
+  var sample = report && report.sample;
+  if (!asking || !sample || !Number.isFinite(asking.min) || !Number.isFinite(asking.max) ||
+      !Number.isInteger(sample.count) || sample.count < 5) return "";
+  var confidence = "market.confidence." + String(sample.confidence || "low");
+  return '<aside class="hero-market" aria-label="' + esc(t("market.title")) + '"><span>' +
+    esc(t("market.title")) + '</span><b>' + esc(money(asking.min)) + " – " + esc(money(asking.max)) +
+    '</b><small>' + esc(t("market.sample", { count: sample.count })) + " · " +
+    esc(t("market.confidence", { level: t(confidence) })) + "</small></aside>";
+}
+
 function marketReportBlock(id) {
   var reports = D.market_reports;
   if (!reports || typeof reports !== "object" ||
@@ -1784,7 +1837,7 @@ function screenLot(id) {
   ].filter(function (p) { return p.val; });
   var hi = Math.max.apply(null, pts.map(function (p) { return p.val; })) * 1.06;
 
-  return '' +
+  return '<div class="lot-above"><div class="lot-intro">' +
     // A lot with no district of its own steps back to the city instead.
     '<div class="hero">' + (key
       ? back(href("/a/" + encodeURIComponent(key)), areaName(key))
@@ -1794,12 +1847,23 @@ function screenLot(id) {
         esc(title(r[C.bairro] || (key ? areaName(key) : city.nome))) + "</p>" +
       lotReferenceLine(r) +
       lotBreadcrumb(r) +
-      '<p class="note">' + esc(auctionNote(r)) + "</p></div>" + lifecycleBanner(r) +
+      '<div class="lot-statuses"><span class="status-chip source">' + esc(title(r[C.src] || "fonte")) +
+        "</span>" + lifecycleBanner(r, true) + "</div>" +
+      '<p class="note">' + esc(auctionNote(r)) + "</p></div>" +
+    heroFinance(r, vd) +
+    marketHeroSummary(r[C.id]) +
+    '<div class="hero-actions">' +
+      (r[C.src] === "caixa" ? '<button type="button" class="analysis-cta" data-analysis-cta>' +
+        esc(t("lot.ai.cta", null, "Analyze with AI")) + "</button>" : "") +
+      (r[C.link] ? '<a class="source-link" href="' + esc(r[C.link]) +
+        '" target="_blank" rel="noopener" data-out="' + esc(r[C.src] || "lot") + '">' +
+        esc(t("lot.cta")) + "</a>" : "") +
+    "</div>" +
+    "</div>" +
 
-    // The first exported photo stays in the prerendered HTML. If no media
-    // payload is present, lotGallery() falls back to the historical one-photo
-    // Caixa URL, preserving the old build's visible behaviour.
-    lotGallery(r) + lotMapsBlock(r) +
+    // On a phone the image belongs immediately after the decision summary;
+    // desktop CSS moves this same node into the right-hand hero column.
+    lotGallery(r) +
 
     '<div class="verdict">' +
       (vd
@@ -1846,11 +1910,12 @@ function screenLot(id) {
         : "") +
 
       (r[C.jud] ? '<p class="note">' + t("lot.note.court") + "</p>" : "") +
+    "</div>" +
+    "</div>" +
 
-      entryCard(r) +
-
+    '<div class="lot-wide">' +
       '<section class="mkt" data-lot-report="' + esc(r[C.id]) + '"></section>' +
-      marketReportBlock(r[C.id]) +
+      marketReportBlock(r[C.id]) + entryCard(r) +
 
       // Caixa publishes an edital PDF for every sale; the worker only trusts
       // Caixa's own domains, so the reader pastes that link and gets the
@@ -1859,11 +1924,7 @@ function screenLot(id) {
       (r[C.src] === "caixa"
         ? '<section class="mkt azbox" data-az="' + esc(r[C.id]) + '" data-az-source="' +
           esc(r[C.link] || "") + '"></section>' : "") +
-
-      (r[C.link] ? '<a class="cta" href="' + esc(r[C.link]) +
-        '" target="_blank" rel="noopener" data-out="' + esc(r[C.src] || "lot") + '">' +
-        t("lot.cta") + "</a>" : "") +
-    "</div>" + lotHistory(r) + sameStreetLots(r) + relatedLots(r) + footer();
+    "</div>" + lotMapsBlock(r) + lotHistory(r) + sameStreetLots(r) + relatedLots(r) + footer();
 }
 
 function fact(k, val) {
@@ -2418,18 +2479,35 @@ function wireGallery(root) {
   var gallery = root && root.querySelector ? root.querySelector("[data-gallery]") : null;
   if (!gallery) return;
   var hero = gallery.querySelector("[data-gallery-hero]");
+  var open = gallery.querySelector("[data-gallery-open]");
+  var lightbox = gallery.querySelector("[data-gallery-lightbox]");
+  var lightboxImage = gallery.querySelector("[data-gallery-lightbox-image]");
+  var closeButtons = [].slice.call(gallery.querySelectorAll("[data-gallery-close]"));
+  var lightboxPrev = gallery.querySelector("[data-gallery-lightbox-prev]");
+  var lightboxNext = gallery.querySelector("[data-gallery-lightbox-next]");
+  var lightboxCount = gallery.querySelector("[data-gallery-lightbox-count]");
   var thumbs = [].slice.call(gallery.querySelectorAll("[data-gallery-index]"));
   var prev = gallery.querySelector("[data-gallery-prev]");
   var next = gallery.querySelector("[data-gallery-next]");
   var count = gallery.querySelector("[data-gallery-count]");
   var total = Number(gallery.getAttribute("data-gallery-total")) || thumbs.length;
-  if (!hero || total < 2 || thumbs.length < 2) return;
+  var current = 0;
+  if (!hero) return;
   gallery.setAttribute("tabindex", "0");
 
+  function syncLightbox() {
+    if (!lightboxImage) return;
+    lightboxImage.setAttribute("src", hero.getAttribute("src") || "");
+    lightboxImage.setAttribute("alt", hero.getAttribute("alt") || "");
+    if (lightboxCount) lightboxCount.textContent = galleryText("count", current + 1, total);
+    if (lightboxPrev) lightboxPrev.disabled = current === 0;
+    if (lightboxNext) lightboxNext.disabled = current === total - 1;
+  }
   function select(index, moveFocus) {
     index = Math.max(0, Math.min(total - 1, index));
     var button = thumbs[index], image = button && button.querySelector("img");
     if (!button || !image) return;
+    current = index;
     hero.setAttribute("src", image.getAttribute("src") || "");
     hero.setAttribute("alt", button.getAttribute("data-gallery-alt") || button.getAttribute("aria-label") || "");
     thumbs.forEach(function (item, i) {
@@ -2438,8 +2516,47 @@ function wireGallery(root) {
     if (count) count.textContent = galleryText("count", index + 1, total);
     if (prev) prev.disabled = index === 0;
     if (next) next.disabled = index === total - 1;
+    syncLightbox();
     if (moveFocus) button.focus();
   }
+  function closeLightbox() {
+    if (!lightbox || lightbox.hidden) return;
+    lightbox.hidden = true;
+    document.removeEventListener("keydown", onLightboxKey);
+    if (open) open.focus();
+  }
+  function onLightboxKey(event) {
+    if (event.key === "Escape") {
+      event.preventDefault(); closeLightbox();
+    } else if (total > 1 && event.key === "ArrowLeft") {
+      event.preventDefault(); select(current - 1, false);
+    } else if (total > 1 && event.key === "ArrowRight") {
+      event.preventDefault(); select(current + 1, false);
+    }
+  }
+  if (open && lightbox) open.addEventListener("click", function () {
+    syncLightbox();
+    lightbox.hidden = false;
+    document.addEventListener("keydown", onLightboxKey);
+    var closer = gallery.querySelector(".gallery-lightbox-close");
+    if (closer) closer.focus();
+  });
+  closeButtons.forEach(function (button) {
+    button.addEventListener("click", closeLightbox);
+  });
+  if (lightbox && total > 1) {
+    var touchStart = null;
+    lightbox.addEventListener("touchstart", function (event) {
+      touchStart = event.touches && event.touches[0] ? event.touches[0].clientX : null;
+    }, { passive: true });
+    lightbox.addEventListener("touchend", function (event) {
+      var end = event.changedTouches && event.changedTouches[0] ? event.changedTouches[0].clientX : null;
+      if (touchStart == null || end == null || Math.abs(end - touchStart) < 42) return;
+      select(current + (end < touchStart ? 1 : -1), false);
+      touchStart = null;
+    }, { passive: true });
+  }
+  if (total < 2 || thumbs.length < 2) return;
   thumbs.forEach(function (button, index) {
     button.addEventListener("click", function () { select(index, false); });
   });
@@ -2448,11 +2565,11 @@ function wireGallery(root) {
     select(current - 1, true);
   });
   if (next) next.addEventListener("click", function () {
-    var current = thumbs.findIndex(function (item) { return item.getAttribute("aria-current") === "true"; });
     select(current + 1, true);
   });
+  if (lightboxPrev) lightboxPrev.addEventListener("click", function () { select(current - 1, false); });
+  if (lightboxNext) lightboxNext.addEventListener("click", function () { select(current + 1, false); });
   gallery.addEventListener("keydown", function (event) {
-    var current = thumbs.findIndex(function (item) { return item.getAttribute("aria-current") === "true"; });
     if (event.key === "ArrowLeft" || event.key === "ArrowUp") {
       event.preventDefault(); select(current - 1, true);
     } else if (event.key === "ArrowRight" || event.key === "ArrowDown") {
@@ -2495,8 +2612,20 @@ function wire() {
   var near = $("near");
   if (near) near.addEventListener("click", askNear);
   wireCity($("view"));
+  wireAnalysisCTA($("view"));
   wireGallery($("view"));
   wireLotMap($("view"));
+}
+
+function wireAnalysisCTA(root) {
+  var button = root && root.querySelector ? root.querySelector("[data-analysis-cta]") : null;
+  var target = root && root.querySelector ? root.querySelector("[data-az]") : null;
+  if (!button || !target) return;
+  button.addEventListener("click", function () {
+    target.scrollIntoView({ behavior: "smooth", block: "start" });
+    var control = target.querySelector("button, input, [tabindex]");
+    if (control && typeof control.focus === "function") control.focus({ preventScroll: true });
+  });
 }
 
 /* Asked for only on a tap, used only in the browser, never sent anywhere. */

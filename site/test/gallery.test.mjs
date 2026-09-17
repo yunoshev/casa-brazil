@@ -28,7 +28,7 @@ function fixture(media, { archived = false, link = null } = {}) {
   return { c, payload };
 }
 
-function runtime({ media, archived = false, link = null } = {}) {
+function runtime({ media, archived = false, link = null, reports = null } = {}) {
   const cat = JSON.parse(readFileSync(new URL('../i18n/en.json', import.meta.url)));
   const LANG = { code: 'en', langs: ['en'], names: { en: 'English' }, num: String, money: String,
     pct: String, plur: (key, n) => key + (n === 1 ? '.one' : '.other'),
@@ -36,6 +36,7 @@ function runtime({ media, archived = false, link = null } = {}) {
   const { c, payload } = fixture(media, { archived, link });
   const window = { __D__: { cols, cities: [c] }, __SHIP_LANGS__: ['en'] };
   if (payload) window.__D__.media = payload;
+  if (reports) window.__D__.market_reports = reports;
   const ctx = vm.createContext({ window, LANG, URL, document: {} });
   vm.runInContext(functions, ctx);
   ctx.indexCity(c);
@@ -59,6 +60,10 @@ test('renders ordered many-photo gallery, deduplicates resilient input, and lazy
   assert.match(html, /role="region" tabindex="0"/);
   assert.match(html, /data-gallery-prev/);
   assert.match(html, /data-gallery-next/);
+  assert.match(html, /data-gallery-open aria-haspopup="dialog"/);
+  assert.match(html, /data-gallery-lightbox hidden role="dialog" aria-modal="true"/);
+  assert.match(html, /data-gallery-lightbox-prev/);
+  assert.match(html, /data-gallery-lightbox-next/);
 });
 
 test('keeps the legacy photos/primary schema and hides controls for one image', () => {
@@ -99,6 +104,30 @@ test('gallery keyboard semantics are present in the shipped markup and wiring', 
   assert.match(source, /event\.key === "ArrowRight"/);
   assert.match(source, /event\.key === "Home"/);
   assert.match(source, /event\.key === "End"/);
+  assert.match(source, /event\.key === "Escape"/);
+  assert.match(source, /touchstart/);
+  assert.match(source, /data-gallery-lightbox/);
   assert.match(source, /event\.preventDefault\(\)/);
   assert.match(source, /button\.focus\(\)/);
+});
+
+test('product hero puts financial facts, market evidence and one analysis anchor before the gallery', () => {
+  const html = runtime({ media: { gallery: [{ url: 'https://img.example.test/a.jpg' }] }, reports: {
+    'lot-1': { sale_asking: { min: 111000, max: 155000 }, sample: { count: 8, confidence: 'medium' } },
+  }, link: 'https://example.test/lot' }).screenLot('lot-1');
+  assert.match(html, /class="lot-above"><div class="lot-intro">/);
+  assert.match(html, /class="hero-finance"/);
+  assert.match(html, /opening bid/);
+  assert.match(html, /Entrada real|Real entry price/);
+  assert.match(html, /class="hero-market"/);
+  assert.match(html, /8 listings in the sample/);
+  assert.match(html, /class="analysis-cta" data-analysis-cta/);
+  assert.match(html, /class="source-link" href="https:\/\/example\.test\/lot"/);
+  assert.ok(html.indexOf('class="analysis-cta"') < html.indexOf('class="lot-gallery"'));
+  assert.ok(html.indexOf('class="source-link"') < html.indexOf('class="lot-gallery"'));
+  assert.ok(html.indexOf('class="lot-gallery"') < html.indexOf('class="verdict"'));
+  const css = readFileSync(new URL('../v2/style.css', import.meta.url), 'utf8');
+  assert.match(css, /\.lot-above\{display:flex; flex-direction:column/);
+  assert.match(css, /\.lot-above\{display:grid; grid-template-columns:minmax\(0,1fr\) minmax\(440px,1fr\)/);
+  assert.doesNotMatch(css, /\.lot-page > \.lot-history,[\s\S]{0,100}max-width:760px/);
 });

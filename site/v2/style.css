@@ -410,6 +410,7 @@ svg.map.shapes{max-height:62vh}
    touch users share one interaction model. */
 .lot-gallery{margin-top:6px; min-width:0}
 .gallery-hero{position:relative; min-width:0}
+.gallery-open{display:block; width:100%; padding:0; border:0; border-radius:16px; background:var(--sunk); cursor:zoom-in}
 .gallery-hero .shot{margin-top:0}
 .gallery-count{
   position:absolute; right:10px; bottom:10px; padding:4px 8px;
@@ -438,6 +439,44 @@ svg.map.shapes{max-height:62vh}
 .gallery-thumb[aria-current="true"]{border-color:var(--ink)}
 .gallery-thumb img{display:block; width:100%; height:100%; object-fit:cover}
 .gallery-thumb:focus-visible{outline-offset:2px}
+.gallery-open:focus-visible{outline:3px solid var(--mark); outline-offset:3px}
+.gallery-lightbox{position:fixed; inset:0; z-index:100; display:grid; place-items:center; padding:22px; background:rgba(0,0,0,.78)}
+.gallery-lightbox[hidden]{display:none}
+.gallery-lightbox-backdrop{position:absolute; inset:0; width:100%; height:100%; border:0; background:transparent; cursor:zoom-out}
+.gallery-lightbox-panel{position:relative; z-index:1; width:min(1100px,100%); max-height:calc(100vh - 44px); display:flex; flex-direction:column; align-items:center}
+.gallery-lightbox-panel img{display:block; max-width:100%; max-height:calc(100vh - 130px); object-fit:contain; border-radius:12px; background:#080a09}
+.gallery-lightbox-close{position:absolute; top:10px; right:10px; z-index:2; width:44px; height:44px; border:1px solid rgba(255,255,255,.55); border-radius:999px; background:rgba(9,12,10,.7); color:#fff; font-size:30px; line-height:1; cursor:pointer}
+.gallery-lightbox-controls{display:flex; align-items:center; justify-content:center; gap:12px; margin-top:10px}
+.gallery-lightbox .gallery-control{border-color:rgba(255,255,255,.48); background:#fff; color:#0f1310}
+.gallery-lightbox .gallery-hint{color:#fff}
+
+/* A lot is a product page: compact decisions first, then evidence.  The
+   phone receives title, price summary, CTA and photo before the long verdict. */
+.lot-above{display:flex; flex-direction:column; gap:14px; margin-top:6px}
+.lot-intro{min-width:0}
+.lot-intro .hero{padding-top:12px}
+.lot-statuses{display:flex; flex-wrap:wrap; gap:7px; margin-top:10px}
+.status-chip,.lifecycle-banner.compact{display:inline-flex; align-items:center; min-height:30px; width:auto; margin:0; padding:5px 9px; border:1px solid var(--line); border-radius:999px; background:var(--sunk); box-shadow:none; font:600 11px/1.25 var(--label); letter-spacing:.01em; color:var(--ink2)}
+.status-chip.source{text-transform:capitalize}
+.lifecycle-banner.compact b{color:var(--ink); font:600 11px/1.25 var(--label)}
+.lifecycle-banner.compact span{display:none}
+.lifecycle-banner.compact.archived,.lifecycle-banner.compact.missing{border-color:var(--warn); background:var(--warn-bg)}
+.hero-finance{display:grid; grid-template-columns:1fr 1fr; gap:7px; margin:12px 0 0}
+.hero-finance div{padding:10px 11px; border:1px solid var(--line); border-radius:12px; background:var(--card)}
+.hero-finance dt{font:500 9px/1.2 var(--label); letter-spacing:.07em; text-transform:uppercase; color:var(--ink3)}
+.hero-finance dd{margin:5px 0 0; font:800 17px/1.1 var(--display); letter-spacing:-.025em; font-variant-numeric:tabular-nums; overflow-wrap:anywhere}
+.hero-market{display:flex; flex-wrap:wrap; align-items:baseline; gap:5px 10px; margin-top:10px; padding:10px 11px; border:1px solid var(--line); border-radius:12px; background:var(--sunk)}
+.hero-market span{font:600 10px/1.2 var(--label); color:var(--ink3); text-transform:uppercase; letter-spacing:.07em}
+.hero-market b{font:800 17px/1.1 var(--display); letter-spacing:-.025em; font-variant-numeric:tabular-nums}
+.hero-market small{color:var(--ink2); font-size:12px}
+.hero-actions{display:flex; flex-wrap:wrap; align-items:center; gap:10px; margin-top:12px}
+.analysis-cta{display:flex; align-items:center; justify-content:center; width:100%; min-height:52px; margin-top:12px; border:0; border-radius:14px; background:var(--ink); color:var(--paper); font:700 17px/1.2 var(--display); cursor:pointer}
+.analysis-cta:hover,.analysis-cta:focus-visible{outline:3px solid var(--mark); outline-offset:3px}
+.hero-actions .analysis-cta{margin-top:0}
+.source-link{display:inline-flex; align-items:center; justify-content:center; min-height:44px; padding:0 4px; color:var(--ink); font:650 14px/1.25 var(--body); text-decoration:underline; text-decoration-thickness:1px; text-underline-offset:3px}
+.source-link:hover,.source-link:focus-visible{color:var(--good); outline:2px solid var(--mark); outline-offset:3px; border-radius:6px}
+.lot-wide{margin-top:22px}
+.lot-wide .market-report,.lot-wide .mkt,.lot-page > .lot-history,.lot-page > .same-street-lots,.lot-page > .related-lots,.lot-page > .lot-map{max-width:none}
 
 /* Maps are deliberately opt-in: the empty frame has no size and no third-party
    request occurs until the reader asks to load it. */
@@ -459,6 +498,7 @@ svg.map.shapes{max-height:62vh}
 @media (min-width:900px){
   :root{--pad:28px}
   .wrap{max-width:1120px}
+  .wrap.lot-page{max-width:1360px}
   h1{font-size:44px; max-width:16ch}
   .kicker{font-size:12px}
   .cbtn b{font-size:16px}
@@ -497,13 +537,34 @@ svg.map.shapes{max-height:62vh}
   .rowlist{max-width:720px}
   .facts{grid-template-columns:repeat(4,1fr)}
 
-  /* Lot pages are deliberately single-column: a gallery, map and evidence
-     need room, while prose still stops at a comfortable reading measure. */
+  /* The lot page is a product decision, not a narrow article.  Its first
+     screen has two balanced columns; evidence below has the full container. */
   .lot-page > .hero h1{max-width:none}
-  .lot-page > .verdict,
-  .lot-page > .lot-history,
-  .lot-page > .same-street-lots,
-  .lot-page > .related-lots{max-width:760px}
+  .lot-above{display:grid; grid-template-columns:minmax(0,1fr) minmax(440px,1fr); column-gap:34px; row-gap:14px; align-items:start; margin-top:14px}
+  .lot-intro,.lot-above > .verdict{grid-column:1; min-width:0}
+  .lot-above > .lot-gallery{grid-column:2; grid-row:1 / span 2; margin:0; min-width:0}
+  .lot-above > .lot-gallery .gallery-open{height:100%}
+  .lot-above > .lot-gallery .shot{width:100%; height:min(590px,calc(100vh - 150px)); min-height:430px; object-fit:cover}
+  .lot-intro .hero{padding-top:0}
+  .lot-intro .hero h1{max-width:none}
+  .lot-statuses{margin-top:13px}
+  .lifecycle-banner.compact span{display:inline; max-width:360px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
+  .hero-finance{grid-template-columns:1fr 1fr; gap:9px; margin-top:15px}
+  .hero-finance div{padding:13px}
+  .hero-finance dd{font-size:21px}
+  .hero-market{margin-top:12px; padding:12px 13px}
+  .hero-market b{font-size:20px}
+  .analysis-cta{width:auto; min-width:232px; padding:0 22px}
+  .hero-actions{margin-top:16px}
+  .source-link{font-size:15px}
+  .lot-page .rowlist{max-width:none}
+  .lot-page > .lot-map{margin-top:26px}
+  .lot-page > .lot-history,.lot-page > .same-street-lots,.lot-page > .related-lots{margin-top:30px}
+}
+
+@media (min-width:1480px){
+  .wrap.lot-page{max-width:1480px}
+  .lot-above{grid-template-columns:minmax(0,1fr) minmax(560px,1.08fr); column-gap:46px}
 }
 
 /* Tap targets stay 44px tall even though the type is small — the row is
@@ -744,20 +805,22 @@ svg.map .lbl{fill:var(--ink); stroke:var(--card)}
   .mul{font-size:12.5px}
   .mul span{font-size:13px}
 
+  .lot-wide .mkt,.lot-wide .market-report,.lot-page > .lot-history,.lot-page > .same-street-lots,.lot-page > .related-lots{font-size:17.5px; line-height:1.55}
+  .lot-wide .mkt .foot,.lot-wide .market-report .market-intro,.lot-wide .market-report .market-disclaimer,.lot-page > .lot-history p,.lot-page > .same-street-lots p,.lot-page > .related-lots p{font-size:17px; line-height:1.55; max-width:88ch}
   .mkt .mtop .lab{font-size:16px}
   .mkt .mval b{font-size:26px}
   .mkt .mval .u{font-size:11.5px}
   .mkt .msub{font-size:13.5px}
-  .mkt .erow .el{font-size:15px}
+  .mkt .erow .el{font-size:17px}
   .mkt .erow .ep{font-size:11.5px}
-  .mkt .erow .ev{font-size:16px}
-  .mkt .erow.tot .ev{font-size:19.5px}
+  .mkt .erow .ev{font-size:17px}
+  .mkt .erow.tot .ev{font-size:21px}
 
   .market-report{padding:20px}
   .market-title{font-size:24px}
-  .market-label{font-size:15px}
-  .market-value{font-size:16px}
-  .market-disclaimer{font-size:13px}
+  .market-label{font-size:17px}
+  .market-value{font-size:17px}
+  .market-disclaimer{font-size:17px}
 
   .azform input{font-size:15.5px}
   .azlist li{font-size:15.5px}
