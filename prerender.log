@@ -1,0 +1,68 @@
+[2278:2303:0917/094344.395850:ERROR:dbus/bus.cc:405] Failed to connect to the bus: Could not parse server address: Unknown address type (examples of valid types are "tcp" and on UNIX "unix")
+[2278:2303:0917/094344.957487:ERROR:dbus/bus.cc:405] Failed to connect to the bus: Could not parse server address: Unknown address type (examples of valid types are "tcp" and on UNIX "unix")
+[2278:2303:0917/094345.244836:ERROR:dbus/bus.cc:405] Failed to connect to the bus: Could not parse server address: Unknown address type (examples of valid types are "tcp" and on UNIX "unix")
+[2278:2303:0917/094345.606004:ERROR:dbus/bus.cc:405] Failed to connect to the bus: Could not parse server address: Unknown address type (examples of valid types are "tcp" and on UNIX "unix")
+
+DevTools listening on ws://127.0.0.1:9340/devtools/browser/0a2becde-7422-4c77-8fcb-afdb12621fc1
+[2278:2278:0917/094347.362810:ERROR:dbus/object_proxy.cc:572] Failed to call method: org.freedesktop.DBus.NameHasOwner: object_path= /org/freedesktop/DBus: unknown error type: 
+[2278:2303:0917/094347.362879:ERROR:dbus/bus.cc:405] Failed to connect to the bus: Could not parse server address: Unknown address type (examples of valid types are "tcp" and on UNIX "unix")
+[2278:2278:0917/094347.367014:ERROR:dbus/object_proxy.cc:572] Failed to call method: org.freedesktop.DBus.NameHasOwner: object_path= /org/freedesktop/DBus: unknown error type: 
+[2278:2303:0917/094347.367057:ERROR:dbus/bus.cc:405] Failed to connect to the bus: Could not parse server address: Unknown address type (examples of valid types are "tcp" and on UNIX "unix")
+[2278:2278:0917/094347.371489:ERROR:dbus/object_proxy.cc:572] Failed to call method: org.freedesktop.DBus.NameHasOwner: object_path= /org/freedesktop/DBus: unknown error type: 
+[2278:2278:0917/094347.406392:ERROR:dbus/object_proxy.cc:572] Failed to call method: org.freedesktop.DBus.NameHasOwner: object_path= /org/freedesktop/DBus: unknown error type: 
+[2278:2278:0917/094347.699806:ERROR:dbus/object_proxy.cc:572] Failed to call method: org.freedesktop.DBus.NameHasOwner: object_path= /org/freedesktop/DBus: unknown error type: 
+[2278:2278:0917/094347.704694:ERROR:dbus/object_proxy.cc:572] Failed to call method: org.freedesktop.DBus.NameHasOwner: object_path= /org/freedesktop/DBus: unknown error type: 
+[2278:2303:0917/094347.705137:ERROR:dbus/bus.cc:405] Failed to connect to the bus: Could not parse server address: Unknown address type (examples of valid types are "tcp" and on UNIX "unix")
+http://127.0.0.1:8899 → /home/runner/work/casa-brazil/casa-brazil/dist (lang=pt)
+[2278:2278:0917/094347.962472:ERROR:dbus/object_proxy.cc:572] Failed to call method: org.freedesktop.DBus.Properties.GetAll: object_path= /org/freedesktop/UPower/devices/DisplayDevice: org.freedesktop.DBus.Error.ServiceUnknown: The name org.freedesktop.UPower was not provided by any .service files
+[2278:2278:0917/094347.967400:ERROR:dbus/object_proxy.cc:572] Failed to call method: org.freedesktop.DBus.NameHasOwner: object_path= /org/freedesktop/DBus: unknown error type: 
+[2278:2303:0917/094347.967650:ERROR:dbus/bus.cc:405] Failed to connect to the bus: Could not parse server address: Unknown address type (examples of valid types are "tcp" and on UNIX "unix")
+[2278:2278:0917/094348.063669:ERROR:dbus/object_proxy.cc:572] Failed to call method: org.freedesktop.DBus.NameHasOwner: object_path= /org/freedesktop/DBus: unknown error type: 
+[2278:2303:0917/094348.063742:ERROR:dbus/bus.cc:405] Failed to connect to the bus: Could not parse server address: Unknown address type (examples of valid types are "tcp" and on UNIX "unix")
+[2278:2278:0917/094348.090089:ERROR:dbus/object_proxy.cc:572] Failed to call method: org.freedesktop.DBus.NameHasOwner: object_path= /org/freedesktop/DBus: unknown error type: 
+[2278:2304:0917/094351.220768:ERROR:google_apis/gcm/engine/registration_request.cc:291] Registration response error message: DEPRECATED_ENDPOINT
+  250 страниц, 61/с, в очереди 2426
+Created TensorFlow Lite XNNPACK delegate for CPU.
+  500 страниц, 58/с, в очереди 7564
+  750 страниц, 72/с, в очереди 9179
+  1000 страниц, 87/с, в очереди 8929
+  1250 страниц, 99/с, в очереди 8679
+  1500 страниц, 108/с, в очереди 8429
+  1750 страниц, 117/с, в очереди 8179
+  2000 страниц, 125/с, в очереди 7929
+  2250 страниц, 131/с, в очереди 7679
+  2500 страниц, 137/с, в очереди 7429
+  2750 страниц, 142/с, в очереди 7179
+  3000 страниц, 142/с, в очереди 6931
+  3250 страниц, 147/с, в очереди 6684
+  3500 страниц, 151/с, в очереди 6436
+  3750 страниц, 154/с, в очереди 6186
+  4000 страниц, 158/с, в очереди 5939
+  4250 страниц, 160/с, в очереди 5689
+  4500 страниц, 163/с, в очереди 5440
+  4750 страниц, 166/с, в очереди 5192
+[2278:2304:0917/094419.741740:ERROR:google_apis/gcm/engine/registration_request.cc:291] Registration response error message: DEPRECATED_ENDPOINT
+  5000 страниц, 168/с, в очереди 4942
+  5250 страниц, 170/с, в очереди 4692
+  5500 страниц, 173/с, в очереди 4443
+  5750 страниц, 176/с, в очереди 4193
+  6000 страниц, 177/с, в очереди 3943
+  6250 страниц, 179/с, в очереди 3694
+  6500 страниц, 181/с, в очереди 3444
+  6750 страниц, 182/с, в очереди 3194
+  7000 страниц, 183/с, в очереди 2944
+  7250 страниц, 184/с, в очереди 2694
+  7500 страниц, 186/с, в очереди 2444
+  7750 страниц, 187/с, в очереди 2194
+  8000 страниц, 188/с, в очереди 1944
+  8250 страниц, 190/с, в очереди 1697
+  8500 страниц, 191/с, в очереди 1447
+  8750 страниц, 191/с, в очереди 1197
+  9000 страниц, 192/с, в очереди 947
+  9250 страниц, 193/с, в очереди 697
+  9500 страниц, 194/с, в очереди 447
+  9750 страниц, 195/с, в очереди 197
+  10000 страниц, 187/с, в очереди 100
+  10250 страниц, 182/с, в очереди 68
+[2278:2304:0917/094504.088132:ERROR:google_apis/gcm/engine/registration_request.cc:291] Registration response error message: DEPRECATED_ENDPOINT
+10418 страниц за 105 с (99/с) → /home/runner/work/casa-brazil/casa-brazil/dist
