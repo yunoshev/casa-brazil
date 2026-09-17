@@ -248,10 +248,19 @@ class BuildIntegrationTest(unittest.TestCase):
                 policy.write_text(
                     prerender.rebase(prerender.complete_head(privacy_page(site, env)))
                 )
-                for asset in prerender.ASSETS:
+                # ``data/market_reports.json`` is not a source asset.  In a
+                # production release proto_build creates the lifecycle-bound
+                # public bytes before prerender runs; copying the private
+                # checkout here would recreate the stale-file overwrite this
+                # contract is meant to prevent.
+                source_assets = tuple(
+                    asset for asset in prerender.ASSETS if asset != "data/market_reports.json"
+                )
+                for asset in source_assets:
                     target = out / asset
                     target.parent.mkdir(parents=True, exist_ok=True)
                     shutil.copy2(BRAZIL / "site" / asset, target)
+                self.assertFalse((out / "data/market_reports.json").exists())
                 prerender.write_sitemap(out, emitted, site, None)
                 prerender.write_robots(out, site)
                 result = check(out, site, release=site == "https://precodemartelo.com")

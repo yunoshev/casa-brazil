@@ -164,8 +164,14 @@ class PagesWorkflowContractTest(unittest.TestCase):
         for asset in _literal_assignment(ROOT / "prerender.py", "ASSETS"):
             path = f"site/{asset}"
             with self.subTest(path=path):
-                self.assertIn(path, self.public_files)
-                self.assertTrue((ROOT / path).is_file(), path)
+                if path == "site/data/market_reports.json":
+                    # This is lifecycle-bound output from proto_build.py, not
+                    # an input that publish_repo.py may copy from the private
+                    # tree.  The Pages workflow creates it before prerender.
+                    self.assertIn("PUBLIC_MARKET_REPORTS", (ROOT / "proto_build.py").read_text())
+                else:
+                    self.assertIn(path, self.public_files)
+                    self.assertTrue((ROOT / path).is_file(), path)
 
     def test_legacy_public_regressions_have_current_equivalents(self):
         for name, paths in LEGACY_EQUIVALENTS.items():
@@ -221,6 +227,10 @@ class PagesWorkflowContractTest(unittest.TestCase):
         self.assertIn(CANONICAL, self.workflow)
         self.assertNotIn("secrets.", self.workflow)
         self.assertNotIn("yunoshev.github.io", self.workflow)
+
+    def test_lifecycle_bound_market_file_is_not_copied_as_a_publisher_input(self):
+        if PUBLISHER.is_file():
+            self.assertNotIn("site/data/market_reports.json", self.files)
 
 
 if __name__ == "__main__":

@@ -8,6 +8,7 @@ Run after prerender, before upload-pages-artifact.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import re
 from html.parser import HTMLParser
@@ -21,6 +22,7 @@ LEGACY_SITE_URL = "https://yunoshev.github.io/casa-brazil"
 # Conservative headroom below Google's documented 2 MB HTML fetch boundary.
 # https://developers.google.com/search/blog/2026/03/crawler-blog-post
 MAX_HTML_BYTES = 1_900_000
+MAX_PUBLIC_ARTIFACT_BYTES = 16 * 1024 * 1024
 HOME_FRAGMENT = re.compile(r"^_home/([a-z0-9-]+)\.html$")
 
 
@@ -145,12 +147,76 @@ def breadcrumb_urls(data):
             yield from breadcrumb_urls(value)
 
 
+def _check_manifest_public_artifacts(out: Path, errors: list[str]) -> None:
+    """Verify manifest-declared bytes against the artifact that Pages uploads."""
+    manifest_path = out / "lifecycle-release.json"
+    if not manifest_path.is_file():
+        # A strict prerender already requires this release-only asset.  Keep
+        # this helper tolerant for callers that use release_check.py on a
+        # small fixture without running the full renderer first.
+        return
+    try:
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
+        errors.append(f"lifecycle-release.json: unreadable manifest ({type(exc).__name__})")
+        return
+    artifacts = manifest.get("public_artifacts") if isinstance(manifest, dict) else None
+    if not isinstance(artifacts, dict):
+        errors.append("lifecycle-release.json: public_artifacts is missing or invalid")
+        return
+    root = out.resolve()
+    for relative, metadata in sorted(artifacts.items()):
+        label = f"public artifact {relative!r}"
+        if (
+            not isinstance(relative, str)
+            or not relative
+            or relative.startswith("/")
+            or "\\" in relative
+            or any(part in {"", ".", ".."} for part in Path(relative).parts)
+        ):
+            errors.append(f"{label}: unsafe path in lifecycle manifest")
+            continue
+        if not isinstance(metadata, dict) or set(metadata) != {"sha256", "bytes"}:
+            errors.append(f"{label}: invalid manifest metadata")
+            continue
+        digest, size = metadata.get("sha256"), metadata.get("bytes")
+        if (
+            not isinstance(digest, str)
+            or not re.fullmatch(r"[0-9a-f]{64}", digest)
+            or type(size) is not int
+            or not 0 < size <= MAX_PUBLIC_ARTIFACT_BYTES
+        ):
+            errors.append(f"{label}: invalid manifest hash or size")
+            continue
+        unresolved = out / relative
+        target = unresolved.resolve()
+        if (
+            unresolved.is_symlink()
+            or not target.is_relative_to(root)
+            or not target.is_file()
+        ):
+            errors.append(f"{label}: deployed file is missing or unsafe")
+            continue
+        try:
+            public = target.read_bytes()
+        except OSError as exc:
+            errors.append(f"{label}: cannot read deployed file ({type(exc).__name__})")
+            continue
+        actual = hashlib.sha256(public).hexdigest()
+        if len(public) != size or actual != digest:
+            errors.append(
+                f"{label}: deployed bytes do not match lifecycle manifest "
+                f"(expected {size} bytes/{digest[:12]}, got {len(public)} bytes/{actual[:12]})"
+            )
 def check(out: Path, site: str, *, release: bool = False) -> dict:
     site = validate_release_site_url(site) if release else site_url(site)
     out = out.resolve()
     errors: list[str] = []
     urls: set[str] = set()
     visited: set[Path] = set()
+
+    if release:
+        _check_manifest_public_artifacts(out, errors)
 
     def read_sitemap(path: Path):
         if path in visited:

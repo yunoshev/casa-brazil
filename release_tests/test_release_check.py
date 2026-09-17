@@ -1,3 +1,4 @@
+import hashlib
 import importlib.util
 import json
 import tempfile
@@ -146,6 +147,40 @@ class ReleaseCheckTest(unittest.TestCase):
     def test_release_checker_rejects_legacy_artifact_domain(self):
         with self.assertRaises(ValueError):
             CHECK.check(self.out, self.site, release=True)
+
+    def test_release_rejects_manifest_artifact_overwritten_before_deploy(self):
+        self.site = "https://precodemartelo.com"
+        self.html = self.html.replace("https://yunoshev.github.io/casa-brazil", self.site)
+        self.html = self.html.replace("/casa-brazil/favicon.svg", "/favicon.svg")
+        (self.out / "index.html").write_text(self.html)
+        (self.out / "robots.txt").write_text(
+            f"User-agent: *\nAllow: /\nSitemap: {self.site}/sitemap.xml\n"
+        )
+        self.sitemap([self.site + "/"])
+
+        expected = b'{"schema":"brazil-market-reports-public-v1","reports":["fresh"]}'
+        stale = b'{"schema":"brazil-market-reports-public-v1","reports":[]}'
+        target = self.out / "data/market_reports.json"
+        target.parent.mkdir()
+        target.write_bytes(expected)
+        manifest = {
+            "public_artifacts": {
+                "data/market_reports.json": {
+                    "sha256": hashlib.sha256(expected).hexdigest(),
+                    "bytes": len(expected),
+                }
+            }
+        }
+        (self.out / "lifecycle-release.json").write_text(json.dumps(manifest))
+
+        # This is the historical failure: a later copy step replaces the
+        # lifecycle-bound output with the old insufficient-data artifact.
+        target.write_bytes(stale)
+        result = CHECK.check(self.out, self.site, release=True)
+        self.assertFalse(result["ok"])
+        self.assertTrue(
+            any("deployed bytes do not match lifecycle manifest" in error for error in result["errors"])
+        )
 
 
 if __name__ == "__main__":
