@@ -164,7 +164,7 @@
     if (code === "bad_domain") return t("az.err.domain");
     if (code === "rate_limited") return t("az.err.limit");
     if (code === "analysis_unavailable") return t("az.err.unavailable");
-    if (code === "source_unavailable" || code === "source_blocked") return t("az.err.source");
+    if (code === "source_unavailable" || code === "source_blocked" || code === "source_cooldown") return t("az.err.source");
     if (code === "budget_exhausted") return t("az.budget");
     if (code === "free_limit_reached") return t("az.allowance");
     if (code === "capacity_exhausted") return t("az.capacity");
@@ -485,7 +485,7 @@
     }
     var msg = box.querySelector(".azmsg");
     var out = box.querySelector(".azout");
-    var busy = false, state = null;
+    var busy = false, terminal = false, state = null;
 
     function say(s) { msg.hidden = false; msg.textContent = s; }
     function mode(value) {
@@ -494,17 +494,20 @@
     }
     function lock(value) {
       busy = value;
-      btn.disabled = value;
+      btn.disabled = value || terminal;
       btn.setAttribute("aria-busy", String(value));
       form.setAttribute("aria-busy", String(value));
     }
     function failure(reason) {
       var stage = ["rate_limited", "free_limit_reached", "budget_exhausted"].indexOf(reason) !== -1 ? reason :
-        ["analysis_unavailable", "source_unavailable", "source_blocked", "capacity_exhausted"].indexOf(reason) !== -1 ? "unavailable" : "error";
+        ["analysis_unavailable", "source_unavailable", "source_blocked", "source_cooldown", "capacity_exhausted"].indexOf(reason) !== -1 ? "unavailable" : "error";
       mode(stage);
       say(errText(reason));
       track("analyze_edital", { stage: stage, reason: reason });
-      btn.textContent = t("az.retry");
+      terminal = ["source_blocked", "source_not_allowed", "source_mismatch", "document_not_available"].indexOf(reason) !== -1;
+      btn.disabled = terminal;
+      btn.setAttribute("data-az-terminal", terminal ? reason : "");
+      btn.textContent = terminal ? t("az.err.source") : t("az.retry");
     }
 
     form.addEventListener("submit", async function (ev) {
@@ -523,17 +526,18 @@
         return;
       }
       track("analyze_edital", { stage: "start" });
-      var deadline = Date.now() + 120000;
+      var deadline = Date.now() + 300000;
       try {
-        for (var attempt = 0; attempt < 4; attempt++) {
+        for (var attempt = 0; attempt < 60; attempt++) {
           // Tickets live only in memory, never storage, analytics or page links.
           var r = await post(state.ticket ? "/analyze/" + state.ticket : "/analyze/lots/" + id + "/one-click", state.ticket ? null : state.payload,
             Math.max(1, Math.min(115000, deadline - Date.now())));
           // Navigation must not attribute an old request's success to a new lot.
           if (box.isConnected === false) return;
           var body = r.body && typeof r.body === "object" && !Array.isArray(r.body) ? r.body : {};
-          if (r.status === 202 && !body.error && ["pending", "waiting_document"].indexOf(body.status) !== -1 &&
-              ["queued", "running", "waiting_for_cached_pdf"].indexOf(body.reason) !== -1 &&
+          if (r.status === 202 && !body.error &&
+              ["pending", "waiting_document", "queued", "fetching", "analyzing"].indexOf(body.status) !== -1 &&
+              ["queued", "running", "fetching_document", "analyzing", "waiting_for_cached_pdf"].indexOf(body.reason) !== -1 &&
               typeof body.analysis_id === "string" && !!body.analysis_id.trim() &&
               typeof body.job_ticket === "string" && TICKET.test(body.job_ticket)) {
             state.ticket = body.job_ticket;
@@ -541,6 +545,10 @@
               state.pending = true;
               track("analyze_edital", { stage: "pending" });
             }
+            // The source-side state is deliberately not presented as a
+            // promise: all accepted 202 replies are one honest user state.
+            // It also makes pending polls distinguishable from a finished
+            // report for analytics and accessibility consumers.
             mode("pending");
             say(t("az.pending"));
             btn.textContent = t("az.retry");
@@ -579,7 +587,7 @@
           // HTTP status alone cannot distinguish free allowance, budget,
           // capacity, source blocking and ordinary throttling.
           var errors = ["rate_limited", "free_limit_reached", "budget_exhausted", "capacity_exhausted",
-            "analysis_unavailable", "source_unavailable", "source_blocked", "bad_domain", "bad_request",
+            "analysis_unavailable", "source_unavailable", "source_blocked", "source_cooldown", "bad_domain", "bad_request",
             "idempotency_conflict", "source_mismatch", "source_not_allowed", "document_not_available", "too_large", "upstream"];
           var reason = r.status >= 400 && r.status <= 599 && errors.indexOf(body.error) !== -1 ? body.error : "invalid_response";
           // These typed 429s guarantee no dispatch. A manual retry must reach
