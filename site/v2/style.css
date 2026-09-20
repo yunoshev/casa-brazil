@@ -842,6 +842,8 @@ svg.map .lbl{fill:var(--ink); stroke:var(--card)}
 }
 /* A pending analysis keeps the visible CTA busy until the result is ready. */
 [aria-busy="true"].analysis-cta::before,
+.azbox[data-az-state="submitting"] .azmsg::before,
+.azbox[data-az-state="pending"] .azmsg::before,
 .azform button[aria-busy="true"]::before {
   content: ""; display: inline-block; width: 1em; height: 1em;
   margin-right: .65em; vertical-align: -.15em; border: 2px solid currentColor;
@@ -851,5 +853,7 @@ svg.map .lbl{fill:var(--ink); stroke:var(--card)}
 @keyframes analysis-spin { to { transform: rotate(360deg); } }
 @media (prefers-reduced-motion: reduce) {
   [aria-busy="true"].analysis-cta::before,
+  .azbox[data-az-state="submitting"] .azmsg::before,
+  .azbox[data-az-state="pending"] .azmsg::before,
   .azform button[aria-busy="true"]::before { animation-duration: 2s; }
 }

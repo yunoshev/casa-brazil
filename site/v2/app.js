@@ -2427,6 +2427,8 @@ function lotLastmod(path) {
   [lc.first_seen_at, lc.last_seen_at, lc.last_checked_at, lc.missing_since,
     lc.archived_at].forEach(remember);
   if (lc.outcome) remember(lc.outcome.observed_at);
+  var savedAnalysis = documentReportFor(r[C.id]);
+  if (savedAnalysis) remember(savedAnalysis.analyzed_at || savedAnalysis.captured_at);
   (Array.isArray(lc.history) ? lc.history : []).forEach(function (event) {
     if (event) remember(event.observed_at);
   });
