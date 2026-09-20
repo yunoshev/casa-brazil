@@ -82,7 +82,7 @@ test('hero locks duplicate clicks while busy and exposes unavailable/retry state
   const nearbyStatus = s.document.getElementById(hero.getAttribute('aria-describedby'));
   assert.equal(nearbyStatus.parentElement, hero.parentElement);
   assert.equal(nearbyStatus.hidden, false);
-  assert.equal(nearbyStatus.textContent, s.translate('az.wait'));
+  assert.equal(nearbyStatus.textContent, s.translate('az.progress.request'));
   await hero.click(); await s.analyze();
   assert.equal(s.requests.length, 1);
   gate.resolve(response(503, { error: 'analysis_unavailable' })); await task;
@@ -114,7 +114,7 @@ test('pending hero stays locked beyond four polls without another POST', async (
   const task = hero.click();
   await until(() => hero.getAttribute('data-az-state') === 'pending');
   assert.equal(hero.disabled, true);
-  assert.equal(hero.textContent, s.translate('az.wait'));
+  assert.equal(hero.textContent, s.translate('az.status.queued'));
   await hero.click(); assert.equal(s.requests.length, 1);
   for (let n = 2; n <= 6; n++) {
     await until(() => [...s.timers.values()].some(t => t.ms === 1000));

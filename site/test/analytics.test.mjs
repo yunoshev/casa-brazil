@@ -119,8 +119,8 @@ test('polling is bounded and manual retry keeps the ticket at the fixed Worker',
   }
   await task;
   assert.equal(s.requests.length, 60);
-  assert.deepEqual(stages(s), ['start', 'pending', 'error']);
-  assert.equal(s.box.getAttribute('data-az-state'), 'error');
+  assert.deepEqual(stages(s), ['start', 'pending']);
+  assert.equal(s.box.getAttribute('data-az-state'), 'background');
   assert.equal(s.box.querySelector('button').disabled, false);
   assert.equal(s.timers.size, 0);
   const retry = s.analyze();
@@ -173,7 +173,7 @@ for (const lang of ['pt', 'en', 'ru']) test(`public pending polls never count as
   for (let n = 1; n <= 3; n++) {
     await until(() => s.requests.length === n && [...s.timers.values()].some(t => t.ms === 1000));
     assert.deepEqual(stages(s), ['start', 'pending']);
-    assert.equal(s.box.querySelector('.azmsg').textContent, s.translate('az.pending'));
+    assert.equal(s.box.querySelector('.azmsg').textContent, s.translate('az.progress.queued'));
     assert.equal(s.box.querySelector('.azout').innerHTML, '');
     s.runTimers(1000);
   }

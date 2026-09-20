@@ -289,15 +289,18 @@ function publicResponse(status, body, typedPending = false) {
     return result;
   }
   if (status === 202) {
-    const reasons = body.status === "waiting_document" ? ["waiting_for_cached_pdf"] : ["queued", "running"];
+    const reasons = {waiting_document:["waiting_for_cached_pdf"], pending:["queued","running"],
+      queued:["queued"], fetching:["fetching_document"], analyzing:["analyzing"]}[body.status] || [];
     const reasonValid = reasons.includes(body.reason) ||
       (!typedPending && body.status === "pending" && body.reason === undefined);
-    if (!["pending", "waiting_document"].includes(body.status) || !reasonValid ||
+    if (!["pending", "waiting_document", "queued", "fetching", "analyzing"].includes(body.status) || !reasonValid ||
         typeof body.analysis_id !== "string" || !LOT.test(body.analysis_id) ||
         typeof body.job_ticket !== "string" || !TICKET.test(body.job_ticket)) fail(502, "invalid_response");
     const result = { status: body.status, analysis_id: body.analysis_id,
       retry_after_seconds: Math.max(1, Math.min(15, Number(body.retry_after_seconds) || 5)) };
     if (body.reason !== undefined) result.reason = body.reason;
+    if (typeof body.document_ready === "boolean") result.document_ready = body.document_ready;
+    if (Number.isInteger(body.retry_not_before_seconds) && body.retry_not_before_seconds >= 0 && body.retry_not_before_seconds <= 604800) result.retry_not_before_seconds = body.retry_not_before_seconds;
     if (typeof body.job_ticket === "string") result.job_ticket = text(body.job_ticket, 4096);
     return result;
   }
@@ -307,8 +310,8 @@ function publicResponse(status, body, typedPending = false) {
     413: ["too_large"], 422: ["invalid_pdf", "document_mismatch", "source_not_allowed"],
     429: ["budget_exhausted", "free_limit_reached", "capacity_exhausted", "rate_limited",
       "daily_limit_reached", "monthly_limit_reached"],
-    502: ["fetch_failed", "invalid_response", "upstream", "source_unavailable", "source_blocked"],
-    503: ["analysis_unavailable", "source_unavailable", "source_blocked"],
+    502: ["fetch_failed", "invalid_response", "analysis_validation_failed", "upstream", "source_unavailable", "source_blocked"],
+    503: ["analysis_unavailable", "source_unavailable", "source_blocked", "document_not_available"],
   };
   if (!codes[status]?.includes(body.error)) fail(503, "analysis_unavailable");
   // No upstream message/debug/PII, and never enable a public email form.

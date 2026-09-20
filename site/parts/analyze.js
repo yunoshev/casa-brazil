@@ -171,6 +171,8 @@
     if (code === "capacity_exhausted") return t("az.capacity");
     if (code === "idempotency_conflict") return t("az.err.conflict");
     if (code === "document_not_available") return t("az.err.missing_document");
+    if (code === "analysis_validation_failed") return t("az.err.validation");
+    if (code === "document_mismatch") return t("az.err.identity");
     if (code === "source_mismatch" || code === "source_not_allowed") return t("az.err.source");
     return t("az.err.fail");
   }
@@ -492,6 +494,16 @@
     var msg = box.querySelector(".azmsg");
     var out = box.querySelector(".azout");
     var busy = false, terminal = false, state = null, completedHTML = null;
+    var clockTimer = null, startedAt = 0, currentStage = "request";
+    var progress = document.createElement("div");
+    progress.setAttribute("class", "az-progress");
+    progress.hidden = true;
+    progress.innerHTML = '<p class="az-clock" aria-live="off"><span data-az-clock-label></span> <strong data-az-clock></strong></p>' +
+      '<ol class="az-steps"><li data-az-step="document">' + esc(t("az.step.document")) + '</li>' +
+      '<li data-az-step="analyzing">' + esc(t("az.step.analyzing")) + '</li>' +
+      '<li data-az-step="result">' + esc(t("az.step.result")) + '</li></ol>' +
+      '<p class="az-progress-note">' + esc(t("az.progress.hint")) + '</p>';
+    (hero && hero.parentElement ? hero.parentElement : box).appendChild(progress);
     var heroMsg = null;
     if (hero && hero.parentElement) {
       heroMsg = document.createElement("p");
@@ -508,12 +520,46 @@
       msg.hidden = false; msg.textContent = s;
       if (heroMsg) { heroMsg.hidden = false; heroMsg.textContent = s; }
     }
+    function stopClock() {
+      if (clockTimer !== null) global.clearTimeout(clockTimer);
+      clockTimer = null;
+    }
+    function tick() {
+      if (!busy || box.isConnected === false) { stopClock(); return; }
+      var elapsed = Math.max(0, Math.floor((Date.now() - startedAt) / 1000));
+      var seconds = elapsed < 60 ? 60 - elapsed : elapsed;
+      progress.querySelector("[data-az-clock-label]").textContent = t(elapsed < 60 ? "az.progress.countdown" : "az.progress.elapsed");
+      progress.querySelector("[data-az-clock]").textContent = Math.floor(seconds / 60) + ":" + String(seconds % 60).padStart(2, "0");
+      clockTimer = global.setTimeout(tick, 1000);
+    }
+    function showStage(stage) {
+      currentStage = stage;
+      progress.hidden = false;
+      progress.setAttribute("data-az-stage", stage);
+      progress.querySelectorAll("[data-az-step]").forEach(function (step) {
+        var key = step.getAttribute("data-az-step");
+        step.setAttribute("data-step-state", key === "document" ? (stage === "analyzing" || stage === "analysis_queue" ? "done" : "current") :
+          key === "analyzing" && stage === "analyzing" ? "current" : "waiting");
+      });
+      var labels = {request: "az.progress.request", queued: "az.progress.queued", document: "az.progress.document", analyzing: "az.progress.analyzing", analysis_queue: "az.progress.analysis_queue"};
+      say(t(labels[stage] || labels.queued));
+    }
+    function background() {
+      mode("background");
+      progress.querySelector(".az-clock").hidden = true;
+      say(t("az.progress.background"));
+      btn.textContent = t("az.progress.check");
+      progress.querySelector(".az-progress-note").textContent = t("az.progress.saved");
+    }
     function mode(value) {
       box.setAttribute("data-az-state", value);
       if (hero) hero.setAttribute("data-az-state", value);
       if (heroMsg) {
         heroMsg.setAttribute("data-az-state", value);
         if (value === "result") heroMsg.hidden = true;
+      }
+      if (value !== "submitting" && value !== "pending" && value !== "background") {
+        stopClock(); progress.hidden = true;
       }
     }
     function lock(value) {
@@ -522,6 +568,7 @@
       btn.setAttribute("aria-busy", String(value));
       form.setAttribute("aria-busy", String(value));
       if (value) btn.textContent = t("az.wait");
+      else stopClock();
     }
     function failure(reason) {
       var stage = ["rate_limited", "free_limit_reached", "budget_exhausted"].indexOf(reason) !== -1 ? reason :
@@ -529,7 +576,7 @@
       mode(stage);
       say(errText(reason));
       track("analyze_edital", { stage: stage, reason: reason });
-      terminal = ["source_blocked", "source_not_allowed", "source_mismatch", "document_not_available"].indexOf(reason) !== -1;
+      terminal = ["source_blocked", "source_not_allowed", "source_mismatch", "document_not_available", "analysis_validation_failed", "document_mismatch"].indexOf(reason) !== -1;
       btn.disabled = terminal;
       btn.setAttribute("data-az-terminal", terminal ? reason : "");
       btn.textContent = terminal ? t("az.unavailable") : t("az.retry");
@@ -548,7 +595,10 @@
       lock(true);
       mode("submitting");
       out.innerHTML = "";
-      say(t("az.wait"));
+      startedAt = Date.now();
+      progress.querySelector(".az-clock").hidden = false;
+      progress.querySelector(".az-progress-note").textContent = t("az.progress.hint");
+      showStage("request"); tick();
       try {
         if (!state) state = await requestState(id, source);
       } catch (e) {
@@ -559,7 +609,9 @@
         return;
       }
       track("analyze_edital", { stage: "start" });
-      var deadline = Date.now() + 300000;
+      // Two minutes of active waiting, then a durable background request.
+      // The first-minute countdown is a UI checkpoint, not a completion promise.
+      var deadline = Date.now() + 120000;
       try {
         for (var attempt = 0; attempt < 60; attempt++) {
           // Tickets live only in memory, never storage, analytics or page links.
@@ -578,17 +630,18 @@
               state.pending = true;
               track("analyze_edital", { stage: "pending" });
             }
-            // The source-side state is deliberately not presented as a
-            // promise: all accepted 202 replies are one honest user state.
-            // It also makes pending polls distinguishable from a finished
-            // report for analytics and accessibility consumers.
             mode("pending");
-            say(t("az.pending"));
-            btn.textContent = t("az.wait");
+            showStage(body.status === "analyzing" ? "analyzing" : body.status === "fetching" ? "document" : body.document_ready === true ? "analysis_queue" : "queued");
+            btn.textContent = t(currentStage === "analyzing" ? "az.status.analyzing" : currentStage === "document" ? "az.status.fetching" : "az.status.queued");
+            if (Number.isFinite(body.retry_not_before_seconds) && body.retry_not_before_seconds > 60) {
+              background();
+              say(t("az.progress.delayed", {minutes: Math.ceil(body.retry_not_before_seconds / 60)}));
+              return;
+            }
             var delay = Number(body.retry_after_seconds);
             delay = Math.max(1, Math.min(15, isFinite(delay) ? delay : 5)) * 1000;
             if (Date.now() + delay >= deadline || box.isConnected === false) {
-              if (box.isConnected !== false) failure("timeout");
+              if (box.isConnected !== false) background();
               return;
             }
             await new Promise(function (resolve) { global.setTimeout(resolve, delay); });
@@ -643,7 +696,7 @@
           // capacity, source blocking and ordinary throttling.
           var errors = ["rate_limited", "free_limit_reached", "budget_exhausted", "capacity_exhausted",
             "analysis_unavailable", "source_unavailable", "source_blocked", "source_cooldown", "bad_domain", "bad_request",
-            "idempotency_conflict", "source_mismatch", "source_not_allowed", "document_not_available", "too_large", "upstream"];
+            "idempotency_conflict", "source_mismatch", "source_not_allowed", "document_not_available", "analysis_validation_failed", "document_mismatch", "too_large", "upstream"];
           var reason = r.status >= 400 && r.status <= 599 && errors.indexOf(body.error) !== -1 ? body.error : "invalid_response";
           // These typed 429s guarantee no dispatch. A manual retry must reach
           // core admission via POST, not poll a terminal job forever. Keep the
@@ -655,10 +708,11 @@
           }
           return;
         }
-        failure("timeout");
+        if (state.ticket) background(); else failure("timeout");
       } catch (e) {
         if (box.isConnected === false) return;
-        failure(e.message === "timeout" ? "timeout" : "network");
+        if (e.message === "timeout" && state.ticket) background();
+        else failure(e.message === "timeout" ? "timeout" : "network");
       } finally { lock(false); }
     });
   }

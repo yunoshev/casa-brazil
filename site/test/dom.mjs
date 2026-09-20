@@ -112,7 +112,7 @@ export function setup(options = {}) {
     append(...args) { this.entries.push(args); }
   }
   const sandbox = {
-    URL, Date, Promise, Uint8Array, TextEncoder, AbortController, crypto: webcrypto,
+    URL, Date: options.Date || Date, Promise, Uint8Array, TextEncoder, AbortController, crypto: webcrypto,
     FormData: options.FormData || TestFormData,
     document, navigator: { webdriver: false },
     location: new URL(options.url || 'https://precodemartelo.com/casa-brazil/leilao-de-imoveis/rj/rio-de-janeiro/lote/apartment-123/'),

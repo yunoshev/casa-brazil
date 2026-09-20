@@ -113,6 +113,7 @@ jobs:
           node --test site/test/matricula-e2e.test.mjs
           node --test site/test/one-click-e2e.test.mjs
           node --test site/test/copy-analysis.test.mjs
+          node --test site/test/analysis-progress.test.mjs
           node --test site/test/geo.test.mjs
           node --test site/test/gallery.test.mjs
           python -m unittest discover -s test -p 'test_document_reports.py' -v
