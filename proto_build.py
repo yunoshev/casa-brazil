@@ -62,6 +62,7 @@ PUBLIC_MARKET_REPORTS = HERE / "site" / "data" / "market_reports.json"
 # never stop publishing just because no approved photo projection exists yet.
 LOT_MEDIA = HERE / "data" / "lot-media.json"
 DOCUMENT_REPORTS = HERE / "site" / "content" / "document-reports.json"
+SAVED_ANALYSES = HERE / "site" / "content" / "saved-analyses.json"
 LIFECYCLE_RECEIPT = HERE / "data" / "site.json.release.json"
 
 
@@ -1054,6 +1055,9 @@ def main() -> None:
     if market_reports:
         payload["market_reports"] = market_reports
     payload["document_reports"] = load_document_reports(DOCUMENT_REPORTS, src)
+    from saved_analyses import load_saved_analyses
+
+    payload["saved_analyses"] = load_saved_analyses(SAVED_ANALYSES, src)
     # The media projection joins against the post-build cities.  That means a
     # stale photo record for a city/lifecycle row that is no longer published
     # cannot make the payload larger or produce an orphan URL.

@@ -113,18 +113,18 @@ test('polling is bounded and manual retry keeps the ticket at the fixed Worker',
   const s = setup({ fetch: () => response(202, { status: 'pending', reason: 'running', analysis_id: 'job', job_ticket: jobTicket, retry_after_seconds: 1 }) });
   s.load('analytics'); s.window.ANALYTICS.setConsent('accepted'); s.load('analyze');
   const task = s.analyze();
-  for (let n = 1; n <= 3; n++) {
+  for (let n = 1; n <= 60; n++) {
     await until(() => s.requests.length === n && [...s.timers.values()].some(t => t.ms === 1000));
     s.runTimers(1000);
   }
   await task;
-  assert.equal(s.requests.length, 4);
+  assert.equal(s.requests.length, 60);
   assert.deepEqual(stages(s), ['start', 'pending']);
   assert.equal(s.box.getAttribute('data-az-state'), 'pending');
   assert.equal(s.box.querySelector('button').disabled, false);
   assert.equal(s.timers.size, 0);
   const retry = s.analyze();
-  await until(() => s.requests.length === 5 && [...s.timers.values()].some(t => t.ms === 1000));
+  await until(() => s.requests.length === 61 && [...s.timers.values()].some(t => t.ms === 1000));
   s.box.isConnected = false;
   s.runTimers(1000); await retry;
   for (const [i, request] of s.requests.entries()) {
@@ -311,8 +311,12 @@ test('shared-core analysis POST works without consent; start/ok/error events are
   observed.load('analytics'); observed.window.ANALYTICS.setConsent('accepted'); observed.load('analyze');
   await observed.analyze(); await until(() => emitted(observed).some(e => e[1] === 'analyze_edital' && e[2].stage === 'ok'));
   fail = true;
-  await observed.analyze(); await until(() => emitted(observed).some(e => e[1] === 'analyze_edital' && e[2].stage === 'error'));
-  assert.doesNotMatch(JSON.stringify(observed.window.dataLayer.map(e => Array.from(e))), /private@|source_url/);
+  await observed.analyze();
+  assert.equal(observed.requests.length, 1, 'ready result never calls the API again');
+  const failed = setup({ fetch: () => response(503, { error: 'private@example.org' }) });
+  failed.load('analytics'); failed.window.ANALYTICS.setConsent('accepted'); failed.load('analyze');
+  await failed.analyze(); await until(() => emitted(failed).some(e => e[1] === 'analyze_edital' && e[2].stage === 'error'));
+  assert.doesNotMatch(JSON.stringify(failed.window.dataLayer.map(e => Array.from(e))), /private@|source_url/);
 });
 
 test('late form and shell navigation are observed; CTA requires visibility and counts once', () => {

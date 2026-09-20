@@ -76,3 +76,19 @@ test('denied clipboard presents selectable text, not false success', async () =>
   assert.ok(fallback.value.endsWith(canonical));
   assert.match(p.document.querySelector('[data-document-copy-status]').textContent, /Não foi possível/);
 });
+
+test('saved automatic analysis is already HTML inside closed native disclosure, never an API box', () => {
+  const p = runtime({ writeText: async () => {} });
+  p.ctx.D.saved_analyses = { [id]: {
+    analyzed_at: '2026-09-20T12:00:00Z', source_url: reports[id].source_url,
+    analysis: { summary: 'Resumo salvo <unsafe>', entries: [
+      { kind: 'R', number: 1, title: 'Compra', summary: 'Ato registrado.', citations: [{ page: 2, quote: 'R-1' }] }
+    ], warnings: ['Verifique o original.'], disclaimer: 'Não constitui parecer jurídico.' }
+  } };
+  const html = p.ctx.documentReportSlot(id);
+  assert.match(html, /Resumo salvo &lt;unsafe&gt;/);
+  assert.match(html, /<details data-document-report-disclosure>/);
+  assert.match(html, /R-1/);
+  assert.doesNotMatch(html, /<details[^>]* open|data-az=|data-lot-report=/);
+  assert.equal(p.requests.length, 0);
+});

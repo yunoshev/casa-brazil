@@ -3,7 +3,7 @@ import { createHash, createHmac } from 'node:crypto';
 import test from 'node:test';
 
 import worker from '../../worker/src/index.js';
-import { setup, until } from './dom.mjs';
+import { setup, until, response } from './dom.mjs';
 
 const origin = 'https://precodemartelo.com';
 const id = '034aa2e652ab4905';
@@ -28,6 +28,32 @@ function browserPDF() {
   Object.defineProperty(blob, 'name', { value: 'matricula.pdf' });
   return blob;
 }
+
+test('one-click shows busy indicator through long wait, renders matrícula, repeats instantly', async () => {
+  const site = setup({ fetch: (req, n) => n <= 6
+    ? response(202, { status: 'analyzing', reason: 'analyzing', analysis_id: id,
+      job_ticket: ticket, retry_after_seconds: 1 })
+    : response(200, result) });
+  site.load('analyze');
+  const button = site.box.querySelector('button');
+  const task = site.analyze();
+  await until(() => site.requests.length === 1);
+  for (let n = 2; n <= 7; n++) {
+    await until(() => [...site.timers.values()].some(t => t.ms === 1000));
+    assert.equal(button.getAttribute('aria-busy'), 'true');
+    assert.equal(button.disabled, true);
+    site.runTimers(1000);
+    await until(() => site.requests.length === n);
+  }
+  await task;
+  assert.equal(site.box.getAttribute('data-az-state'), 'result');
+  assert.equal(button.getAttribute('aria-busy'), 'false');
+  assert.match(site.box.querySelector('.azout').innerHTML, /AV-2/);
+  const count = site.requests.length;
+  await site.analyze();
+  assert.equal(site.requests.length, count);
+  assert.match(site.box.querySelector('.azout').innerHTML, /AV-2/);
+});
 
 test('offline browser -> Worker -> mock core -> poll -> rendered versioned matrícula DTO', async () => {
   const coreCalls = [], nonces = new Set();

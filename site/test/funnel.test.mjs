@@ -91,7 +91,7 @@ test('hero locks duplicate clicks while busy and exposes unavailable/retry state
   assert.deepEqual(s.requests[0].json, s.requests[1].json);
 });
 
-test('pending hero stays locked during polling and manual retry polls without another POST', async () => {
+test('pending hero stays locked beyond four polls without another POST', async () => {
   const ticket = '00000000-0000-4000-8000-000000000001.1790000000.' + 'a'.repeat(64);
   const s = setup({ fetch: () => response(202, { status: 'pending', reason: 'queued',
     analysis_id: 'fixture', job_ticket: ticket, retry_after_seconds: 1 }) });
@@ -99,19 +99,17 @@ test('pending hero stays locked during polling and manual retry polls without an
   const task = hero.click();
   await until(() => hero.getAttribute('data-az-state') === 'pending');
   assert.equal(hero.disabled, true);
-  assert.equal(hero.textContent, s.translate('az.retry'));
+  assert.equal(hero.textContent, s.translate('az.wait'));
   await hero.click(); assert.equal(s.requests.length, 1);
-  for (let n = 2; n <= 4; n++) {
+  for (let n = 2; n <= 6; n++) {
     await until(() => [...s.timers.values()].some(t => t.ms === 1000));
     s.runTimers(1000); await until(() => s.requests.length === n);
   }
-  await task;
-  assert.equal(hero.disabled, false);
+  assert.equal(hero.disabled, true);
   assert.equal(hero.getAttribute('data-az-state'), 'pending');
-  const retry = hero.click(); await until(() => s.requests.length === 5);
   assert.equal(s.requests.filter(r => r.method === 'POST').length, 1);
   assert.ok(s.requests.slice(1).every(r => r.method === 'GET' && r.url.endsWith(ticket)));
-  s.box.isConnected = false; s.runTimers(1000); await retry;
+  s.box.isConnected = false; s.runTimers(1000); await task;
 });
 
 for (const options of [{ analysisConfig: { enabled: false } }, { source: 'https://invalid.test/' }]) {
@@ -157,7 +155,7 @@ for (const lang of ['pt', 'en', 'ru']) test('escaped result and acknowledged sam
   await s.analyze(); await s.analyze();
   assert.equal(s.box.getAttribute('data-az-state'), 'result');
   assert.match(s.box.querySelector('.azout').innerHTML, /&lt;script&gt;unsafe/);
-  assert.deepEqual(s.requests[0].json, s.requests[1].json);
+  assert.equal(s.requests.length, 1, 'repeated click reveals in-memory result');
   assert.equal(s.events.filter(e => e.name === 'analyze_edital' && e.params.stage === 'ok').length, 1);
   assert.doesNotMatch(JSON.stringify([...s.data]), /caixa\.gov|resumo|reader@|signed-ticket/);
   const next = setup({ lang, storage: s.data, fetch: () => response(200, result) }); next.load('analyze'); await next.analyze();

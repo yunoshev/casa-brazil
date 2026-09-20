@@ -1753,6 +1753,8 @@ function marketReportFor(id) {
 }
 
 function documentReportFor(id) {
+  var saved = D && D.saved_analyses && D.saved_analyses[String(id)];
+  if (saved) return saved;
   var reports = D && D.document_reports;
   var report = reports && reports[String(id)];
   return report && report.reviewed === true && report.source_kind === "browser_screenshots" &&
@@ -1762,6 +1764,23 @@ function documentReportFor(id) {
 function documentReportSlot(id) {
   var report = documentReportFor(id);
   if (!report) return '<section class="mkt" data-lot-report="' + esc(id) + '"></section>';
+  if (report.analysis) {
+    var a = report.analysis;
+    return '<section class="mkt document-report" id="document-report" data-saved-document-report="' + esc(id) + '" aria-labelledby="document-report-title">' +
+      '<details data-document-report-disclosure><summary class="analysis-cta">' + esc(t("doc.report.view")) + '</summary>' +
+      '<div data-document-report-text lang="pt"><h2 id="document-report-title" tabindex="-1">' + esc(t("az.h2")) + '</h2>' +
+      '<p class="foot">' + esc(t("az.analyzed", { date: report.analyzed_at.slice(0, 10) })) + '</p>' +
+      '<p class="say">' + esc(a.summary) + '</p><h3>' + esc(t("az.upload.entries")) + '</h3>' +
+      a.entries.map(function (e) {
+        return '<article><h4>' + esc(e.kind + '-' + e.number + ' · ' + e.title) + '</h4><p>' + esc(e.summary) + '</p>' +
+          '<p class="foot">' + esc(t("az.upload.effect.unclear")) + '</p>' +
+          e.citations.map(function (c) { return '<blockquote>' + esc(c.quote) + '</blockquote><p class="foot">' + esc(t("az.upload.page", { page: c.page })) + '</p>'; }).join('') + '</article>';
+      }).join('') +
+      '<h3>' + esc(t("az.upload.warnings")) + '</h3><ul>' + a.warnings.map(function (w) { return '<li>' + esc(w) + '</li>'; }).join('') + '</ul>' +
+      '<p class="note">' + esc(a.disclaimer) + '</p><p><a href="' + esc(report.source_url) + '" target="_blank" rel="noopener noreferrer">' + esc(t("doc.report.original")) + '</a></p></div>' +
+      '<button type="button" class="analysis-cta" data-copy-document-report>' + esc(t("doc.report.copy")) + '</button>' +
+      '<p class="foot" data-document-copy-status role="status" aria-live="polite"></p><textarea data-document-copy-fallback hidden readonly></textarea></details></section>';
+  }
   function list(items) { return '<ul>' + items.map(function (item) { return '<li>' + esc(item) + '</li>'; }).join('') + '</ul>'; }
   return '<section class="mkt document-report" id="document-report" data-saved-document-report="' + esc(id) + '" aria-labelledby="document-report-title">' +
     '<details data-document-report-disclosure><summary class="analysis-cta">' + esc(t("doc.report.view")) + '</summary>' +

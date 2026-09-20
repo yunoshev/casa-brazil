@@ -259,18 +259,22 @@
   }
 
   function renderUploadResult(a, hit) {
+    var identityLabels = { matricula: "az.upload.identity.matricula", address: "az.upload.identity.address",
+      match: "az.upload.identity.match", omitted: "az.upload.identity.omitted" };
+    var effects = { active: "az.upload.effect.active", cancelled: "az.upload.effect.cancelled", unclear: "az.upload.effect.unclear" };
+    var confidences = { high: "az.upload.confidence.high", medium: "az.upload.confidence.medium", low: "az.upload.confidence.low" };
     function citations(values) { return '<ol class="azlist">' + values.map(function (citation) {
       return '<li><span class="foot">' + esc(t("az.upload.page", { page: citation.page })) +
         '</span><blockquote class="foot">' + esc(citation.quote) + '</blockquote></li>'; }).join("") + '</ol>'; }
-    function identity(name, value) { return '<div class="fact"><span class="k">' + esc(t("az.upload.identity." + name)) +
-      '</span><span class="v">' + esc(t("az.upload.identity." + value.status)) + '</span></div>' +
+    function identity(name, value) { return '<div class="fact"><span class="k">' + esc(t(identityLabels[name])) +
+      '</span><span class="v">' + esc(t(identityLabels[value.status])) + '</span></div>' +
       (value.status === "match" ? '<p class="foot">' + esc(value.document_value) + '</p>' + citations(value.citations) : ''); }
     var entries = a.entries.map(function (entry) { return '<li><p><b>' + esc(entry.kind + '-' + entry.number + ' · ' + entry.title) +
-      '</b></p><p>' + esc(entry.summary) + '</p><p class="foot">' + esc(t("az.upload.effect." + entry.effect)) +
+      '</b></p><p>' + esc(entry.summary) + '</p><p class="foot">' + esc(t(effects[entry.effect])) +
       '</p>' + citations(entry.citations) + '</li>'; }).join("");
     return '<p class="say">' + esc(a.summary) + '</p><div class="facts">' + identity("matricula", a.identity.matricula) +
       identity("address", a.identity.address) + '<div class="fact"><span class="k">' + esc(t("az.conf")) +
-      '</span><span class="v">' + esc(t("az.upload.confidence." + a.confidence)) + '</span></div></div>' +
+      '</span><span class="v">' + esc(t(confidences[a.confidence])) + '</span></div></div>' +
       (entries ? '<section class="azcitations"><h3>' + esc(t("az.upload.entries")) + '</h3><ol class="azlist">' + entries + '</ol></section>' : '') +
       '<section><h3>' + esc(t("az.upload.warnings")) + '</h3><ul class="azlist">' + items(a.warnings) + '</ul></section>' +
       '<p class="note">' + esc(MATRICULA_WARNING) + (hit ? " · " + esc(t("az.cache")) : "") + '</p>';
@@ -485,7 +489,7 @@
     }
     var msg = box.querySelector(".azmsg");
     var out = box.querySelector(".azout");
-    var busy = false, terminal = false, state = null;
+    var busy = false, terminal = false, state = null, completedHTML = null;
 
     function say(s) { msg.hidden = false; msg.textContent = s; }
     function mode(value) {
@@ -497,6 +501,7 @@
       btn.disabled = value || terminal;
       btn.setAttribute("aria-busy", String(value));
       form.setAttribute("aria-busy", String(value));
+      if (value) btn.textContent = t("az.wait");
     }
     function failure(reason) {
       var stage = ["rate_limited", "free_limit_reached", "budget_exhausted"].indexOf(reason) !== -1 ? reason :
@@ -513,6 +518,13 @@
     form.addEventListener("submit", async function (ev) {
       ev.preventDefault();
       if (busy) return;
+      if (completedHTML !== null) {
+        out.innerHTML = completedHTML;
+        mode("result");
+        msg.hidden = true;
+        out.scrollIntoView({ behavior: "smooth", block: "start" });
+        return;
+      }
       lock(true);
       mode("submitting");
       out.innerHTML = "";
@@ -551,16 +563,37 @@
             // report for analytics and accessibility consumers.
             mode("pending");
             say(t("az.pending"));
-            btn.textContent = t("az.retry");
+            btn.textContent = t("az.wait");
             var delay = Number(body.retry_after_seconds);
             delay = Math.max(1, Math.min(15, isFinite(delay) ? delay : 5)) * 1000;
-            if (attempt === 3 || Date.now() + delay >= deadline || box.isConnected === false) return;
+            if (Date.now() + delay >= deadline || box.isConnected === false) {
+              btn.textContent = t("az.retry");
+              return;
+            }
             await new Promise(function (resolve) { global.setTimeout(resolve, delay); });
             if (box.isConnected === false) return;
             continue;
           }
+          if (r.status === 200 && validUploadResult(body)) {
+            var cached = body._meta.cached === true || r.hit;
+            out.innerHTML = renderUploadResult(body, cached) +
+              '<p class="foot">' + esc(t("az.analyzed", {
+                date: new Date(body._meta.analyzed_at).toLocaleString(lang),
+              })) + '</p>';
+            completedHTML = out.innerHTML;
+            msg.hidden = true; mode("result"); btn.textContent = t("doc.report.view");
+            out.setAttribute("tabindex", "-1");
+            out.focus({ preventScroll: true });
+            out.scrollIntoView({ behavior: "smooth", block: "start" });
+            if (!state.record.ok) {
+              state.record.ok = true; remember(state);
+              track("analyze_edital", { stage: "ok", cached: cached ? 1 : 0 });
+            }
+            return;
+          }
           if (r.status === 200 && validReport(body, id)) {
             out.innerHTML = renderReport(body); msg.hidden = true; mode("result");
+            completedHTML = out.innerHTML;
             if (!state.record.ok) { state.record.ok = true; remember(state); track("analyze_edital", { stage: "ok", cached: 1 }); }
             btn.textContent = t("az.again"); return;
           }
@@ -574,6 +607,7 @@
             }
             msg.hidden = true;
             mode("result");
+            completedHTML = out.innerHTML;
             if (!state.record.ok) {
               state.record.ok = true;
               remember(state);
@@ -600,6 +634,7 @@
           }
           return;
         }
+        btn.textContent = t("az.retry");
       } catch (e) {
         if (box.isConnected === false) return;
         failure(e.message === "timeout" ? "timeout" : "network");
