@@ -1766,11 +1766,30 @@ function documentReportSlot(id) {
   if (!report) return '<section class="mkt" data-lot-report="' + esc(id) + '"></section>';
   if (report.analysis) {
     var a = report.analysis;
+    var identityNotice = '';
+    if (a.contract === 'brazil_matricula_v2') {
+      var identityKeys = ['matricula', 'address'];
+      var identityLabels = { matricula: 'az.upload.identity.matricula', address: 'az.upload.identity.address',
+        match: 'az.upload.identity.match', omitted: 'az.upload.identity.omitted',
+        unverified: 'az.upload.identity.unverified', contradiction: 'az.upload.identity.contradiction' };
+      if (identityKeys.some(function (key) { return a.identity[key].status !== 'match'; })) {
+        identityNotice += '<aside class="note" data-identity-warning><strong>' + esc(t('az.upload.identity.attention')) +
+          '</strong><p>' + esc(t('az.upload.identity.scope')) + '</p></aside>';
+      }
+      identityNotice += identityKeys.map(function (key) {
+        var check = a.identity[key];
+        return '<section><h3>' + esc(t(identityLabels[key])) + ': ' + esc(t(identityLabels[check.status])) + '</h3>' +
+          '<p>' + esc(t('az.upload.identity.catalog')) + ': ' + esc(check.catalog_value || t('az.upload.identity.no_catalog')) + '</p>' +
+          (check.document_value ? '<p>' + esc(t('az.upload.identity.document')) + ': ' + esc(check.document_value) + '</p>' : '') +
+          check.citations.map(function (c) { return '<blockquote>' + esc(c.quote) + '</blockquote><p class="foot">' +
+            esc(t('az.upload.page', { page: c.page })) + '</p>'; }).join('') + '</section>';
+      }).join('');
+    }
     return '<section class="mkt document-report" id="document-report" data-saved-document-report="' + esc(id) + '" aria-labelledby="document-report-title">' +
       '<details data-document-report-disclosure><summary class="analysis-cta">' + esc(t("doc.report.view")) + '</summary>' +
       '<div data-document-report-text lang="pt"><h2 id="document-report-title" tabindex="-1">' + esc(t("az.h2")) + '</h2>' +
       '<p class="foot">' + esc(t("az.analyzed", { date: report.analyzed_at.slice(0, 10) })) + '</p>' +
-      '<p class="say">' + esc(a.summary) + '</p><h3>' + esc(t("az.upload.entries")) + '</h3>' +
+      identityNotice + '<p class="say">' + esc(a.summary) + '</p><h3>' + esc(t("az.upload.entries")) + '</h3>' +
       a.entries.map(function (e) {
         return '<article><h4>' + esc(e.kind + '-' + e.number + ' · ' + e.title) + '</h4><p>' + esc(e.summary) + '</p>' +
           '<p class="foot">' + esc(t("az.upload.effect.unclear")) + '</p>' +

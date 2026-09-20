@@ -29,6 +29,27 @@ function browserPDF() {
   return blob;
 }
 
+test('V2 source document with missing registry comparison and address conflict is visibly qualified', async () => {
+  const reading = structuredClone(result);
+  reading.contract = 'brazil_matricula_v2';
+  reading.identity.matricula.status = 'unverified';
+  reading.identity.matricula.catalog_value = null;
+  reading.identity.address = { status: 'contradiction', catalog_value: 'Rua do Caja, N. 12',
+    document_value: 'Rua do Caja, N. 1220', citations: [{ page: 1, quote: 'Rua do Caja, N. 1220' }] };
+  const site = setup({ fetch: () => response(200, reading) });
+  site.load('analyze');
+  await site.analyze();
+  assert.equal(site.box.getAttribute('data-az-state'), 'result');
+  const html = site.box.querySelector('.azout').innerHTML;
+  assert.match(html, /data-identity-warning/);
+  assert.match(html, /correspondência não confirmada/);
+  assert.match(html, /divergência com o catálogo/);
+  assert.match(html, /N\. 1220/);
+  assert.match(html, /N\. 12/);
+  await site.analyze();
+  assert.equal(site.requests.length, 1);
+});
+
 test('one-click shows busy indicator through long wait, renders matrícula, repeats instantly', async () => {
   const site = setup({ fetch: (req, n) => n <= 6
     ? response(202, { status: 'analyzing', reason: 'analyzing', analysis_id: id,

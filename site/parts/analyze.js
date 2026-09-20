@@ -239,24 +239,25 @@
   }
 
   function validUploadResult(a) {
+    var v2 = a && a.contract === "brazil_matricula_v2";
     function object(value, keys) { return value && typeof value === "object" && !Array.isArray(value) &&
       Object.keys(value).length === keys.length && keys.every(function (key) { return Object.prototype.hasOwnProperty.call(value, key); }); }
     function text(value, max) { return typeof value === "string" && !!value.trim() && value.length <= max; }
     function citation(value) { return object(value, ["page", "quote"]) && Number.isInteger(value.page) &&
       value.page > 0 && value.page <= 150 && text(value.quote, 360); }
     function identity(value) { return object(value, ["status", "catalog_value", "document_value", "citations"]) &&
-      ["match", "omitted"].indexOf(value.status) !== -1 && Array.isArray(value.citations) && value.citations.length <= 3 &&
+      (v2 ? ["match", "omitted", "unverified", "contradiction"] : ["match", "omitted"]).indexOf(value.status) !== -1 && Array.isArray(value.citations) && value.citations.length <= 3 &&
       (value.catalog_value === null || text(value.catalog_value, 500)) &&
       (value.status === "omitted" ? value.document_value === null && value.citations.length === 0 :
-        text(value.document_value, 500) && value.citations.length > 0 && value.citations.every(citation)); }
+        (value.status === "unverified" || text(value.catalog_value, 500)) && text(value.document_value, 500) && value.citations.length > 0 && value.citations.every(citation)); }
     function entry(value) { return object(value, ["kind", "number", "title", "summary", "effect", "citations"]) &&
       ["R", "AV"].indexOf(value.kind) !== -1 && Number.isInteger(value.number) && value.number > 0 && value.number <= 999999 &&
       text(value.title, 160) && text(value.summary, 1200) && ["active", "cancelled", "unclear"].indexOf(value.effect) !== -1 &&
       Array.isArray(value.citations) && value.citations.length > 0 && value.citations.length <= 4 && value.citations.every(citation); }
     return object(a, ["contract", "document_type", "identity", "entries", "summary", "warnings", "confidence", "disclaimer", "_meta"]) &&
-      a.contract === "brazil_matricula_v1" && a.document_type === "matricula" &&
+      (v2 || a.contract === "brazil_matricula_v1") && a.document_type === "matricula" &&
       object(a.identity, ["matricula", "address"]) && identity(a.identity.matricula) && identity(a.identity.address) &&
-      [a.identity.matricula, a.identity.address].some(function (value) { return value.status === "match"; }) &&
+      [a.identity.matricula, a.identity.address].some(function (value) { return v2 ? value.document_value : value.status === "match"; }) &&
       Array.isArray(a.entries) && a.entries.length <= 80 && a.entries.every(entry) && text(a.summary, 3000) &&
       Array.isArray(a.warnings) && a.warnings.length > 0 && a.warnings.length <= 20 && a.warnings.every(function (x) { return text(x, 1200); }) &&
       ["high", "medium", "low"].indexOf(a.confidence) !== -1 && a.disclaimer === MATRICULA_WARNING &&
@@ -266,7 +267,8 @@
 
   function renderUploadResult(a, hit) {
     var identityLabels = { matricula: "az.upload.identity.matricula", address: "az.upload.identity.address",
-      match: "az.upload.identity.match", omitted: "az.upload.identity.omitted" };
+      match: "az.upload.identity.match", omitted: "az.upload.identity.omitted",
+      unverified: "az.upload.identity.unverified", contradiction: "az.upload.identity.contradiction" };
     var effects = { active: "az.upload.effect.active", cancelled: "az.upload.effect.cancelled", unclear: "az.upload.effect.unclear" };
     var confidences = { high: "az.upload.confidence.high", medium: "az.upload.confidence.medium", low: "az.upload.confidence.low" };
     function citations(values) { return '<ol class="azlist">' + values.map(function (citation) {
@@ -274,11 +276,16 @@
         '</span><blockquote class="foot">' + esc(citation.quote) + '</blockquote></li>'; }).join("") + '</ol>'; }
     function identity(name, value) { return '<div class="fact"><span class="k">' + esc(t(identityLabels[name])) +
       '</span><span class="v">' + esc(t(identityLabels[value.status])) + '</span></div>' +
-      (value.status === "match" ? '<p class="foot">' + esc(value.document_value) + '</p>' + citations(value.citations) : ''); }
+      (value.document_value ? '<p class="foot">' + esc(t("az.upload.identity.catalog")) + ': ' +
+        esc(value.catalog_value || t("az.upload.identity.no_catalog")) + '<br>' +
+        esc(t("az.upload.identity.document")) + ': ' + esc(value.document_value) + '</p>' + citations(value.citations) : ''); }
     var entries = a.entries.map(function (entry) { return '<li><p><b>' + esc(entry.kind + '-' + entry.number + ' · ' + entry.title) +
       '</b></p><p>' + esc(entry.summary) + '</p><p class="foot">' + esc(t(effects[entry.effect])) +
       '</p>' + citations(entry.citations) + '</li>'; }).join("");
-    return '<p class="say">' + esc(a.summary) + '</p><div class="facts">' + identity("matricula", a.identity.matricula) +
+    var uncertain = a.contract === "brazil_matricula_v2" && Object.keys(a.identity).some(function (key) { return a.identity[key].status !== "match"; });
+    return (uncertain ? '<aside class="note" data-identity-warning><strong>' + esc(t("az.upload.identity.attention")) +
+      '</strong><p>' + esc(t("az.upload.identity.scope")) + '</p></aside>' : '') +
+      '<p class="say">' + esc(a.summary) + '</p><div class="facts">' + identity("matricula", a.identity.matricula) +
       identity("address", a.identity.address) + '<div class="fact"><span class="k">' + esc(t("az.conf")) +
       '</span><span class="v">' + esc(t(confidences[a.confidence])) + '</span></div></div>' +
       (entries ? '<section class="azcitations"><h3>' + esc(t("az.upload.entries")) + '</h3><ol class="azlist">' + entries + '</ol></section>' : '') +

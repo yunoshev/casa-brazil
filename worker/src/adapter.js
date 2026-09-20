@@ -154,14 +154,14 @@ function citation(value) {
   return { page: value.page, quote: reportText(value.quote, 360) };
 }
 
-function identity(value) {
+function identity(value, v2 = false) {
   if (!exact(value, ["status", "catalog_value", "document_value", "citations"]) ||
-      !["match", "contradiction", "omitted"].includes(value.status) || !Array.isArray(value.citations) ||
+      !(v2 ? ["match", "contradiction", "omitted", "unverified"] : ["match", "contradiction", "omitted"]).includes(value.status) || !Array.isArray(value.citations) ||
       value.citations.length > 3 || (value.catalog_value !== null && typeof value.catalog_value !== "string") ||
       (value.document_value !== null && typeof value.document_value !== "string")) fail(502, "invalid_response");
   const citations = value.citations.map(citation);
   if (value.status === "omitted" ? value.document_value !== null || citations.length !== 0 :
-      !value.catalog_value?.trim?.() || !value.document_value?.trim?.() || citations.length === 0) fail(502, "invalid_response");
+      (value.status !== "unverified" && !value.catalog_value?.trim?.()) || !value.document_value?.trim?.() || citations.length === 0) fail(502, "invalid_response");
   return { status: value.status,
     catalog_value: value.catalog_value === null ? null : text(value.catalog_value, 500),
     document_value: value.document_value === null ? null : text(value.document_value, 500), citations };
@@ -178,20 +178,23 @@ function registryEntry(value) {
 
 function publicMatricula(body) {
   if (!exact(body, ["contract", "document_type", "identity", "entries", "summary", "warnings", "confidence", "disclaimer", "_meta"]) ||
-      body.contract !== "brazil_matricula_v1" || !["matricula", "not_matricula", "unclear"].includes(body.document_type) ||
+      !["brazil_matricula_v1", "brazil_matricula_v2"].includes(body.contract) || !["matricula", "not_matricula", "unclear"].includes(body.document_type) ||
       !exact(body.identity, ["matricula", "address"]) || !Array.isArray(body.entries) || body.entries.length > 80 ||
       !Array.isArray(body.warnings) || body.warnings.length < 1 || body.warnings.length > 20 ||
       !["high", "medium", "low"].includes(body.confidence) ||
       body.disclaimer !== MATRICULA_WARNING) fail(502, "invalid_response");
-  const identities = { matricula: identity(body.identity.matricula), address: identity(body.identity.address) };
-  // A provider-produced contradiction or non-registry document is a terminal
-  // mismatch, never a successful public result even if core regresses.
-  if (body.document_type !== "matricula" || Object.values(identities).some(item => item.status === "contradiction") ||
-      !Object.values(identities).some(item => item.status === "match")) fail(422, "document_mismatch");
+  const v2 = body.contract === "brazil_matricula_v2";
+  const identities = { matricula: identity(body.identity.matricula, v2), address: identity(body.identity.address, v2) };
+  // V1 remains a verified-match contract. V2 is a source-bound document
+  // reading whose server-computed differences MUST survive to the UI.
+  if (body.document_type !== "matricula" || (v2 ?
+      !Object.values(identities).some(item => item.document_value) :
+      Object.values(identities).some(item => item.status === "contradiction") ||
+      !Object.values(identities).some(item => item.status === "match"))) fail(422, "document_mismatch");
   if (!exact(body._meta, ["cached", "analyzed_at"]) ||
       typeof body._meta.cached !== "boolean") fail(502, "invalid_response");
   const analyzed = reportTime(body._meta.analyzed_at);
-  return { contract: "brazil_matricula_v1", document_type: "matricula", identity: identities,
+  return { contract: body.contract, document_type: "matricula", identity: identities,
     entries: body.entries.map(registryEntry), summary: reportText(body.summary, 3000),
     warnings: body.warnings.map(value => reportText(value, 1200)), confidence: body.confidence,
     disclaimer: MATRICULA_WARNING, _meta: { cached: body._meta.cached, analyzed_at: analyzed } };
