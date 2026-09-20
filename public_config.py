@@ -19,6 +19,13 @@ from seo import validate_site_url
 DEFAULT_API = "https://preco-real-analyze.preco-real.workers.dev"
 
 
+def stylesheet_href() -> str:
+    """Keep pending indicators in sync with the published controller."""
+    path = Path(__file__).parent / "site" / "v2" / "style.css"
+    digest = hashlib.sha256(path.read_bytes()).hexdigest()[:12]
+    return f"/v2/style.css?v={digest}"
+
+
 def app_script_src() -> str:
     """Invalidate cached UI behavior whenever its published content changes."""
     path = Path(__file__).parent / "site" / "v2" / "app.js"

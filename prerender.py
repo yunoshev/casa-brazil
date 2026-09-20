@@ -38,7 +38,7 @@ from typing import Any, cast
 from urllib.parse import urlsplit
 
 import websockets
-from public_config import analysis_script_src, app_script_src, privacy_page, snippet
+from public_config import analysis_script_src, app_script_src, privacy_page, snippet, stylesheet_href
 from release_check import validate_release_site_url
 from release_promotion import observed_partial_without_global_freshness
 from seo import (
@@ -317,6 +317,7 @@ def shell(
         .replace("__HOME_GEO__", '<script src="/parts/geo.js" defer></script>' if home else "")
         .replace('src="/parts/analyze.js"', f'src="{analysis_script_src()}"')
         .replace('src="/v2/app.js"', f'src="{app_script_src()}"')
+        .replace('href="/v2/style.css"', f'href="{stylesheet_href()}"')
     )
 
 

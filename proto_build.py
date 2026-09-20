@@ -41,7 +41,7 @@ import build as classic
 import shapes
 from market_release import compact_json as market_compact_json
 from market_release import lifecycle_binding, public_artifact
-from public_config import analysis_script_src, app_script_src, snippet
+from public_config import analysis_script_src, app_script_src, snippet, stylesheet_href
 from release_check import validate_release_site_url
 from release_promotion import (
     MANIFEST_NAME,
@@ -1089,6 +1089,7 @@ def main() -> None:
         .replace("__DESC__", ref["meta.desc"])
         .replace('src="/parts/analyze.js"', f'src="{analysis_script_src()}"')
         .replace('src="/v2/app.js"', f'src="{app_script_src()}"')
+        .replace('href="/v2/style.css"', f'href="{stylesheet_href()}"')
     )
     (SITE / "index.html").write_text(out)
     if strict_release:

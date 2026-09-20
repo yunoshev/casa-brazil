@@ -53,6 +53,9 @@ class AssetVersioningTests(unittest.TestCase):
         expected = f'src="/parts/analyze.js?v={digest}"'
         self.assertEqual(html.count(expected), 1)
         self.assertNotIn('src="/parts/analyze.js"', html)
+        css_digest = hashlib.sha256((ROOT / "site/v2/style.css").read_bytes()).hexdigest()[:12]
+        self.assertIn(f'href="/v2/style.css?v={css_digest}"', html)
+        self.assertNotIn('href="/v2/style.css"', html)
         app_digest = hashlib.sha256((ROOT / "site/v2/app.js").read_bytes()).hexdigest()[:12]
         if 'src="/v2/app.js"' in template:
             self.assertEqual(html.count(f'src="/v2/app.js?v={app_digest}"'), 1)
