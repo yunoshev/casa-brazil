@@ -47,6 +47,12 @@ def copy_script_src() -> str:
     return f"/parts/copy-analysis.js?v={digest}"
 
 
+def analytics_script_src() -> str:
+    path = Path(__file__).parent / "site" / "parts" / "analytics.js"
+    digest = hashlib.sha256(path.read_bytes()).hexdigest()[:12]
+    return f"/parts/analytics.js?v={digest}"
+
+
 def settings(site: str, env=None) -> dict:
     env = os.environ if env is None else env
     site = validate_site_url(site)
@@ -112,7 +118,7 @@ def snippet(site: str, env=None) -> str:
         + ";window.__MAPS__="
         + blob(cfg["maps"])
         + ";</script>\n"
-        + ('<script src="/parts/analytics.js" defer></script>\n' if cfg["analytics"] else "")
+        + (f'<script src="{analytics_script_src()}" defer></script>\n' if cfg["analytics"] else "")
     )
 
 
@@ -155,6 +161,14 @@ são uma análise específica do imóvel. O resultado não substitui diligência
 <p>Ausência de relatório não significa ausência de riscos. Esta versão não
 coleta nomes ou emails, não oferece lista de espera por email e não promete
 análise ou envio posterior automático.</p>
+<h2>Interesse em resposta por email</h2>
+<p>Depois de uma falha, podemos mostrar uma opção de resposta por email.
+O navegador verifica o formato do email, mas nosso código não lê, envia ou armazena
+o endereço. O campo é removido ao confirmar e informamos que o envio ainda não
+está disponível. Não há inscrição nem envio de email.
+Com consentimento para estatísticas, registramos apenas o evento
+<code>analysis_email_interest_submitted</code>, sem o endereço ou seu hash.
+Esse evento mede uma confirmação de interesse, não um email recebido ou verificado.</p>
 <h2>Limites e armazenamento no navegador</h2>
 <p>Pedidos de análise, quando habilitados, usam um identificador aleatório do
 navegador e chaves de repetição; eles não comprovam a identidade de uma pessoa.

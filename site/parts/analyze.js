@@ -30,6 +30,8 @@
   var t = L.t || function (k) { return k; };
   var lang = /^(pt|en|ru)$/.test(L.code) ? L.code : "pt";
   var PREFIX = "brazil-analysis-v1-";
+  // Only acknowledgement flags, scoped to this page session. No input values.
+  var emailInterestSeen = Object.create(null);
   var UUID = /^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/i;
   var TICKET = /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}\.[0-9]{10,11}\.[a-f0-9]{64}$/;
   var UPLOAD_CONSENT = "brazil-matricula-paid-ai-v1";
@@ -505,6 +507,7 @@
       '<p class="az-progress-note">' + esc(t("az.progress.hint")) + '</p>';
     (hero && hero.parentElement ? hero.parentElement : box).appendChild(progress);
     var heroMsg = null;
+    var interest = null;
     if (hero && hero.parentElement) {
       heroMsg = document.createElement("p");
       heroMsg.setAttribute("class", "azhero-msg");
@@ -552,6 +555,7 @@
       progress.querySelector(".az-progress-note").textContent = t("az.progress.saved");
     }
     function mode(value) {
+      if (interest && (value === "submitting" || value === "result")) interest.hidden = true;
       box.setAttribute("data-az-state", value);
       if (hero) hero.setAttribute("data-az-state", value);
       if (heroMsg) {
@@ -580,6 +584,33 @@
       btn.disabled = terminal;
       btn.setAttribute("data-az-terminal", terminal ? reason : "");
       btn.textContent = terminal ? t("az.unavailable") : t("az.retry");
+      if (["analysis_validation_failed", "document_mismatch", "document_not_available", "source_unavailable", "source_blocked", "upstream", "timeout", "network", "analysis_unavailable", "invalid_response"].indexOf(reason) !== -1) showInterest();
+    }
+
+    function showInterest() {
+      if (interest) { interest.hidden = false; return; }
+      interest = document.createElement("section");
+      interest.setAttribute("class", "az-interest");
+      if (emailInterestSeen[id]) {
+        interest.innerHTML = '<p role="status">' + esc(t("az.interest.saved")) + '</p>';
+      } else {
+        interest.innerHTML = '<h3>' + esc(t("az.interest.title")) + '</h3>' +
+          '<form class="az-interest-form" autocomplete="off">' +
+          '<label for="az-interest-email-' + id + '">' + esc(t("az.interest.email")) + '</label>' +
+          '<div class="az-interest-controls"><input id="az-interest-email-' + id + '" type="email" inputmode="email" required maxlength="254" autocomplete="off" spellcheck="false">' +
+          '<button type="submit" class="cta">' + esc(t("az.interest.submit")) + '</button></div></form>';
+        var interestForm = interest.querySelector("form");
+        interestForm.addEventListener("submit", function (ev) {
+          ev.preventDefault();
+          // Native validity only: never read .value, serialize FormData, hash,
+          // POST, or save the address. Input deliberately has no name.
+          if (emailInterestSeen[id] || !interestForm.checkValidity()) return;
+          emailInterestSeen[id] = true;
+          interest.innerHTML = '<p role="status">' + esc(t("az.interest.saved")) + '</p>';
+          track("analysis_email_interest_submitted", {});
+        });
+      }
+      (hero && hero.parentElement ? hero.parentElement : box).appendChild(interest);
     }
 
     form.addEventListener("submit", async function (ev) {

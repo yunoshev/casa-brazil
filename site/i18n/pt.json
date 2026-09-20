@@ -1,4 +1,8 @@
 {
+ "az.interest.title": "Receber a análise por email",
+ "az.interest.email": "Seu email",
+ "az.interest.submit": "Receber análise",
+ "az.interest.saved": "O envio por email ainda não está disponível. Seu endereço não foi enviado nem salvo. Você pode tentar consultar a análise nesta página mais tarde.",
  "az.step.document": "1. Obter PDF",
  "az.step.analyzing": "2. Ler com IA",
  "az.step.result": "3. Mostrar análise",
@@ -315,7 +319,7 @@
  "cost.per": "por mês",
  "foot.note": "Data dos dados de origem: {date}. Dados: ITBI, Caixa e portais de anúncios. Isto não é recomendação de investimento nem laudo de avaliação — antes do leilão, leia o edital e a matrícula.",
  "foot.note.unknown": "A data de atualização dos dados de origem é desconhecida. Dados: ITBI, Caixa e portais de anúncios. Isto não é recomendação de investimento nem laudo de avaliação — antes do leilão, leia o edital e a matrícula.",
- "foot.privacy": "Guardamos preferências, sua escolha de análise de uso e IDs aleatórios para a cota aproximada por navegador e repetição de pedidos. O serviço protege contra abuso com dados derivados do IP e envia o PDF público à IA do Google. Email é opcional, usado só para responder ao pedido, sem marketing, por até 30 dias. Google Analytics só é carregado após aceitar. A seleção aproximada de cidade não pede GPS, não envia nem salva coordenadas, e não é guardada como escolha manual; a infraestrutura de rede pode tratar IP nos seus próprios registros.",
+ "foot.privacy": "Guardamos preferências, sua escolha de análise de uso e IDs aleatórios para a cota aproximada por navegador e repetição de pedidos. O serviço protege contra abuso com dados derivados do IP e envia o PDF público à IA do Google. O teste de interesse não lê, envia ou salva emails; apenas uma confirmação sem o endereço pode ser contada com consentimento para estatísticas. Google Analytics só é carregado após aceitar. A seleção aproximada de cidade não pede GPS, não envia nem salva coordenadas, e não é guardada como escolha manual; a infraestrutura de rede pode tratar IP nos seus próprios registros.",
  "geo.approx": "Cidade aproximada pela rede/IP; não pedimos GPS nem enviamos coordenadas.",
  "head.all.desc": "{lots}, ordenados pela margem até o preço real de arremate — e não pelo desconto que a plataforma anuncia sobre a avaliação do banco.",
  "head.all.title": "Todos os lotes em leilão, {city} — por margem real",

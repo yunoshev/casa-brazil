@@ -27,6 +27,7 @@
     city_switch: ["city_code"], lang_switch: ["lang"], analysis_cta_view: [],
     analyze_edital: ["stage", "cached", "reason"],
     lot_report_displayed: ["source_scope"],
+    analysis_email_interest_submitted: [],
     analysis_budget_exhausted: [], analysis_free_limit_reached: [], analysis_capacity_exhausted: [],
   };
 

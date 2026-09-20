@@ -198,15 +198,19 @@ test('new Caixa source changes request key but preserves visitor and readonly co
   assert.deepEqual(cfg, { enabled: true, apiBase: 'https://preco-real-analyze.preco-real.workers.dev' });
 });
 
-for (const status of [200, 201, 202, 400, 429, 503]) test('legacy ACK/ticket can never enable email or generate a lead: ' + status, async () => {
+for (const status of [200, 201, 202, 400, 429, 503]) test('legacy ACK/ticket can never enable an email POST or generate a lead: ' + status, async () => {
   const s = setup({ analysisConfig: { enabled: true, privacyUrl: '/privacidade/', privacyContact: 'fixture',
       waitlistEnabled: true },
     fetch: () => response(status, { error: 'budget_exhausted', saved: true, status: 'queued',
       fulfillment: 'deferred', waitlist_available: true, waitlist_token: 'private-ticket' }) });
   s.load('analyze'); await s.analyze(); await s.analyze();
   assert.equal(s.document.querySelector('.azqueue'), null);
-  assert.equal(s.document.querySelectorAll('form').length, 1);
-  assert.equal(s.document.querySelectorAll('input').length, 0);
+  assert.equal(s.document.querySelectorAll('.azform').length, 1);
+  const interest = s.document.querySelector('.az-interest-form');
+  if (interest) {
+    await interest.emit('submit');
+    assert.equal(s.document.querySelectorAll('input').length, 0);
+  }
   assert.equal(s.requests.length, 2);
   assert.ok(s.requests.every(r => r.url.endsWith('/analyze/lots/034aa2e652ab4905/one-click')));
   assert.equal(count(s, 'generate_lead'), 0);

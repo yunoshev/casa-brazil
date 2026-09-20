@@ -1,4 +1,8 @@
 {
+ "az.interest.title": "Receive the analysis by email",
+ "az.interest.email": "Your email",
+ "az.interest.submit": "Receive analysis",
+ "az.interest.saved": "Email delivery is not available yet. Your address was not sent or saved. You can try checking the analysis on this page later.",
  "az.step.document": "1. Get PDF",
  "az.step.analyzing": "2. Read with AI",
  "az.step.result": "3. Show analysis",
@@ -315,7 +319,7 @@
  "cost.per": "per month",
  "foot.note": "Source-data date: {date}. Data: ITBI, Caixa and listing portals. This is not investment advice and not a valuation for a transaction — read the edital and the matrícula before the auction.",
  "foot.note.unknown": "Source-data freshness is unknown. Data: ITBI, Caixa and listing portals. This is not investment advice and not a valuation for a transaction — read the edital and the matrícula before the auction.",
- "foot.privacy": "We store preferences, your analytics choice and random IDs for the approximate browser allowance and request retries. The service uses IP-derived data to prevent abuse and sends the public PDF to Google's AI. Email is optional, used only to answer the request, without marketing, for up to 30 days. Google Analytics loads only after acceptance. Approximate city selection does not ask for GPS, send or store coordinates, and is not saved as a manual choice; network infrastructure may process IP addresses in its own logs.",
+ "foot.privacy": "We store preferences, your analytics choice and random IDs for the approximate browser allowance and request retries. The service uses IP-derived data to prevent abuse and sends the public PDF to Google's AI. The interest test does not read, send or save email addresses; only a confirmation without the address may be counted with analytics consent. Google Analytics loads only after acceptance. Approximate city selection does not ask for GPS, send or store coordinates, and is not saved as a manual choice; network infrastructure may process IP addresses in its own logs.",
  "geo.approx": "City approximated from the network/IP; we do not ask for GPS or send coordinates.",
  "head.all.desc": "{lots}, ranked by the margin to the real hammer price rather than by the discount a platform advertises off the bank's appraisal.",
  "head.all.title": "Every lot at auction, {city} — by real margin",
