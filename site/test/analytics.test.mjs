@@ -93,7 +93,7 @@ test('typed backend errors determine stages; status alone never invents a reason
     [403, 'free_limit_reached', 'free_limit_reached', 'az.allowance'],
     [503, 'capacity_exhausted', 'unavailable', 'az.capacity'],
     [503, 'analysis_unavailable', 'unavailable', 'az.err.unavailable'],
-    [502, 'source_unavailable', 'unavailable', 'az.err.source'],
+    [502, 'source_unavailable', 'unavailable', 'az.err.download'],
     [403, 'source_blocked', 'unavailable', 'az.err.source'],
     [409, 'idempotency_conflict', 'error', 'az.err.conflict'],
     [429, 'rate_limited', 'rate_limited', 'az.err.limit'],
@@ -119,8 +119,8 @@ test('polling is bounded and manual retry keeps the ticket at the fixed Worker',
   }
   await task;
   assert.equal(s.requests.length, 60);
-  assert.deepEqual(stages(s), ['start', 'pending']);
-  assert.equal(s.box.getAttribute('data-az-state'), 'pending');
+  assert.deepEqual(stages(s), ['start', 'pending', 'error']);
+  assert.equal(s.box.getAttribute('data-az-state'), 'error');
   assert.equal(s.box.querySelector('button').disabled, false);
   assert.equal(s.timers.size, 0);
   const retry = s.analyze();

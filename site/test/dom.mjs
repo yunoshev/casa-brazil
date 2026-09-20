@@ -16,6 +16,7 @@ class Element {
     };
   }
   setAttribute(k, v) { this.attrs[k] = String(v); }
+  get parentElement() { return this.parent || null; }
   getAttribute(k) { return this.attrs[k] ?? null; }
   hasAttribute(k) { return k in this.attrs; }
   appendChild(el) { this.children.push(el); el.parent = this; return el; }

@@ -841,6 +841,9 @@ svg.map .lbl{fill:var(--ink); stroke:var(--card)}
   .azlist li{font-size:15.5px}
 }
 /* A pending analysis keeps the visible CTA busy until the result is ready. */
+.azhero-msg{flex:0 0 100%; margin:4px 0 0; padding:14px 16px; border:1px solid var(--line); border-radius:12px; color:var(--ink); font:500 16px/1.5 var(--body)}
+.azhero-msg[hidden]{display:none}
+.azhero-msg[data-az-state="unavailable"],.azhero-msg[data-az-state="error"]{border-left:4px solid var(--ink)}
 [aria-busy="true"].analysis-cta::before,
 .azbox[data-az-state="submitting"] .azmsg::before,
 .azbox[data-az-state="pending"] .azmsg::before,

@@ -164,12 +164,14 @@
     if (code === "bad_domain") return t("az.err.domain");
     if (code === "rate_limited") return t("az.err.limit");
     if (code === "analysis_unavailable") return t("az.err.unavailable");
-    if (code === "source_unavailable" || code === "source_blocked" || code === "source_cooldown") return t("az.err.source");
+    if (code === "source_unavailable" || code === "source_cooldown") return t("az.err.download");
+    if (code === "source_blocked") return t("az.err.source");
     if (code === "budget_exhausted") return t("az.budget");
     if (code === "free_limit_reached") return t("az.allowance");
     if (code === "capacity_exhausted") return t("az.capacity");
     if (code === "idempotency_conflict") return t("az.err.conflict");
-    if (code === "source_mismatch" || code === "source_not_allowed" || code === "document_not_available") return t("az.err.source");
+    if (code === "document_not_available") return t("az.err.missing_document");
+    if (code === "source_mismatch" || code === "source_not_allowed") return t("az.err.source");
     return t("az.err.fail");
   }
 
@@ -490,11 +492,29 @@
     var msg = box.querySelector(".azmsg");
     var out = box.querySelector(".azout");
     var busy = false, terminal = false, state = null, completedHTML = null;
+    var heroMsg = null;
+    if (hero && hero.parentElement) {
+      heroMsg = document.createElement("p");
+      heroMsg.setAttribute("class", "azhero-msg");
+      heroMsg.setAttribute("id", "az-hero-status-" + id);
+      heroMsg.setAttribute("role", "status");
+      heroMsg.setAttribute("aria-live", "polite");
+      heroMsg.hidden = true;
+      hero.parentElement.appendChild(heroMsg);
+      hero.setAttribute("aria-describedby", heroMsg.getAttribute("id"));
+    }
 
-    function say(s) { msg.hidden = false; msg.textContent = s; }
+    function say(s) {
+      msg.hidden = false; msg.textContent = s;
+      if (heroMsg) { heroMsg.hidden = false; heroMsg.textContent = s; }
+    }
     function mode(value) {
       box.setAttribute("data-az-state", value);
       if (hero) hero.setAttribute("data-az-state", value);
+      if (heroMsg) {
+        heroMsg.setAttribute("data-az-state", value);
+        if (value === "result") heroMsg.hidden = true;
+      }
     }
     function lock(value) {
       busy = value;
@@ -512,7 +532,7 @@
       terminal = ["source_blocked", "source_not_allowed", "source_mismatch", "document_not_available"].indexOf(reason) !== -1;
       btn.disabled = terminal;
       btn.setAttribute("data-az-terminal", terminal ? reason : "");
-      btn.textContent = terminal ? t("az.err.source") : t("az.retry");
+      btn.textContent = terminal ? t("az.unavailable") : t("az.retry");
     }
 
     form.addEventListener("submit", async function (ev) {
@@ -534,6 +554,7 @@
       } catch (e) {
         mode("error");
         say(t("az.err.storage"));
+        btn.textContent = t("az.retry");
         lock(false);
         return;
       }
@@ -567,7 +588,7 @@
             var delay = Number(body.retry_after_seconds);
             delay = Math.max(1, Math.min(15, isFinite(delay) ? delay : 5)) * 1000;
             if (Date.now() + delay >= deadline || box.isConnected === false) {
-              btn.textContent = t("az.retry");
+              if (box.isConnected !== false) failure("timeout");
               return;
             }
             await new Promise(function (resolve) { global.setTimeout(resolve, delay); });
@@ -634,7 +655,7 @@
           }
           return;
         }
-        btn.textContent = t("az.retry");
+        failure("timeout");
       } catch (e) {
         if (box.isConnected === false) return;
         failure(e.message === "timeout" ? "timeout" : "network");

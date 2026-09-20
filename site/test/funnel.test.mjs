@@ -79,6 +79,10 @@ test('hero locks duplicate clicks while busy and exposes unavailable/retry state
   assert.equal(hero.disabled, true);
   assert.equal(hero.getAttribute('aria-busy'), 'true');
   assert.equal(hero.getAttribute('data-az-state'), 'submitting');
+  const nearbyStatus = s.document.getElementById(hero.getAttribute('aria-describedby'));
+  assert.equal(nearbyStatus.parentElement, hero.parentElement);
+  assert.equal(nearbyStatus.hidden, false);
+  assert.equal(nearbyStatus.textContent, s.translate('az.wait'));
   await hero.click(); await s.analyze();
   assert.equal(s.requests.length, 1);
   gate.resolve(response(503, { error: 'analysis_unavailable' })); await task;
@@ -86,9 +90,20 @@ test('hero locks duplicate clicks while busy and exposes unavailable/retry state
   assert.equal(hero.getAttribute('aria-busy'), 'false');
   assert.equal(hero.getAttribute('data-az-state'), 'unavailable');
   assert.equal(hero.textContent, s.translate('az.retry'));
+  assert.equal(nearbyStatus.hidden, false);
+  assert.equal(nearbyStatus.textContent, s.box.querySelector('.azmsg').textContent);
   await hero.click();
   assert.equal(s.requests.length, 2);
   assert.deepEqual(s.requests[0].json, s.requests[1].json);
+});
+
+test('download failure is explained next to the hero without claiming a source block', async () => {
+  const s = setup({fetch: () => response(503, {error: 'source_unavailable'})});
+  const hero = addHero(s); s.load('analyze'); await hero.click();
+  const status = s.document.getElementById(hero.getAttribute('aria-describedby'));
+  assert.equal(status.hidden, false);
+  assert.equal(status.textContent, s.translate('az.err.download'));
+  assert.match(status.textContent, /PDF/);
 });
 
 test('pending hero stays locked beyond four polls without another POST', async () => {
