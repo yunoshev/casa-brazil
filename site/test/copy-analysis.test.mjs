@@ -120,6 +120,19 @@ test('rerender wiring does not duplicate the copy control or its listener', asyn
   await s.box.querySelector('[data-copy-go]').click(); await until(() => writes.length === 1);
 });
 
+test('unavailable historical report cannot remove a live result copy control for the same lot', async () => {
+  const {s} = await resultFixture();
+  const report = s.document.createElement('section');
+  report.setAttribute('data-lot-report', id);
+  report.setAttribute('data-report-state', 'unavailable');
+  s.document.body.appendChild(report);
+  const original = s.box.querySelector('[data-copy-analysis]');
+  for (let i = 0; i < 5; i++) {
+    s.window.COPY_ANALYSIS.wire();
+    assert.ok(s.box.querySelector('[data-copy-analysis]') === original);
+  }
+});
+
 test('queued, unavailable and absent reports never expose a copy button', () => {
   const s = setup({ url: canonical, analysisConfig: { apiBase: base, enabled: true, reportsEnabled: false } });
   canonicalLink(s); s.load('copy-analysis');

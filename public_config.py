@@ -40,6 +40,13 @@ def analysis_script_src() -> str:
     return f"/parts/analyze.js?v={digest}"
 
 
+def copy_script_src() -> str:
+    """Invalidate clipboard behavior independently of the analysis controller."""
+    path = Path(__file__).parent / "site" / "parts" / "copy-analysis.js"
+    digest = hashlib.sha256(path.read_bytes()).hexdigest()[:12]
+    return f"/parts/copy-analysis.js?v={digest}"
+
+
 def settings(site: str, env=None) -> dict:
     env = os.environ if env is None else env
     site = validate_site_url(site)

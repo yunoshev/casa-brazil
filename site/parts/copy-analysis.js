@@ -41,7 +41,13 @@
   }
 
   function owner(root) {
-    return root.getAttribute("data-az") || root.getAttribute("data-lot-report") || "";
+    // Live analysis and historical report can share a lot, but not controls.
+    // Otherwise the unavailable report removes the live control on every
+    // observer pass, causing an endless append/remove microtask loop.
+    var analysis = root.getAttribute("data-az");
+    if (analysis) return "analysis:" + analysis;
+    var report = root.getAttribute("data-lot-report");
+    return report ? "report:" + report : "";
   }
 
   function parentOf(node) {
