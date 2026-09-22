@@ -23,7 +23,9 @@
     "upstream", "invalid_response", "network", "timeout", "unknown", "bad_request",
     "idempotency_conflict", "budget_exhausted", "free_limit_reached", "capacity_exhausted", "source_unavailable", "source_blocked"];
   var EVENTS = {
-    page_view: [], lot_view: [], lot_outbound: ["source", "page"],
+    // `source` is reserved by GA4 for acquisition attribution.  Keep the
+    // catalogue/provider dimension under an unambiguous custom event name.
+    page_view: [], lot_view: ["lot_source"], lot_outbound: ["lot_source", "page"],
     city_switch: ["city_code"], lang_switch: ["lang"], analysis_cta_view: [],
     analyze_edital: ["stage", "cached", "reason"],
     lot_report_displayed: ["source_scope"],
@@ -84,11 +86,15 @@
       var ctx = context(), p = params || {}, safe = { page_type: ctx.page_type, lang: ctx.lang };
       if (ctx.city_code) safe.city_code = ctx.city_code;
       var source = document.querySelector("[data-out]");
-      if (ctx.page_type === "lot" && source && includes(SOURCES, source.getAttribute("data-out"))) safe.source = source.getAttribute("data-out");
-      var allowed = EVENTS[name].concat(["source", "city_code", "lang"]);
+      var allowed = EVENTS[name].concat(["city_code", "lang"]);
+      // A page_view must never carry a catalogue/provider dimension.  It
+      // would both pollute landing-page data and risk GA4 acquisition fields.
+      if (includes(EVENTS[name], "lot_source") && ctx.page_type === "lot" && source && includes(SOURCES, source.getAttribute("data-out"))) {
+        safe.lot_source = source.getAttribute("data-out");
+      }
       allowed.forEach(function (key) {
         var value = p[key];
-        if (key === "source" && includes(SOURCES, value)) safe.source = value;
+        if (key === "lot_source" && includes(SOURCES, value)) safe.lot_source = value;
         if (key === "city_code" && includes(CITIES, value)) safe.city_code = value;
         if (key === "lang" && includes(["pt", "en", "ru"], value)) safe.lang = value;
         if (key === "stage" && includes(["start", "pending", "ok", "error", "rate_limited", "free_limit_reached", "budget_exhausted", "unavailable"], value)) safe.stage = value;
@@ -199,12 +205,12 @@
     if (!pageSeen) pageSeen = track("page_view");
     var scope = root || document;
     var lot = scope.querySelector("[data-out], [data-az]");
-    if (!lotSeen && lot && context().page_type === "lot") lotSeen = track("lot_view", { source: lot.getAttribute("data-out") || "caixa" });
+    if (!lotSeen && lot && context().page_type === "lot") lotSeen = track("lot_view", { lot_source: lot.getAttribute("data-out") || "caixa" });
     if (ctaSeen || !global.IntersectionObserver) return;
     if (!observer) observer = new global.IntersectionObserver(function (entries) {
       entries.forEach(function (entry) {
         if (!ctaSeen && entry.isIntersecting && entry.intersectionRatio > 0) {
-          ctaSeen = track("analysis_cta_view", { source: "caixa" });
+          ctaSeen = track("analysis_cta_view");
           if (ctaSeen) observer.disconnect();
         }
       });
@@ -218,7 +224,7 @@
   document.addEventListener("click", function (e) {
     var el = e.target.closest && e.target.closest("[data-out], [data-city], [data-lang]");
     if (!el) return;
-    if (el.hasAttribute("data-out")) track("lot_outbound", { source: el.getAttribute("data-out"), page: true });
+    if (el.hasAttribute("data-out")) track("lot_outbound", { lot_source: el.getAttribute("data-out"), page: true });
     else if (el.hasAttribute("data-city")) track("city_switch", { city_code: el.getAttribute("data-city") });
     else if (el.hasAttribute("data-lang")) track("lang_switch", { lang: el.getAttribute("data-lang") });
   });

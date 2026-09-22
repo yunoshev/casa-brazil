@@ -18,7 +18,8 @@ const city = {
   shapes: { nice: { COPACABANA: 'Copacabana', EMPTY: 'Empty' }, d: {}, at: {}, of: {} },
   rows: Array.from({ length: 405 }, (_, i) => row({
     id: String(i).padStart(16, '0'), tipo: 'apartamento', preco: 100000 + i,
-    bairro: i < 80 ? 'COPACABANA' : 'Unmapped', data: '2025-01-01',
+    bairro: i < 80 ? 'COPACABANA' : 'Unmapped', end: 'Rua de Teste, ' + i, area: 60, data: '2025-01-01',
+    link: 'https://source.example/lot/' + i,
   })),
 };
 const LANG = {
@@ -27,7 +28,7 @@ const LANG = {
   t: (key, vars = {}, fallback) => (cat[key] || fallback || `[${key}]`).replace(/\{(\w+)\}/g, (s, k) => vars?.[k] ?? s),
 };
 const window = { __D__: { cols, cities: [city], generated: null }, __SHIP_LANGS__: ['pt'] };
-const ctx = vm.createContext({ window, LANG });
+const ctx = vm.createContext({ window, LANG, URL });
 vm.runInContext(functions, ctx);
 ctx.indexCity(city);
 ctx.dateReference = '2026-09-15';
@@ -119,10 +120,91 @@ assert.match(ctx.screenArea('EMPTY'), /Não há estatísticas locais/);
 assert.doesNotMatch(ctx.screenArea('EMPTY'), /hoje|0 de 0|custaram de verdade/);
 assert.equal(ctx.headFor(base + 'copacabana/').noindex, undefined, 'lots retain useful neighbourhood page');
 city.market = { year: 2025, city: {}, d: { EMPTY: { f: [10000, 12] } } };
-assert.equal(ctx.headFor(base + 'empty/').noindex, false);
+assert.equal(ctx.headFor(base + 'empty/').noindex, undefined);
 assert.match(ctx.screenArea('EMPTY'), /estatísticas históricas/);
 city.market.year = null;
 assert.equal(ctx.headFor(base + 'empty/').noindex, true);
+
+// Indexability is deliberately based on publishable facts, not just a route.
+// A complete inherited row may remain searchable while availability is still
+// unverified, but a feed fragment without a source, address or price context
+// cannot become a search landing page.
+const strong = row({ id: 'strong', tipo: 'apartamento', bairro: 'COPACABANA', end: 'Rua Boa, 10',
+  area: 50, preco: 123000, data: '2026-09-10', link: 'https://source.example/lots/strong' });
+const weak = row({ id: 'weak', tipo: 'apartamento', bairro: 'COPACABANA', end: '',
+  area: 0, preco: 123000, link: null });
+const bare = row({ id: 'bare', tipo: 'apartamento', bairro: 'COPACABANA', end: 'Rua Sem Evidência, 9',
+  area: 50, preco: 123000, aval: 160000, link: 'https://source.example/lots/bare' });
+const reliable = row({ id: 'reliable', tipo: 'apartamento', bairro: 'COPACABANA', end: 'Rua Confiável, 8',
+  area: 50, preco: 123000, conf: 'ok', ring: 500, link: 'https://source.example/lots/reliable' });
+const reported = row({ id: 'reported', tipo: 'apartamento', bairro: 'COPACABANA', end: 'Rua com Relatório, 7',
+  area: 50, preco: 123000, link: 'https://source.example/lots/reported' });
+const documented = row({ id: 'documented', tipo: 'apartamento', bairro: 'COPACABANA', end: 'Rua Documentada, 6',
+  area: 50, preco: 123000, link: 'https://source.example/lots/documented' });
+const seededOnly = row({ id: 'seeded-only', tipo: 'apartamento', bairro: 'COPACABANA',
+  end: 'Rua Só Bootstrap, 5', area: 50, preco: 123000,
+  link: 'https://source.example/lots/seeded-only' });
+city.rows.push(strong, weak, bare, reliable, reported, documented, seededOnly);
+city.lifecycle = {
+  strong: { status: 'active', slug: 'strong', first_seen_at: '2026-09-12T10:00:00Z',
+    last_seen_at: '2026-09-13T10:00:00Z', last_checked_at: '2026-09-14T10:00:00Z',
+    missing_since: null, archived_at: null, history: [] },
+  weak: { status: 'unverified', slug: 'weak', first_seen_at: null, last_seen_at: null,
+    last_checked_at: null, missing_since: null, archived_at: null, history: [] },
+  bare: { status: 'unverified', slug: 'bare', first_seen_at: null, last_seen_at: null,
+    last_checked_at: null, missing_since: null, archived_at: null, history: [] },
+  reliable: { status: 'unverified', slug: 'reliable', first_seen_at: null, last_seen_at: null,
+    last_checked_at: null, missing_since: null, archived_at: null, history: [] },
+  reported: { status: 'unverified', slug: 'reported', first_seen_at: null, last_seen_at: null,
+    last_checked_at: null, missing_since: null, archived_at: null, history: [] },
+  documented: { status: 'unverified', slug: 'documented', first_seen_at: null, last_seen_at: null,
+    last_checked_at: null, missing_since: null, archived_at: null, history: [] },
+  'seeded-only': { status: 'archived', slug: 'seeded-only', first_seen_at: null, last_seen_at: null,
+    last_checked_at: '2026-09-14T10:00:00Z', missing_since: '2026-09-14T10:00:00Z',
+    archived_at: '2026-09-14T10:00:00Z',
+    history: [{ kind: 'seeded', observed_at: '2026-09-14T10:00:00Z', source_date: null, source_url: null }] },
+};
+window.__D__.market_reports = { reported: { schema: 'market-v1' } };
+window.__D__.saved_analyses = { documented: {} };
+city.streets = { year: 2026, by: { COPACABANA: ['seo'] }, d: {
+  seo: { name: 'Rua Boa', slug: 'rua-boa', bairro: 'COPACABANA', bairros: ['COPACABANA'], f: [10000, 12] },
+} };
+ctx.indexCity(city);
+const strongPath = ctx.href('/l/strong');
+const weakPath = ctx.href('/l/weak');
+const barePath = ctx.href('/l/bare');
+assert.equal(ctx.headFor(strongPath).noindex, undefined);
+assert.match(ctx.headFor(strongPath).desc, /Referência do lote: strong/);
+assert.equal(ctx.headFor(weakPath).noindex, true);
+assert.equal(ctx.headFor(barePath).noindex, true, 'area and appraisal alone are not independent evidence');
+assert.equal(ctx.headFor(ctx.href('/l/reliable')).noindex, undefined);
+assert.equal(ctx.headFor(ctx.href('/l/reported')).noindex, undefined);
+assert.equal(ctx.headFor(ctx.href('/l/documented')).noindex, undefined);
+assert.equal(ctx.headFor(ctx.href('/l/seeded-only')).noindex, true,
+  'a collector/bootstrap timestamp alone is not independent historical evidence');
+assert.match(ctx.headFor(strongPath).desc, /lance inicial por m²/);
+assert.match(ctx.headFor(strongPath).desc, /status da disponibilidade/);
+assert.match(ctx.screenStreet('seo'), /Inventário publicado/);
+assert.equal(ctx.headFor(ctx.href('/r/seo')).noindex, undefined);
+assert.equal(ctx.headFor(base + 'copacabana/').noindex, undefined);
+assert.equal(ctx.lotLastmod(strongPath), '2026-09-14');
+assert.equal(ctx.routeLastmod(ctx.href('/r/seo')), '2026-09-14');
+assert.equal(ctx.routeLastmod(base + 'copacabana/'), '2026-09-14');
+assert.equal(ctx.routeLastmod(base), '2026-09-14');
+
+assert.equal(ctx.citySeoEligible({ rows: [], market: { year: null, d: { X: { f: [9000, 12] } } },
+  streets: { d: {} } }), false, 'undated market payload cannot index a city');
+assert.equal(ctx.citySeoEligible({ rows: [], market: { year: 2099, d: { X: { f: [9000, 12] } } },
+  streets: { d: {} } }), false, 'future market payload cannot index a city');
+assert.equal(ctx.citySeoEligible({ rows: [], market: { year: 2025, d: { X: { f: [9000, 12] } } },
+  streets: { d: {} } }), true, 'valid dated market evidence can index a city');
+
+city.streets.d.catalogue = { name: 'Rua Catálogo', slug: 'rua-catalogo', bairro: 'COPACABANA',
+  bairros: ['COPACABANA'] };
+ctx.indexCity(city);
+const catalogueStreet = ctx.headFor(ctx.href('/r/catalogue'));
+assert.equal(catalogueStreet.noindex, true, 'a street without deed evidence remains out of the sitemap');
+assert.match(catalogueStreet.desc, /não afirma uma avaliação/);
 
 for (const path of ['/leilao-de-imoveis/', '/leilao-de-imoveis/rj/', base + 'rua/',
   base + 'lote/', base + 'missing/', base + 'todos-os-lotes/extra/',
@@ -134,8 +216,12 @@ for (const path of ['/leilao-de-imoveis/', '/leilao-de-imoveis/rj/', base + 'rua
 }
 assert.equal(ctx.headFor('/404').noindex, true);
 ctx.atCity = true;
-assert.deepEqual(Array.from(ctx.pageTrail(urls[0]), x => x.path), ['/', base, base + 'copacabana/', urls[0]]);
-assert.deepEqual(Array.from(ctx.pageTrail(urls[84]), x => x.path), ['/', base, urls[84]]);
+const firstTrail = Array.from(ctx.pageTrail(urls[0]), x => x.path);
+assert.deepEqual(firstTrail.slice(0, 3), ['/', base, base + 'copacabana/']);
+assert.equal(firstTrail.at(-1), urls[0]);
+const unmappedTrail = Array.from(ctx.pageTrail(urls[84]), x => x.path);
+assert.deepEqual(unmappedTrail.slice(0, 2), ['/', base]);
+assert.equal(unmappedTrail.at(-1), urls[84]);
 city.streets = { d: { '1': { name: 'Rua Real', slug: 'rua-real', bairro: 'COPACABANA' } } };
 ctx.indexCity(city);
 assert.deepEqual(Array.from(ctx.pageTrail(base + 'rua/rua-real/'), x => x.path),
@@ -160,7 +246,7 @@ for (const raw of exported.cities) {
     stats: { lots: raw.rows.length }, market: {}, streets: {} };
   const w = { __D__: { cols: exported.cols, cities: [c], generated: exported.generated ?? null },
     __SHIP_LANGS__: ['pt'] };
-  const live = vm.createContext({ window: w, LANG });
+  const live = vm.createContext({ window: w, LANG, URL });
   vm.runInContext(functions, live);
   live.indexCity(c);
   const { pages, urls: links } = crawlAll(live);

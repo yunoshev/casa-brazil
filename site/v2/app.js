@@ -137,6 +137,14 @@ function dateFact(key, value) {
   return fact(t(key), date || t("archive.date.unknown"));
 }
 function priceKnown(value) { return typeof value === "number" && isFinite(value) && value >= 0; }
+function positiveNumber(value) { return typeof value === "number" && isFinite(value) && value > 0; }
+function lotPricePerM2(r) {
+  return positiveNumber(r[C.preco]) && positiveNumber(r[C.area]) ? r[C.preco] / r[C.area] : null;
+}
+function lifecycleDate(r) {
+  var lc = lifecycle(r);
+  return archiveDate(lc.last_checked_at) || archiveDate(lc.last_seen_at) || null;
+}
 function lastAdvertisedPrice(r) {
   var value = lifecycle(r).last_price_brl;
   return priceKnown(value) ? value : priceKnown(r[C.preco]) ? r[C.preco] : null;
@@ -144,6 +152,72 @@ function lastAdvertisedPrice(r) {
 function lotReference(r) { return String(r[C.id] == null ? "" : r[C.id]).trim(); }
 function lotReferenceLine(r) {
   return '<p class="lot-reference">' + esc(t("lot.reference", { ref: lotReference(r) })) + '</p>';
+}
+
+function hasPublishedMarketReport(r) {
+  return !!marketReportFor(r && r[C.id]);
+}
+
+function hasDocumentedHistory(r) {
+  var history = lifecycle(r).history;
+  return Array.isArray(history) && history.some(function (event) {
+    return event && Object.prototype.hasOwnProperty.call(HISTORY_KEY, event.kind) &&
+      // Collector/bootstrap timestamps are not independent source evidence.
+      (!!httpsSource(event.source_url) || !!archiveDate(event.source_date));
+  });
+}
+
+/* Keep weak catalogue rows reachable without asking Google to index them.
+ * Identity, price and HTTPS provenance are the floor; a current row then needs
+ * a reliable valuation, auction date, confirmed source observation or reviewed
+ * report. Historical rows require durable history/outcome/report evidence. */
+function lotSeoEligible(r) {
+  if (!r) return false;
+  var address = String(r[C.end] || "").trim();
+  var type = String(r[C.tipo] || "").trim();
+  var hasCore = address.length >= 5 && type.length >= 2 && positiveNumber(r[C.preco]) && !!httpsSource(r[C.link]);
+  if (!hasCore) return false;
+  var sourceObserved = lotStatus(r) === "active" && !!lifecycleDate(r);
+  var evidence = reliable(r) || !!auctionDate(r) || sourceObserved || !!confirmedOutcome(r) ||
+    hasDocumentedHistory(r) || !!documentReportFor(r[C.id]) || hasPublishedMarketReport(r);
+  return isCurrent(r) ? evidence : (!!confirmedOutcome(r) || hasDocumentedHistory(r) ||
+    !!documentReportFor(r[C.id]) || hasPublishedMarketReport(r));
+}
+
+function streetHasMarket(st) {
+  return !!st && [st.f, st.h].some(function (metric) {
+    return Array.isArray(metric) && positiveNumber(metric[0]) && Number(metric[1]) >= 12;
+  });
+}
+
+function streetSeoEligible(code) {
+  var st = city.streets && city.streets.d && city.streets.d[code];
+  return streetHasMarket(st);
+}
+
+function areaSeoEligible(key) {
+  return hasAreaMarket(key) || (byArea[key] || []).concat(historyByArea[key] || [])
+    .filter(lotSeoEligible).length >= 10;
+}
+
+function citySeoEligible(c) {
+  c = c || city;
+  var market = c.market || {}, year = String(market.year || "");
+  var hasMarket = /^\d{4}$/.test(year) && Number(year) <= Number(dateReference.slice(0, 4)) &&
+    Object.keys(market.d || {}).some(function (key) {
+      var record = market.d[key] || {};
+      return [record.f, record.h, record.r].some(function (metric) {
+        return Array.isArray(metric) && positiveNumber(metric[0]) && positiveNumber(metric[1]);
+      });
+    });
+  if (hasMarket || (c.streets && c.streets.d &&
+      Object.keys(c.streets.d).some(function (code) { return streetHasMarket(c.streets.d[code]); }))) return true;
+  if (c === city) return currentRows().filter(lotSeoEligible).length >= 10;
+  var before = city;
+  indexCity(c);
+  var eligible = currentRows().filter(lotSeoEligible).length >= 10;
+  indexCity(before);
+  return eligible;
 }
 function priceText(value) { return priceKnown(value) ? money(value) : t("archive.price.unknown"); }
 function inventoryNotice() { return '<p class="note inventory-note">' + esc(t("archive.inventory.notice")) + '</p>'; }
@@ -730,7 +804,8 @@ function uniqueRows(rows) {
 }
 
 function inventorySummary(rows, anchors) {
-  var all = uniqueRows(rows), current = all.filter(isCurrent), archived = all.filter(function (r) { return !isCurrent(r); });
+  var all = uniqueRows(rows), current = all.filter(function (r) { return isCurrent(r); });
+  var archived = all.filter(function (r) { return !isCurrent(r); });
   var unverified = current.filter(function (r) { return lotStatus(r) === "unverified"; }).length;
   var prices = current.map(function (r) { return r[C.preco]; }).filter(priceKnown).sort(function (a, b) { return a - b; });
   var price = prices.length
@@ -1074,7 +1149,8 @@ function screenStreet(code) {
  * so a removed offer is never presented as still available. */
 function streetLotLists(code) {
   var rows = lotsByStreet[code] || [];
-  var current = rows.filter(isCurrent), archived = rows.filter(function (r) { return !isCurrent(r); });
+  var current = rows.filter(function (r) { return isCurrent(r); });
+  var archived = rows.filter(function (r) { return !isCurrent(r); });
   function section(key, id, items) {
     if (!items.length) return "";
     return '<section id="' + id + '" class="sec street-lots" aria-labelledby="' + id + '-title"><div class="sechead"><h2 id="' + id + '-title">' +
@@ -1464,10 +1540,13 @@ function lotMetaSubject(r) {
 function lotMetaFacts(r) {
   var facts = [];
   if (priceKnown(r[C.preco])) facts.push(t("lot.price.open") + ": " + money(r[C.preco]));
+  var perM2 = lotPricePerM2(r);
+  if (perM2) facts.push(t("lot.fact.open_m2") + ": " + money(perM2) + "/" + t("unit.m2"));
+  facts.push(t("lot.fact.status") + ": " + t(STATUS_KEY[lotStatus(r)]));
   if (priceKnown(r[C.aval])) facts.push(t("lot.price.aval") + ": " + money(r[C.aval]));
   var day = auctionDate(r);
   if (day) facts.push(t("seo.auction.date", { date: day }));
-  return facts.join(" · ") || lotMetaSubject(r);
+  return metaText(facts.join(" · ") || lotMetaSubject(r), 115);
 }
 
 /* Related lots use only rows already published in this page's payload. A
@@ -2430,14 +2509,11 @@ function pageTrail(path) {
   return trail;
 }
 
-/* A sitemap date may describe only the exact lot whose lifecycle evidence
- * carries it. Scope observations cannot date city/list pages because a
- * partial source does not prove anything about lots it did not return. */
-function lotLastmod(path) {
-  var parts = String(path || "").split("/").filter(Boolean);
-  if (parts.length < 2 || parts[parts.length - 2] !== SEG.lot) return null;
-  var r = lotById[idFromSlug(parts[parts.length - 1])];
-  if (!r || lotSlug(r) !== parts[parts.length - 1]) return null;
+/* Sitemap dates come only from public lifecycle/evidence/report dates. A
+ * scope page may use the maximum date among the exact rows it contains; there
+ * is never a build-time fallback. */
+function lotLastmodForRow(r) {
+  if (!r) return null;
   var lc = lifecycle(r), dates = [];
   function remember(value) {
     var valid = archiveDate(value), day = valid && valid.slice(0, 10);
@@ -2453,6 +2529,33 @@ function lotLastmod(path) {
   });
   dates.sort();
   return dates.length ? dates[dates.length - 1] : null;
+}
+
+function scopeLastmod(rows) {
+  var dates = uniqueRows(rows).map(lotLastmodForRow).filter(Boolean).sort();
+  return dates.length ? dates[dates.length - 1] : null;
+}
+
+function lotLastmod(path) {
+  var parts = String(path || "").split("/").filter(Boolean);
+  if (parts.length < 2 || parts[parts.length - 2] !== SEG.lot) return null;
+  var r = lotById[idFromSlug(parts[parts.length - 1])];
+  return r && lotSlug(r) === parts[parts.length - 1] ? lotLastmodForRow(r) : null;
+}
+
+function routeLastmod(path) {
+  var parts = String(path || "").split("/").filter(Boolean);
+  var last = parts[parts.length - 1] || "";
+  if (parts[parts.length - 2] === SEG.lot) return lotLastmod(path);
+  if (parts[parts.length - 2] === SEG.rua && streetBySlug[last]) {
+    return scopeLastmod(lotsByStreet[streetBySlug[last]] || []);
+  }
+  if (slugToKey.fwd[last]) {
+    var key = slugToKey.fwd[last];
+    return scopeLastmod((byArea[key] || []).concat(historyByArea[key] || []));
+  }
+  if (path === cityBase()) return scopeLastmod(city.rows);
+  return null;
 }
 
 /* The build's only entry point. Loads once with the whole dataset, is then
@@ -2481,7 +2584,7 @@ window.__render__ = function (path) {
     lot: isLotRoute(path),
     head: headFor(path),
     breadcrumbs: pageTrail(path),
-    lastmod: lotLastmod(path),
+    lastmod: routeLastmod(path),
     links: links,
   };
 };
@@ -2541,6 +2644,7 @@ function headFor(path) {
     }) : t("head.street.catalog.desc", {
       street: title(stx.name), city: name, lots: lots((lotsByStreet[streetBySlug[last]] || []).length),
     });
+    if (!streetSeoEligible(streetBySlug[last])) base.noindex = true;
   } else if (slugToKey.fwd[last]) {
     var st = areaStat(slugToKey.fwd[last]);
     base.title = t("head.area.title", { name: areaName(st.key), city: name });
@@ -2548,8 +2652,8 @@ function headFor(path) {
       name: areaName(st.key), city: name,
       lots: lots(st.n), below: num(st.below), rel: num(st.rel),
     });
+    if (!areaSeoEligible(st.key)) base.noindex = true;
     if (!st.n) {
-      base.noindex = !hasAreaMarket(st.key) && !(historyByArea[st.key] || []).length;
       base.desc = areaName(st.key) + ", " + name + ". " + emptyAreaText(st.key);
     }
   } else if (last === SEG.honest) {
@@ -2563,15 +2667,17 @@ function headFor(path) {
     var address = r ? metaText(title(r[C.end] || where), 88) : where;
     var facts = r ? lotMetaFacts(r) : what;
     base.title = t("head.lot.title", { what: what, where: where, city: name, ref: ref });
-    base.desc = t("head.lot.desc", {
+    base.desc = metaText(t("head.lot.desc", {
       what: what, where: where, city: name, address: address, facts: facts, ref: ref,
-    });
+      reftext: t("lot.reference", { ref: ref }),
+    }), 245);
     if (r && !isCurrent(r)) {
       base.title = t(STATUS_KEY[lotStatus(r)]) + ' · ' + what + ' · ' + ref;
       base.desc = address + ', ' + name + '. ' + t("archive.removal.notice") + ' ' +
         t("archive.price.last") + ': ' + priceText(lastAdvertisedPrice(r)) + '. ' +
         t("lot.reference", { ref: ref });
     }
+    if (!(r && lotSeoEligible(r))) base.noindex = true;
   } else if (archivePageNumber(path)) {
     var archivePage = archivePageNumber(path);
     base.title = t("archive.h1", { city: name });
@@ -2597,6 +2703,7 @@ function headFor(path) {
       : t("head.city.desc", {
           city: name, lots: lots(city.stats.lots), below: num(city.stats.below),
         });
+    if (!citySeoEligible()) base.noindex = true;
   }
   return base;
 }

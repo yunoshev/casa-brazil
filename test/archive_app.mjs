@@ -39,7 +39,8 @@ function fixture() {
       missing_since: i < 405 ? '2026-09-14T12:00:00Z' : null,
       archived_at: status === 'archived' ? stamp : null,
       last_price_brl: 123456 + i, outcome: null,
-      history: [{ kind: 'seeded', observed_at: stamp, price_brl: 100000 + i, source_date: null, source_url: null }] };
+      history: [{ kind: 'seeded', observed_at: stamp, price_brl: 100000 + i,
+        source_date: i < 405 ? '2026-09-15' : null, source_url: null }] };
   }
   return c;
 }
@@ -144,12 +145,22 @@ assert.equal(ctx.national().promised_med, 50);
 assert.equal(ctx.areaStat('HISTORY').n, 0);
 assert.equal(ctx.areaStat('HISTORY').share, null);
 assert.equal(ctx.areaStat('CENTRO').n, 205);
-assert.equal(ctx.headFor(base + 'history/').noindex, false, 'Useful archived district remains indexed');
+assert.ok(!ctx.headFor(base + 'history/').noindex, 'Useful archived district remains indexed');
 assert.equal(ctx.headFor(base + 'empty/').noindex, true, 'Existing empty-page policy retained');
+const mixedDossier = ctx.inventorySummary([c.rows[405], c.rows[406], c.rows[0]]);
+assert.match(mixedDossier, /Current catalog records<\/span><span class="v">2<\/span>/);
+assert.match(mixedDossier, /Archived or missing records<\/span><span class="v">1<\/span>/);
+assert.match(mixedDossier, /Availability unverified<\/span><span class="v">1<\/span>/);
 const historyArea = ctx.screenFor(base + 'history/');
 assert.match(historyArea, /Earlier lots in this district/);
 assert.ok(historyArea.includes(ctx.href('/archive')));
 const streetPath = ctx.href('/r/1');
+const originalStreetRows = ctx.lotsByStreet['1'];
+ctx.lotsByStreet['1'] = [c.rows[405], c.rows[0]];
+const mixedStreetLists = ctx.streetLotLists('1');
+assert.match(mixedStreetLists, /Current lots on this street/);
+assert.match(mixedStreetLists, /Archived lots on this street/);
+ctx.lotsByStreet['1'] = originalStreetRows;
 const streetBefore = ctx.screenFor(streetPath);
 assert.match(streetBefore, /7000/);
 assert.match(streetBefore, /2025/);

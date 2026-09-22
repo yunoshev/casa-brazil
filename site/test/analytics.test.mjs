@@ -287,7 +287,7 @@ test('event and config payloads redact URLs, query, fragments, addresses and arb
   const s = setup({ url: 'https://example.org/casa-brazil/leilao-de-imoveis/rj/rio-de-janeiro/lote/secret-address/?email=private@example.org#ticket', referrer: 'https://www.google.com/search?q=private@example.org' });
   s.load('analytics'); s.window.ANALYTICS.setConsent('accepted');
   s.window.track('analyze_edital', { stage: 'error', reason: 'private@example.org', email: 'private@example.org', visitor_id: 'secret-id', url: 'https://www.caixa.gov.br/private.pdf' });
-  s.window.track('lot_outbound', { source: 'caixa', page: '/private@example.org', page_location: 'leak', page_title: 'leak' });
+  s.window.track('lot_outbound', { lot_source: 'caixa', page: '/private@example.org', page_location: 'leak', page_title: 'leak' });
   s.window.track('unknown', { email: 'private@example.org' });
   const serial = JSON.stringify(s.window.dataLayer.map(e => Array.from(e)));
   assert.doesNotMatch(serial, /private@|secret-address|secret-id|private\.pdf|ticket|leak/);
@@ -358,14 +358,19 @@ test('all analytics translation literals exist in the three shipped catalogues',
   }
 });
 
-test('every public source retains its outbound attribution', async () => {
+test('page views never override GA4 acquisition source; public providers use lot_source', async () => {
   const data = JSON.parse(readFileSync(new URL('../../data/site.json', import.meta.url), 'utf8'));
   const index = data.cols.indexOf('src');
   const sources = new Set(data.cities.flatMap(c => c.rows.map(r => r[index])));
   const s = setup(); s.load('analytics'); s.window.ANALYTICS.setConsent('accepted');
+  const pageView = emitted(s).find(e => e[1] === 'page_view')[2];
+  assert.equal(Object.hasOwn(pageView, 'source'), false);
+  assert.equal(Object.hasOwn(pageView, 'lot_source'), false);
   for (const source of sources) {
     const link = s.document.createElement('a'); link.setAttribute('data-out', source);
     await s.document.emit('click', { target: link });
-    assert.equal(emitted(s).at(-1)[2].source, source);
+    const params = emitted(s).at(-1)[2];
+    assert.equal(params.lot_source, source);
+    assert.equal(Object.hasOwn(params, 'source'), false);
   }
 });
