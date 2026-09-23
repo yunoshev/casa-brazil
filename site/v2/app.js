@@ -8,8 +8,6 @@
  * Visible strings come through t() from i18n/<lang>.json, including SEO
  * notices and pagination. */
 
-/* Generated lot pages already contain their HTML and only need gallery wiring;
- * keep the data-dependent index harmless when that payload is absent. */
 var D = window.__D__ || { cols: [], cities: [] };
 var C = {};
 if (D && Array.isArray(D.cols)) D.cols.forEach(function (c, i) { C[c] = i; });
@@ -145,6 +143,40 @@ function lifecycleDate(r) {
   var lc = lifecycle(r);
   return archiveDate(lc.last_checked_at) || archiveDate(lc.last_seen_at) || null;
 }
+function caixaDetailSource(r) {
+  if (r[C.src] !== "caixa") return null;
+  var value = httpsSource(r[C.link]);
+  if (!value) return null;
+  try {
+    var source = new URL(value);
+    return source.hostname === "venda-imoveis.caixa.gov.br" &&
+      source.pathname === "/sistema/detalhe-imovel.asp" &&
+      /^\d+$/.test(source.searchParams.get("hdnimovel") || "") ? value : null;
+  } catch (e) { return null; }
+}
+function observedPartialCaixaPresence(r) {
+  /* A partial capture can prove that its direct source row was present, but
+   * cannot prove whether an omitted row is unavailable. The exporter writes
+   * this marker only for a newly observed row, so it is deliberately distinct
+   * from last_seen_at and does not promote the lifecycle status to active. */
+  var lc = lifecycle(r), observed = archiveDate(lc.positive_source_observed_at);
+  if (lotStatus(r) !== "unverified" || !observed || !caixaDetailSource(r) ||
+      lc.first_seen_at !== null || lc.missing_since !== null || lc.archived_at !== null ||
+      lc.last_seen_at !== observed || lc.last_checked_at !== observed ||
+      !Array.isArray(lc.history) || lc.history.length) return false;
+  var observedDay = observed.slice(0, 10);
+  var observedAt = Date.parse(observedDay + "T00:00:00Z");
+  var referenceAt = Date.parse(dateReference + "T00:00:00Z");
+  // The renderer has a UTC day, not a trusted wall-clock. Keep the source row
+  // indexable on the day it was observed, and expire it after three UTC days.
+  return !isNaN(observedAt) && !isNaN(referenceAt) && observedDay <= dateReference &&
+    (referenceAt - observedAt) <= 3 * 24 * 60 * 60 * 1000;
+}
+function sourceHost(r) {
+  var value = httpsSource(r[C.link]);
+  if (!value) return null;
+  try { return new URL(value).hostname.replace(/^www\./, ""); } catch (e) { return null; }
+}
 function lastAdvertisedPrice(r) {
   var value = lifecycle(r).last_price_brl;
   return priceKnown(value) ? value : priceKnown(r[C.preco]) ? r[C.preco] : null;
@@ -155,22 +187,30 @@ function lotReferenceLine(r) {
 }
 
 function hasPublishedMarketReport(r) {
-  return !!marketReportFor(r && r[C.id]);
+  var reports = D.market_reports;
+  var report = reports && typeof reports === "object" ? reports[String(r && r[C.id])] : null;
+  return !!(report && report.schema === "market-v1");
 }
 
 function hasDocumentedHistory(r) {
   var history = lifecycle(r).history;
   return Array.isArray(history) && history.some(function (event) {
     return event && Object.prototype.hasOwnProperty.call(HISTORY_KEY, event.kind) &&
-      // Collector/bootstrap timestamps are not independent source evidence.
+      // `observed_at` alone is a collector timestamp, not independent source
+      // evidence. In particular, bootstrap `seeded` events carry it for every
+      // inherited row and must not make the whole catalogue indexable again.
       (!!httpsSource(event.source_url) || !!archiveDate(event.source_date));
   });
 }
 
-/* Keep weak catalogue rows reachable without asking Google to index them.
- * Identity, price and HTTPS provenance are the floor; a current row then needs
- * a reliable valuation, auction date, confirmed source observation or reviewed
- * report. Historical rows require durable history/outcome/report evidence. */
+/* A useful result is not merely a page that happens to have an address. The
+ * bootstrap deliberately permits an unverified availability state: inherited
+ * rows all have it. It does not, however, permit a bare address, area or bank
+ * appraisal to be indexed. A current lot needs the core source facts plus an
+ * independent auction date, a reliable valuation, lifecycle evidence, or a
+ * reviewed report. A removed lot needs documented history rather than a stale
+ * sales page. This leaves a conservative, useful cohort while lifecycle data
+ * is progressively collected. */
 function lotSeoEligible(r) {
   if (!r) return false;
   var address = String(r[C.end] || "").trim();
@@ -178,7 +218,8 @@ function lotSeoEligible(r) {
   var hasCore = address.length >= 5 && type.length >= 2 && positiveNumber(r[C.preco]) && !!httpsSource(r[C.link]);
   if (!hasCore) return false;
   var sourceObserved = lotStatus(r) === "active" && !!lifecycleDate(r);
-  var evidence = reliable(r) || !!auctionDate(r) || sourceObserved || !!confirmedOutcome(r) ||
+  var partialSourceObserved = observedPartialCaixaPresence(r);
+  var evidence = reliable(r) || !!auctionDate(r) || sourceObserved || partialSourceObserved || !!confirmedOutcome(r) ||
     hasDocumentedHistory(r) || !!documentReportFor(r[C.id]) || hasPublishedMarketReport(r);
   return isCurrent(r) ? evidence : (!!confirmedOutcome(r) || hasDocumentedHistory(r) ||
     !!documentReportFor(r[C.id]) || hasPublishedMarketReport(r));
@@ -212,23 +253,18 @@ function citySeoEligible(c) {
     });
   if (hasMarket || (c.streets && c.streets.d &&
       Object.keys(c.streets.d).some(function (code) { return streetHasMarket(c.streets.d[code]); }))) return true;
-  if (c === city) return currentRows().filter(lotSeoEligible).length >= 10;
-  var before = city;
-  indexCity(c);
-  var eligible = currentRows().filter(lotSeoEligible).length >= 10;
-  indexCity(before);
-  return eligible;
+  return currentRows(c).filter(function (r) {
+    var before = city;
+    if (c !== before) city = c;
+    var eligible = lotSeoEligible(r);
+    city = before;
+    return eligible;
+  }).length >= 10;
 }
 function priceText(value) { return priceKnown(value) ? money(value) : t("archive.price.unknown"); }
 function inventoryNotice() { return '<p class="note inventory-note">' + esc(t("archive.inventory.notice")) + '</p>'; }
-function lifecycleBanner(r, compact) {
+function lifecycleBanner(r) {
   var status = lotStatus(r), lc = lifecycle(r);
-  if (compact) {
-    return '<aside class="lifecycle-banner compact ' + status + '" aria-label="' + esc(t(STATUS_KEY[status])) + '">' +
-      '<b>' + esc(t(STATUS_KEY[status])) + '</b><span>' + esc(t(!isCurrent(r)
-        ? "archive.removal.notice" : status === "active" ? "archive.active.notice" : "archive.unverified.notice")) +
-      '</span></aside>';
-  }
   return '<section class="lifecycle-banner ' + status + '" aria-label="' + esc(t(STATUS_KEY[status])) + '">' +
     '<h2>' + esc(t(STATUS_KEY[status])) + '</h2><p>' + esc(t(!isCurrent(r)
       ? "archive.removal.notice" : status === "active" ? "archive.active.notice" : "archive.unverified.notice")) + '</p>' +
@@ -238,9 +274,88 @@ function lifecycleBanner(r, compact) {
       (status === "archived" ? dateFact("archive.date.archived", lc.archived_at) : "") + '</div></section>';
 }
 
+/* The collector accepts only this narrow, source-stated unit form. Validate
+ * again at render time so an old or hand-edited payload cannot turn a raw
+ * title into public copy. It is a distinguishing fact, never a valuation. */
+function sourceDetail(r) {
+  var value = C.srcdetail === undefined ? null : r[C.srcdetail];
+  return typeof value === "string" &&
+    /^(?:SALA|SALAS|APARTAMENTO|CASA|LOJA|UNIDADE) \d{1,5}[A-Z]?(?:\/\d{1,5}[A-Z]?){0,3}$/.test(value)
+    ? value : null;
+}
+function sourceDetailText(r) {
+  var value = sourceDetail(r);
+  return value ? title(value) : null;
+}
+function sourceDetailLine(r) {
+  var value = sourceDetailText(r);
+  return value ? '<p class="source-detail">' + esc(t("lot.source_detail", { detail: value })) + '</p>' : "";
+}
+
+/* The summary is intentionally a ledger of source and catalogue facts, not a
+ * second valuation. It makes the useful facts scannable while the surrounding
+ * warnings retain their full meaning. */
+function lotDossier(r) {
+  var lc = lifecycle(r), history = Array.isArray(lc.history) ? lc.history : [];
+  var entries = [
+    ["lot.fact.status", t(STATUS_KEY[lotStatus(r)])],
+    ["lot.fact.checked", lifecycleDate(r) ? lifecycleDate(r).slice(0, 10) : t("archive.date.unknown")],
+    ["lot.price.open", priceText(r[C.preco])],
+  ];
+  var perM2 = lotPricePerM2(r);
+  if (perM2) entries.push(["lot.fact.open_m2", money(perM2) + "/" + t("unit.m2")]);
+  var date = auctionDate(r);
+  if (date) entries.push(["lot.fact.date", date]);
+  if (r[C.promised] != null && isFinite(r[C.promised])) entries.push([
+    "lot.fact.discount", pct(-Math.abs(r[C.promised]), false),
+  ]);
+  if (sourceDetailText(r)) entries.push(["lot.fact.source_detail", sourceDetailText(r)]);
+  if (sourceHost(r)) entries.push(["lot.fact.source", t("lot.fact.source.value", { host: sourceHost(r) })]);
+  if (history.length) entries.push(["lot.fact.history", num(history.length)]);
+  return '<section class="mkt lot-dossier"><div class="sechead"><h2>' + esc(t("lot.dossier.h2")) +
+    '</h2></div><div class="facts">' + entries.map(function (entry) {
+      return fact(t(entry[0]), entry[1]);
+    }).join("") + '</div><p class="foot">' + esc(t("lot.dossier.note")) + "</p></section>";
+}
+
+function medianKnown(values) {
+  var known = values.filter(positiveNumber);
+  return known.length ? median(known) : null;
+}
+
+/* A scope is a catalogue summary, not a claim about the street or district as
+ * a whole. The record counts keep confirmed and unverified availability apart;
+ * medians appear only with three source records, avoiding a single listing
+ * being presented as an area statistic. */
+function scopeDossier(rows) {
+  rows = Array.isArray(rows) ? rows : [];
+  var current = rows.filter(function (r) { return isCurrent(r); });
+  var confirmed = current.filter(function (r) { return lotStatus(r) === "active"; });
+  var unverified = current.filter(function (r) { return lotStatus(r) === "unverified"; });
+  var archived = rows.length - current.length;
+  var priced = current.filter(function (r) { return positiveNumber(r[C.preco]); });
+  var perM2 = current.map(lotPricePerM2).filter(positiveNumber);
+  var facts = [
+    ["scope.current", num(current.length)],
+    ["scope.confirmed", num(confirmed.length)],
+    ["scope.unverified", num(unverified.length)],
+    ["scope.reliable", num(current.filter(reliable).length)],
+  ];
+  if (priced.length >= 3) facts.push(["scope.median_open", money(medianKnown(priced.map(function (r) { return r[C.preco]; }))) +
+    " · " + t("scope.sample", { n: num(priced.length) })]);
+  if (perM2.length >= 3) facts.push(["scope.median_open_m2", money(medianKnown(perM2)) + "/" + t("unit.m2") +
+    " · " + t("scope.sample", { n: num(perM2.length) })]);
+  if (archived) facts.push(["scope.archived", num(archived)]);
+  return '<section class="mkt scope-dossier"><div class="sechead"><h2>' + esc(t("scope.dossier.h2")) +
+    '</h2></div><div class="facts">' + facts.map(function (entry) {
+      return fact(t(entry[0]), entry[1]);
+    }).join("") + '</div><p class="foot">' + esc(t("scope.dossier.note")) + "</p></section>";
+}
+
 /* Local profiles are a small reviewed editorial layer, not an inference from
- * the catalogue. A malformed or partial profile disappears rather than
- * leaving an unsourced claim on a static route. */
+ * the catalogue. They are validated at build time, then validated again here
+ * because static HTML can outlive a payload change. A partial or malformed
+ * profile disappears rather than leaving an unsourced claim on the route. */
 function localProfileTimestamp(value) {
   if (typeof value !== "string" ||
       !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,6})?Z$/.test(value)) return null;
@@ -332,9 +447,9 @@ function screenHistoricalLot(r) {
   var key = areaOf(r);
   return '<div class="hero">' + back(key ? href("/a/" + encodeURIComponent(key)) : href(), key ? areaName(key) : city.nome) +
     '<h1><span class="lot-title" title="' + esc(title(r[C.end] || r[C.tipo] || t("lot.fallback"))) + '">' + esc(title(r[C.end] || r[C.tipo] || t("lot.fallback"))) + '</span></h1><p class="lede">' + lotLine(r) + '</p>' +
+    sourceDetailLine(r) +
     lotReferenceLine(r) +
-    lotBreadcrumb(r) +
-    (documentReportFor(r[C.id]) ? '<p><a class="analysis-cta" href="#document-report">' + esc(t("doc.report.view")) + '</a></p>' : '') + '</div>' +
+    lotBreadcrumb(r) + (documentReportFor(r[C.id]) ? '<p><a class="analysis-cta" href="#document-report">' + esc(t("doc.report.view")) + '</a></p>' : '') + '</div>' +
     lifecycleBanner(r) + lotGallery(r) + lotMapsBlock(r) + '<p class="foot">' + link("/archive", esc(t("archive.nav"))) + ' · ' +
     link("/all", esc(t("archive.current"))) + '</p>' + lotHistory(r) +
     documentReportSlot(r[C.id]) +
@@ -469,10 +584,9 @@ function lotGallery(r) {
   var total = photos.length, label = galleryText("count", 1, total);
   var html = '<section class="lot-gallery" data-gallery data-gallery-total="' + total +
     '" role="region" tabindex="0" aria-label="' + esc(t("lot.gallery.label", null, "Property photos")) + '">' +
-    '<div class="gallery-hero"><button type="button" class="gallery-open" data-gallery-open aria-haspopup="dialog" aria-label="' +
-      esc(t("lot.gallery.open", null, "Open larger photo")) + '"><img class="shot" data-gallery-hero src="' + esc(photos[0]) +
+    '<div class="gallery-hero"><img class="shot" data-gallery-hero src="' + esc(photos[0]) +
     '" alt="' + esc(galleryAlt(r, 1, total)) + '" decoding="async" fetchpriority="high" width="640" height="480"' +
-    ' onerror="this.style.display=\'none\'"></button>' +
+    ' onerror="this.style.display=\'none\'">' +
     '<span class="gallery-count" data-gallery-count aria-live="polite">' + esc(label) + "</span></div>";
   if (total > 1) {
     html += '<div class="gallery-controls">' +
@@ -490,18 +604,7 @@ function lotGallery(r) {
     });
     html += "</div>";
   }
-  html += '<div class="gallery-lightbox" data-gallery-lightbox hidden role="dialog" aria-modal="true" aria-label="' +
-    esc(t("lot.gallery.label", null, "Property photos")) + '"><button type="button" class="gallery-lightbox-backdrop" data-gallery-close tabindex="-1" aria-hidden="true"></button>' +
-    '<div class="gallery-lightbox-panel"><button type="button" class="gallery-lightbox-close" data-gallery-close aria-label="' +
-      esc(t("lot.gallery.close", null, "Close gallery")) + '">×</button>' +
-    '<img data-gallery-lightbox-image src="' + esc(photos[0]) + '" alt="' + esc(galleryAlt(r, 1, total)) + '">';
-  if (total > 1) {
-    html += '<div class="gallery-lightbox-controls"><button type="button" class="gallery-control" data-gallery-lightbox-prev aria-label="' +
-      esc(galleryText("previous", 1, total)) + '" disabled>‹</button><span class="gallery-hint" data-gallery-lightbox-count aria-live="polite">' +
-      esc(label) + '</span><button type="button" class="gallery-control" data-gallery-lightbox-next aria-label="' +
-      esc(galleryText("next", 2, total)) + '">›</button></div>';
-  }
-  return html + "</div></div></section>";
+  return html + "</section>";
 }
 
 /* ---- colour ---------------------------------------------------- */
@@ -709,7 +812,6 @@ function indexCity(c) {
   lotById = {};
   lotBySlug = {};
   refreshStats(c);
-  ensureCatalogStreets(c);
   var streets = (c.streets || {}).d || {};
   // A street URL is a promise.  Do not use a row merely because its text
   // resembles an address: the matching street must have one unambiguous,
@@ -752,48 +854,6 @@ function indexCity(c) {
     slugToKey.rev[k] = sl;
   });
   buildRelatedGroups();
-}
-
-/* The deed dataset covers only some cities and has its own statistical sample
- * threshold. A street route is useful before it has a valuation: it gives a
- * reader an honest list of the auction lots at that address. Build those
- * routes from the already-published catalogue, one per confidently parsed
- * street, including a street with a single lot. */
-function parsedCatalogStreet(address) {
-  var first = String(address || "").split(",")[0].replace(/\s+/g, " ").trim();
-  if (!/^(?:RUA|R\.?|AVENIDA|AV\.?|ALAMEDA|TRAVESSA|TV\.?|ESTRADA|RODOVIA|ROD\.?|PRACA|PRAÇA|LARGO|VIA|PASSAGEM|BECO)\s+/i.test(first)) return null;
-  if (first.length < 5 || /\d/.test(first)) return null;
-  return first;
-}
-
-function ensureCatalogStreets(c) {
-  var streets = c.streets && typeof c.streets === "object" ? c.streets : (c.streets = {});
-  var data = streets.d && typeof streets.d === "object" ? streets.d : (streets.d = {});
-  var byName = {}, usedSlugs = {};
-  Object.keys(data).forEach(function (code) {
-    var st = data[code] || {}, key = normKey(st.name);
-    if (key) byName[key] = code;
-    if (st.slug) usedSlugs[st.slug] = true;
-  });
-  (c.rows || []).forEach(function (r) {
-    var name = parsedCatalogStreet(r[C.end]);
-    if (!name) return;
-    var key = normKey(name), code = byName[key];
-    if (!code) {
-      var slug = slugify(name), n = 2, base = slug;
-      while (usedSlugs[slug]) slug = base + "-" + n++;
-      code = "catalog-" + slug;
-      data[code] = {
-        name: name,
-        slug: slug,
-        bairro: normKey(r[C.bairro]),
-        bairros: [normKey(r[C.bairro])],
-        catalog_only: true,
-      };
-      byName[key] = code;
-      usedSlugs[slug] = true;
-    }
-  });
 }
 
 function publishedStreetCode(code) {
@@ -839,56 +899,6 @@ function areaStat(key) {
     margin: median(rel.map(function (r) { return r[C.margin]; })),
     rows: rs,
   };
-}
-
-/* Inventory context is deliberately separate from the deed statistics above.
- * It counts the unique catalogue records that this route can actually link to
- * and calls the observed opening bid what it is.  It never combines market
- * report ranges or turns an unverified row into a confirmed offer. */
-function inventoryDate(rows) {
-  var generated = archiveDate(D && D.generated);
-  if (generated) return { key: "inventory.date.dataset", date: generated.slice(0, 10) };
-  var dates = uniqueRows(rows).map(function (r) {
-    var lc = lifecycle(r);
-    return archiveDate(lc.last_checked_at || lc.last_seen_at);
-  }).filter(Boolean).sort();
-  return dates.length ? { key: "inventory.date.checked", date: dates[dates.length - 1].slice(0, 10) } : null;
-}
-
-function uniqueRows(rows) {
-  var seen = {};
-  return (Array.isArray(rows) ? rows : []).filter(function (r, i) {
-    if (!r) return false;
-    var id = String(r[C.id] == null ? "" : r[C.id]).trim() || "@" + i;
-    if (seen[id]) return false;
-    seen[id] = true;
-    return true;
-  });
-}
-
-function inventorySummary(rows, anchors) {
-  var all = uniqueRows(rows), current = all.filter(function (r) { return isCurrent(r); });
-  var archived = all.filter(function (r) { return !isCurrent(r); });
-  var unverified = current.filter(function (r) { return lotStatus(r) === "unverified"; }).length;
-  var prices = current.map(function (r) { return r[C.preco]; }).filter(priceKnown).sort(function (a, b) { return a - b; });
-  var price = prices.length
-    ? money(prices[0]) + " – " + money(prices[prices.length - 1]) + " (" + t("inventory.price.sample", { n: num(prices.length) }) + ")"
-    : t("inventory.price.none");
-  var date = inventoryDate(all);
-  var nav = [];
-  if (current.length && anchors && anchors.current) nav.push('<a href="#' + esc(anchors.current) + '">' + esc(t("inventory.nav.current")) + '</a>');
-  if (archived.length && anchors && anchors.archived) nav.push('<a href="#' + esc(anchors.archived) + '">' + esc(t("inventory.nav.archived")) + '</a>');
-  return '<section class="mkt inventory-summary" data-inventory-summary aria-labelledby="inventory-summary-title">' +
-    '<div class="sechead"><h2 id="inventory-summary-title">' + esc(t("inventory.title")) + '</h2><span class="n">' + esc(t("inventory.records", { n: num(all.length) })) + '</span></div>' +
-    '<div class="facts">' +
-      fact(t("inventory.current"), num(current.length)) +
-      fact(t("inventory.archived"), num(archived.length)) +
-      (unverified ? fact(t("inventory.unverified"), num(unverified)) : "") +
-      fact(t("inventory.price"), price) +
-    '</div>' +
-    '<p class="foot inventory-meta">' + esc(date ? t(date.key, { date: date.date }) : t("inventory.date.unknown")) + " " + esc(t("inventory.note")) + "</p>" +
-    (nav.length ? '<p class="foot inventory-nav">' + nav.join(" · ") + "</p>" : "") +
-    '</section>';
 }
 
 /* Every area the map knows, not only the ones with a lot open today.
@@ -1179,29 +1189,27 @@ function screenStreet(code) {
   var st = city.streets.d[code];
   var year = city.streets.year;
   var dk = st.bairro;
-  var districtRoute = dk && slugToKey.rev[dk];
   var mk = city.market && city.market.d ? city.market.d[dk] : null;
   var lines = [];
   if (st.f) lines.push(streetLine("flat", st.f, mk && mk.f ? mk.f[0] : null));
   if (st.h) lines.push(streetLine("house", st.h, mk && mk.h ? mk.h[0] : null));
-  var bairros = Array.isArray(st.bairros) ? st.bairros : [];
   return '' +
-    '<div class="hero">' + back(districtRoute ? href("/a/" + encodeURIComponent(dk)) : cityBase(), districtRoute ? areaName(dk) : city.nome) +
+    '<div class="hero">' + back(href("/a/" + encodeURIComponent(dk)), areaName(dk)) +
       "<h1>" + esc(title(st.name)) + "</h1>" +
-      '<p class="lede">' + (lines.length ? t("street.lede", {
-        district: districtRoute ? link("/a/" + encodeURIComponent(dk), esc(areaName(dk))) : esc(city.nome),
+      '<p class="lede">' + t("street.lede", {
+        district: link("/a/" + encodeURIComponent(dk), esc(areaName(dk))),
         year: year,
-      }) : t("street.catalog.lede")) + "</p></div>" +
-    inventorySummary(lotsByStreet[code] || [], { current: "street-current-lots", archived: "street-archive-lots" }) +
-    (lines.length ? '<section class="mkt"><div class="sechead"><h2>' + t("mkt.h2") +
+      }) + "</p></div>" +
+    '<section class="mkt"><div class="sechead"><h2>' + t("mkt.h2") +
       '</h2><span class="n">' + t("mkt.year", { year: year }) + "</span></div>" +
       lines.join("") +
-      '<p class="foot">' + t("street.note") + "</p></section>" : "") +
-    (bairros.filter(function (k) { return slugToKey.rev[k]; }).length > 1 ? '<p class="foot">' + t("street.spans", {
-      list: bairros.filter(function (k) { return slugToKey.rev[k]; }).map(function (k) {
+      '<p class="foot">' + t("street.note") + "</p></section>" +
+    (st.bairros.length > 1 ? '<p class="foot">' + t("street.spans", {
+      list: st.bairros.map(function (k) {
         return link("/a/" + encodeURIComponent(k), esc(areaName(k)));
       }).join(" · "),
     }) + "</p>" : "") +
+    scopeDossier(lotsByStreet[code] || []) +
     localProfileBlock("street", code) +
     marketAvailabilityNote(lotsByStreet[code] || []) +
     streetLotLists(code) +
@@ -1215,13 +1223,13 @@ function streetLotLists(code) {
   var rows = lotsByStreet[code] || [];
   var current = rows.filter(function (r) { return isCurrent(r); });
   var archived = rows.filter(function (r) { return !isCurrent(r); });
-  function section(key, id, items) {
+  function section(key, items) {
     if (!items.length) return "";
-    return '<section id="' + id + '" class="sec street-lots" aria-labelledby="' + id + '-title"><div class="sechead"><h2 id="' + id + '-title">' +
+    return '<section class="sec street-lots"><div class="sechead"><h2>' +
       esc(t(key)) + '</h2><span class="n">' + esc(num(items.length)) +
       '</span></div><div class="rowlist">' + items.map(lotRow).join("") + "</div></section>";
   }
-  return section("street.lots.current", "street-current-lots", current) + section("street.lots.archive", "street-archive-lots", archived);
+  return section("street.lots.current", current) + section("street.lots.archive", archived);
 }
 
 function streetLine(kind, own, base) {
@@ -1243,10 +1251,7 @@ function streetLine(kind, own, base) {
 function streetList(key) {
   var sts = city.streets;
   if (!sts || !sts.by || !sts.by[key]) return "";
-  var rows = sts.by[key].filter(function (code) {
-    var st = sts.d[code];
-    return st && (st.f || st.h);
-  }).map(function (code) {
+  var rows = sts.by[key].map(function (code) {
     var st = sts.d[code];
     var main = st.f || st.h;
     return '<a class="row" href="' + href("/r/" + encodeURIComponent(code)) + '">' +
@@ -1255,7 +1260,6 @@ function streetList(key) {
       '<div class="sub">' + t("mkt.deals", { n: num((st.f ? st.f[1] : 0) + (st.h ? st.h[1] : 0)) }) +
       "</div></a>";
   });
-  if (!rows.length) return "";
   return '<section class="sec"><div class="sechead"><h2>' + t("street.list.h2") +
     '</h2><span class="n">' + t("mkt.year", { year: sts.year }) + "</span></div>" +
     '<div class="rowlist">' + rows.join("") + "</div></section>";
@@ -1533,9 +1537,10 @@ function screenArea(key) {
           ? t("area.lede", { lots: lots(a.n), rel: a.rel, below: b(a.below) })
           : t(marketOnly() ? "area.lede.market" : "area.lede.nodata",
               { lots: lots(a.n) })) + "</p></div>" + mini +
-    inventorySummary((byArea[key] || []).concat(historyByArea[key] || []), { current: "area-current-lots", archived: "area-archive-lots" }) +
-    inventoryNotice() + localProfileBlock("area", key) + marketAvailabilityNote(byArea[key] || []) + marketCard(key) + upkeepCard(key) + streetList(key) +
-    (a.n ? '<section id="area-current-lots" class="sec" aria-labelledby="area-current-lots-title"><div class="sechead"><h2 id="area-current-lots-title">' + esc(t("area.lots.current")) + '</h2><span class="n">' + esc(num(a.n)) + '</span></div><div class="rowlist">' +
+    inventoryNotice() + scopeDossier((byArea[key] || []).concat(historyByArea[key] || [])) +
+    localProfileBlock("area", key) +
+    marketAvailabilityNote(byArea[key] || []) + marketCard(key) + upkeepCard(key) + streetList(key) +
+    (a.n ? '<section class="sec"><div class="rowlist">' +
       a.rows.slice().sort(function (x, y) {
         var rx = reliable(x), ry = reliable(y);
         if (rx !== ry) return rx ? -1 : 1;
@@ -1543,44 +1548,68 @@ function screenArea(key) {
       // No cap. This is the only page that lists a district in full, and a lot
       // that is on no page is a lot that does not exist.
       }).map(lotRow).join("") + "</div></section>" : "") +
-    ((historyByArea[key] || []).length ? '<section id="area-archive-lots" class="sec" aria-labelledby="area-archive-lots-title"><h2 id="area-archive-lots-title">' + esc(t("archive.nav")) + '</h2>' +
+    ((historyByArea[key] || []).length ? '<section class="sec"><h2>' + esc(t("archive.nav")) + '</h2>' +
       '<p>' + esc(t("archive.area.notice")) + '</p><div class="rowlist">' +
       historyByArea[key].slice(0, ALL_PAGE_SIZE).map(lotRow).join("") + '</div><p class="foot">' +
       link("/archive", esc(t("archive.all", { n: num(historyByArea[key].length) }))) + '</p></section>' : '') +
     footer();
 }
 
-function heroFinance(r, vd) {
-  var own = reliable(r);
-  var context = r[C.promised] != null ? pct(-Math.abs(r[C.promised]), false) : vd ? t(vd[2]) : "—";
-  var facts = [
-    [t("lot.price.open"), r[C.preco] ? money(r[C.preco]) : "—"],
-    [t("lot.price.aval"), r[C.aval] ? money(r[C.aval]) : "—"],
-    [t("lot.price.hammer"), own && r[C.hammer] ? money(r[C.hammer]) : "—"],
-    [t("lot.hero.context"), context],
-  ];
-  return '<dl class="hero-finance">' + facts.map(function (item) {
-    return '<div><dt>' + esc(item[0]) + '</dt><dd>' + esc(item[1]) + '</dd></div>';
-  }).join("") + "</dl>";
+/* What winning actually costs. The advertised price is never the cheque: the
+ * auctioneer's commission, the transfer tax and the notary follow it, and no
+ * platform prints them next to its discounts.
+ *
+ * Every number here is a rate the reader can check, not a valuation of ours —
+ * which is why this block appears even on lots where we withhold the estimate.
+ * Rates are per city (municipal ITBI) and per sale form: on a leilão the 5%
+ * commission is the buyer's by law and custom; on Caixa's direct-sale forms
+ * there is no auctioneer to pay. Notary and registry follow state fee tables
+ * that step with value; ~1.2% is the honest middle for these price ranges, and
+ * the tilde is printed, not hidden. */
+var ITBI_RATE = {
+  "rio-de-janeiro-rj": 0.03,
+  "sao-goncalo-rj": 0.02,
+  "sao-paulo-sp": 0.03,
+  "fortaleza-ce": 0.03,
+  "recife-pe": 0.03,
+};
+var NOTARY_RATE = 0.012;
+
+function saleForm(r) {
+  var mod = String(r[C.mod] || "").toLowerCase();
+  if (r[C.jud]) return "judicial";
+  if (mod.indexOf("leil\u00e3o") >= 0 || mod.indexOf("leilao") >= 0) return "auction";
+  return "direct";
 }
 
-/* ITBI is a district-level record of completed deeds, not a price for this
- * individual lot. Keep that evidence separate from both the auction facts and
- * the listing-based market report, and omit it entirely when the district has
- * no verified register sample. */
-function lotTransactionSummary(r) {
-  var key = areaOf(r), mk = city.market || {}, district = key && mk.d ? mk.d[key] : null;
-  if (!district || !/^\d{4}$/.test(String(mk.year || ""))) return "";
-  var type = String(r[C.tipo] || "").toLowerCase();
-  var kind = /casa|sobrado|terreno/.test(type) ? "h" : /apart|flat/.test(type) ? "f" : "r";
-  var kindLabel = kind === "h" ? "house" : kind === "f" ? "flat" : "res";
-  var value = district[kind] || district.r || district.f || district.h;
-  if (!Array.isArray(value) || value.length < 2 || !priceKnown(value[0]) || !value[1]) return "";
-  return '<aside class="hero-transactions" aria-label="' + esc(t("mkt.h2")) + '"><span>' +
-    esc(t("mkt.h2")) + '</span><b>' + esc(money(value[0])) + " " + esc(t("mkt.per")) +
-    '</b><small>' + esc(areaName(key)) + " · " + esc(t("mkt.kind." + kindLabel)) + " · " +
-    esc(t("mkt.deals", { n: num(value[1]) })) + " · " +
-    esc(t("mkt.year", { year: mk.year })) + "</small></aside>";
+function entryCard(r) {
+  var base = r[C.preco];
+  var rate = ITBI_RATE[city.slug];
+  if (!base || !rate) return "";
+  var form = saleForm(r);
+  var fee = form === "direct" ? 0 : 0.05;
+  var rows = [
+    ["entry.bid", base, null],
+    ["entry.fee", base * fee, fee ? "5%" : null],
+    ["entry.itbi", base * rate, Math.round(rate * 100) + "%"],
+    ["entry.notary", base * NOTARY_RATE, "~1,2%"],
+  ];
+  var total = base * (1 + fee + rate + NOTARY_RATE);
+  return '<section class="mkt"><div class="sechead"><h2>' + t("entry.h2") +
+      '</h2><span class="n">' + t("entry.head") + "</span></div>" +
+    '<div class="mrow">' +
+      rows.map(function (x) {
+        if (!x[1]) return "";
+        return '<div class="erow"><span class="el">' + t(x[0]) +
+          (x[2] ? ' <em class="ep">' + x[2] + "</em>" : "") + "</span>" +
+          '<span class="ev">' + money(Math.round(x[1])) + "</span></div>";
+      }).join("") +
+      '<div class="erow tot"><span class="el">' + t("entry.total") + "</span>" +
+        '<span class="ev">' + money(Math.round(total)) +
+        ' <em class="ep">+' + Math.round(100 * (total / base - 1)) + "%</em></span></div>" +
+    "</div>" +
+    '<p class="foot">' + t(fee ? "entry.note" : "entry.note.direct") +
+      (form === "auction" ? " " + t("entry.note.extrajud") : "") + "</p></section>";
 }
 
 /* The lot's own headline, assembled from what the registry actually knows:
@@ -1597,12 +1626,15 @@ function lotLine(r) {
  * reference makes two units at the same address distinguishable; the facts
  * make the description useful without claiming an estimate exists. */
 function lotMetaSubject(r) {
-  var bits = [title(r[C.tipo] || t("lot.fallback"))];
+  var bits = [];
+  if (sourceDetailText(r)) bits.push(sourceDetailText(r));
+  bits.push(title(r[C.tipo] || t("lot.fallback")));
   if (priceKnown(r[C.area]) && r[C.area] > 0) bits.push(r[C.area] + " " + t("unit.m2"));
   return metaText(bits.join(" · "), 52);
 }
 function lotMetaFacts(r) {
   var facts = [];
+  if (sourceDetailText(r)) facts.push(t("lot.fact.source_detail") + ": " + sourceDetailText(r));
   if (priceKnown(r[C.preco])) facts.push(t("lot.price.open") + ": " + money(r[C.preco]));
   var perM2 = lotPricePerM2(r);
   if (perM2) facts.push(t("lot.fact.open_m2") + ": " + money(perM2) + "/" + t("unit.m2"));
@@ -1610,6 +1642,8 @@ function lotMetaFacts(r) {
   if (priceKnown(r[C.aval])) facts.push(t("lot.price.aval") + ": " + money(r[C.aval]));
   var day = auctionDate(r);
   if (day) facts.push(t("seo.auction.date", { date: day }));
+  // Keep room for the permanent lot reference in the description. It is the
+  // only identifier that distinguishes two otherwise identical addresses.
   return metaText(facts.join(" · ") || lotMetaSubject(r), 115);
 }
 
@@ -1699,16 +1733,7 @@ function buildRelatedGroups() {
 }
 function relatedLots(r) {
   var rows = relatedCandidates[String(r[C.id])] || [];
-  var place = relatedPlace(r);
-  if (!rows.length) {
-    /* If the exact street is known, its empty state owns the explanation and
-     * the link to the street catalogue. Otherwise a valid district route is
-     * still useful navigation even when this is the only lot there. */
-    if (place.street || !place.area || !slugToKey.rev[place.area]) return "";
-    return '<section class="sec related-lots" aria-labelledby="related-lots-title">' +
-      '<div class="sechead"><h2 id="related-lots-title">' + esc(t("related.title")) + '</h2></div>' +
-      '<p class="related-empty">' + esc(t("related.empty", { area: areaName(place.area) })) + "</p></section>";
-  }
+  if (!rows.length) return "";
   return '<section class="sec related-lots" aria-labelledby="related-lots-title">' +
     '<div class="sechead"><h2 id="related-lots-title">' + esc(t("related.title")) + '</h2></div>' +
     '<div class="rowlist">' + rows.map(function (item) {
@@ -1742,12 +1767,13 @@ function sameStreetLots(r) {
   var rows = (relatedGroups.street[code] || []).filter(function (candidate) {
     return String(candidate[C.id]) !== String(r[C.id]);
   }).slice(0, SAME_STREET_LOT_LIMIT);
+  if (!rows.length) return "";
   var street = city.streets.d[code];
   return '<section class="sec same-street-lots" aria-labelledby="same-street-lots-title">' +
     '<div class="sechead"><h2 id="same-street-lots-title">' + esc(t("same.street.title")) +
       '</h2><a class="same-street-all" href="' + esc(href("/r/" + encodeURIComponent(code))) + '">' +
       esc(t("same.street.all", { street: title(street.name), count: num((lotsByStreet[code] || []).length) })) +
-      '</a></div>' + (rows.length ? '<div class="rowlist">' + rows.map(function (candidate) {
+      '</a></div><div class="rowlist">' + rows.map(function (candidate) {
         var historical = !isCurrent(candidate), price = relatedPrice(candidate);
         var facts = [price, candidate[C.area] ? candidate[C.area] + " " + t("unit.m2") : null].filter(Boolean);
         return '<a class="row same-street-lot" href="' + esc(href("/l/" + encodeURIComponent(candidate[C.id]))) + '">' +
@@ -1756,7 +1782,7 @@ function sameStreetLots(r) {
             esc(t(historical ? "related.archive" : "related.current")) + '</span></div>' +
           (facts.length ? '<div class="sub related-facts">' + esc(facts.join(" · ")) + '</div>' : "") +
         '</a>';
-      }).join("") + '</div>' : '<p class="related-empty">' + esc(t("same.street.empty")) + '</p>') + '</section>';
+      }).join("") + '</div></section>';
 }
 
 /* `i` arrives free from every call site's .map(lotRow). It decides one thing:
@@ -1835,10 +1861,6 @@ var CONTEXT_RING_M = 5000;
 /* What a property in this district usually is, so "no estimate" still leaves
  * the reader with a yardstick. Asking prices, and the sentence says so. */
 function askingHint(r) {
-  /* A lot with a validated market-v1 report already has a separate asking
-   * range below. Do not place the older district-average hint beside it: that
-   * would make two different samples look like one estimate. */
-  if (marketReportFor(r[C.id])) return "";
   var by = city.asking_by_district || {};
   var d = by[areaOf(r) || ""] || by[normKey(r[C.bairro])];
   if (d) {
@@ -1856,7 +1878,6 @@ function askingHint(r) {
 }
 
 function whyBlock(r) {
-  if (marketReportFor(r[C.id])) return "";
   if (reliable(r)) return "";
   var ring = r[C.ring] || 0;
   var out = "";
@@ -1889,10 +1910,81 @@ function whyBlock(r) {
 /* Market reports are a separate, already-validated public payload. The AI
  * placeholder below remains owned by analyze.js; this renderer only adds the
  * synchronous human-readable market facts when the build embedded one. */
-function marketReportFor(id) {
-  var reports = D && D.market_reports;
-  var report = reports && typeof reports === "object" ? reports[String(id)] : null;
-  return report && report.schema === "market-v1" ? report : null;
+function marketReportBlock(id) {
+  var reports = D.market_reports;
+  if (!reports || typeof reports !== "object" ||
+      !Object.prototype.hasOwnProperty.call(reports, String(id)) ||
+      !window.MARKET || typeof window.MARKET.renderReport !== "function" ||
+      typeof document === "undefined") return "";
+  var rendered = window.MARKET.renderReport(reports[String(id)], document);
+  return rendered && typeof rendered.outerHTML === "string" ? rendered.outerHTML : "";
+}
+
+/* A count of qualified lot reports is useful navigation context.  It is not
+ * an area/street valuation and never combines individual price ranges. */
+function marketAvailabilityCount(rows) {
+  var reports = D.market_reports;
+  if (!reports || typeof reports !== "object" || !Array.isArray(rows)) return 0;
+  var seen = {}, count = 0;
+  rows.forEach(function (row) {
+    var id = String(row && row[C.id]);
+    if (!seen[id] && Object.prototype.hasOwnProperty.call(reports, id)) {
+      seen[id] = true;
+      count++;
+    }
+  });
+  return count;
+}
+
+function marketAvailabilityNote(rows) {
+  var count = marketAvailabilityCount(rows);
+  return count ? '<p class="foot market-availability">' +
+    esc(t("market.availability", { count: num(count) })) + "</p>" : "";
+}
+
+function lotBreadcrumb(r) {
+  var place = relatedPlace(r), bits = ['<a href="' + esc(cityBase()) + '">' + esc(city.nome) + "</a>"];
+  if (place.area && slugToKey.rev[place.area]) {
+    bits.push('<a href="' + esc(href("/a/" + encodeURIComponent(place.area))) + '">' +
+      esc(areaName(place.area)) + "</a>");
+  }
+  if (place.street && city.streets && city.streets.d[place.street] && streetBySlug[city.streets.d[place.street].slug]) {
+    bits.push('<a href="' + esc(href("/r/" + encodeURIComponent(place.street))) + '">' +
+      esc(title(city.streets.d[place.street].name)) + "</a>");
+  }
+  return '<nav class="lot-breadcrumb" aria-label="' + esc(t("lot.breadcrumb")) + '">' + bits.join(" · ") + "</nav>";
+}
+
+/* Static lot pages do not load the application runtime, so the configured
+ * public Embed key is rendered directly into the prerendered map iframe.
+ * The ordinary Maps link remains available when no key is configured. */
+function lotMapQuery(r) {
+  var address = String(r[C.end] || "").replace(/\s+/g, " ").trim();
+  if (!address) return "";
+  return [address, city.nome, city.uf ? String(city.uf).toUpperCase() : "", "Brasil"]
+    .filter(Boolean).join(", ");
+}
+function mapsEmbedKey() {
+  var value = window.__MAPS__ && window.__MAPS__.embedKey;
+  return typeof value === "string" && /^[A-Za-z0-9_-]{1,200}$/.test(value) ? value : "";
+}
+function lotMapsLink(r) {
+  var query = lotMapQuery(r);
+  if (!query) return "";
+  return '<a class="maps-link" href="https://www.google.com/maps/search/?api=1&amp;query=' +
+    esc(encodeURIComponent(query)) + '" target="_blank" rel="noopener noreferrer">' +
+    esc(t("lot.maps")) + "</a>";
+}
+function lotMapsBlock(r) {
+  var query = lotMapQuery(r);
+  if (!query) return "";
+  var key = mapsEmbedKey();
+  var iframe = key ? '<div class="lot-map-frame"><iframe src="https://www.google.com/maps/embed/v1/place?key=' +
+    esc(encodeURIComponent(key)) + '&amp;q=' + esc(encodeURIComponent(query)) + '" title="' +
+    esc(t("lot.maps.embed.title")) + '" loading="lazy" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe></div>' : "";
+  return '<section class="lot-map">' +
+    '<h2>' + esc(t("lot.maps.heading")) + '</h2><div class="lot-map-actions">' +
+    lotMapsLink(r) + '</div>' + iframe + '</section>';
 }
 
 function documentReportFor(id) {
@@ -2000,98 +2092,6 @@ function wireDocumentReport(root) {
   });
 }
 
-function marketHeroSummary(id) {
-  var report = marketReportFor(id);
-  var asking = report && report.sale_asking;
-  var sample = report && report.sample;
-  if (!asking || !sample || !Number.isFinite(asking.min) || !Number.isFinite(asking.max) ||
-      !Number.isInteger(sample.count) || sample.count < 5) return "";
-  var confidence = "market.confidence." + String(sample.confidence || "low");
-  return '<aside class="hero-market" aria-label="' + esc(t("market.sale_asking")) + '"><span>' +
-    esc(t("market.sale_asking")) + '</span><b>' + esc(money(asking.min)) + " – " + esc(money(asking.max)) +
-    '</b><small>' + esc(t("market.sample", { count: sample.count })) + " · " +
-    esc(t("market.radius", { radius: sample.radius_m })) + " · " +
-    esc(t("market.freshness", { days: sample.freshness_days })) + " · " +
-    esc(t("market.confidence", { level: t(confidence) })) + '</small><p class="hero-market-note">' +
-    esc(t("market.disclaimer.truth")) + "</p></aside>";
-}
-
-function marketReportBlock(id) {
-  var report = marketReportFor(id);
-  if (!report ||
-      !window.MARKET || typeof window.MARKET.renderReport !== "function" ||
-      typeof document === "undefined") return "";
-  var rendered = window.MARKET.renderReport(report, document);
-  return rendered && typeof rendered.outerHTML === "string" ? rendered.outerHTML : "";
-}
-
-/* A count of qualified lot reports is useful navigation context.  It is not
- * an area/street valuation and never combines individual price ranges. */
-function marketAvailabilityCount(rows) {
-  var reports = D && D.market_reports;
-  if (!reports || typeof reports !== "object" || !Array.isArray(rows)) return 0;
-  var seen = {}, count = 0;
-  rows.forEach(function (row) {
-    var id = String(row && row[C.id]);
-    if (!seen[id] && Object.prototype.hasOwnProperty.call(reports, id)) {
-      seen[id] = true;
-      count++;
-    }
-  });
-  return count;
-}
-
-function marketAvailabilityNote(rows) {
-  var count = marketAvailabilityCount(rows);
-  return count ? '<p class="foot market-availability">' +
-    esc(t("market.availability", { count: num(count) })) + "</p>" : "";
-}
-
-function lotBreadcrumb(r) {
-  var place = relatedPlace(r), bits = ['<a href="' + esc(cityBase()) + '">' + esc(city.nome) + "</a>"];
-  if (place.area && slugToKey.rev[place.area]) {
-    bits.push('<a href="' + esc(href("/a/" + encodeURIComponent(place.area))) + '">' +
-      esc(areaName(place.area)) + "</a>");
-  }
-  if (place.street && city.streets && city.streets.d[place.street] && streetBySlug[city.streets.d[place.street].slug]) {
-    bits.push('<a href="' + esc(href("/r/" + encodeURIComponent(place.street))) + '">' +
-      esc(title(city.streets.d[place.street].name)) + "</a>");
-  }
-  return '<nav class="lot-breadcrumb" aria-label="' + esc(t("lot.breadcrumb")) + '">' + bits.join(" · ") + "</nav>";
-}
-
-/* Generated lot pages render the configured public Embed key directly into the
- * prerendered map iframe. The ordinary Maps link remains available when no key
- * is configured; the static app runtime never revisits this block. */
-function lotMapQuery(r) {
-  var address = String(r[C.end] || "").replace(/\s+/g, " ").trim();
-  if (!address) return "";
-  return [address, city.nome, city.uf ? String(city.uf).toUpperCase() : "", "Brasil"]
-    .filter(Boolean).join(", ");
-}
-function mapsEmbedKey() {
-  var value = window.__MAPS__ && window.__MAPS__.embedKey;
-  return typeof value === "string" && /^[A-Za-z0-9_-]{1,200}$/.test(value) ? value : "";
-}
-function lotMapsLink(r) {
-  var query = lotMapQuery(r);
-  if (!query) return "";
-  return '<a class="maps-link" href="https://www.google.com/maps/search/?api=1&amp;query=' +
-    esc(encodeURIComponent(query)) + '" target="_blank" rel="noopener noreferrer">' +
-    esc(t("lot.maps")) + "</a>";
-}
-function lotMapsBlock(r) {
-  var query = lotMapQuery(r);
-  if (!query) return "";
-  var key = mapsEmbedKey();
-  var iframe = key ? '<div class="lot-map-frame"><iframe src="https://www.google.com/maps/embed/v1/place?key=' +
-    esc(encodeURIComponent(key)) + '&amp;q=' + esc(encodeURIComponent(query)) + '" title="' +
-    esc(t("lot.maps.embed.title")) + '" loading="lazy" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe></div>' : "";
-  return '<section class="lot-map">' +
-    '<h2>' + esc(t("lot.maps.heading")) + '</h2><div class="lot-map-actions">' +
-    lotMapsLink(r) + '</div>' + iframe + '</section>';
-}
-
 function screenLot(id) {
   var r = null;
   for (var i = 0; i < city.rows.length; i++) {
@@ -2101,7 +2101,6 @@ function screenLot(id) {
   if (!isCurrent(r)) return screenHistoricalLot(r);
   var vd = verdict(r);
   var key = areaOf(r);
-  var report = marketReportFor(r[C.id]);
 
   // Two of these four are ours and two are published facts. Where the verdict
   // is withheld for want of comparable sales, ours come off the scale too —
@@ -2114,10 +2113,10 @@ function screenLot(id) {
     { k: "lot.price.hammer", val: own && r[C.hammer], cls: "c-hammer" },
     { k: "lot.price.market", val: own && r[C.mkt], cls: "c-market" },
     { k: "lot.price.aval", val: r[C.aval], cls: "c-aval" },
-  ].filter(function (p) { return p.val && !(report && p.k === "lot.price.market"); });
+  ].filter(function (p) { return p.val; });
   var hi = Math.max.apply(null, pts.map(function (p) { return p.val; })) * 1.06;
 
-  return '<div class="lot-above"><div class="lot-intro">' +
+  return '' +
     // A lot with no district of its own steps back to the city instead.
     '<div class="hero">' + (key
       ? back(href("/a/" + encodeURIComponent(key)), areaName(key))
@@ -2125,33 +2124,19 @@ function screenLot(id) {
       '<h1><span class="lot-title" title="' + esc(title(r[C.end] || r[C.tipo] || t("lot.fallback"))) + '">' + esc(title(r[C.end] || r[C.tipo] || t("lot.fallback"))) + "</span></h1>" +
       '<p class="lede">' + lotLine(r) + " · " +
         esc(title(r[C.bairro] || (key ? areaName(key) : city.nome))) + "</p>" +
+      sourceDetailLine(r) +
       lotReferenceLine(r) +
       lotBreadcrumb(r) +
-      '<div class="lot-statuses"><span class="status-chip source">' + esc(title(r[C.src] || "fonte")) +
-        "</span>" + lifecycleBanner(r, true) + "</div>" +
-      '<p class="note">' + esc(auctionNote(r)) + "</p></div>" +
-    heroFinance(r, vd) +
-    marketHeroSummary(r[C.id]) +
-    lotTransactionSummary(r) +
-    '<div class="hero-actions">' +
-      (documentReportFor(r[C.id]) ? '<a class="analysis-cta" href="#document-report">' + esc(t("doc.report.view")) + '</a>' :
-        r[C.src] === "caixa" ? '<button type="button" class="analysis-cta" data-analysis-cta>' +
-        esc(t("lot.ai.cta", null, "Analyze with AI")) + "</button>" : "") +
-      (r[C.link] ? '<a class="source-link" href="' + esc(r[C.link]) +
-        '" target="_blank" rel="noopener" data-out="' + esc(r[C.src] || "lot") + '">' +
-        esc(t("lot.cta")) + "</a>" : "") +
-    "</div>" +
-    "</div>" +
+      '<p class="note">' + esc(auctionNote(r)) + "</p></div>" + lifecycleBanner(r) +
+    lotDossier(r) +
 
-    // On a phone the image belongs immediately after the decision summary;
-    // desktop CSS moves this same node into the right-hand hero column.
-    lotGallery(r) +
-    lotMapsBlock(r) +
+    // The first exported photo stays in the prerendered HTML. If no media
+    // payload is present, lotGallery() falls back to the historical one-photo
+    // Caixa URL, preserving the old build's visible behaviour.
+    lotGallery(r) + lotMapsBlock(r) +
 
     '<div class="verdict">' +
-      (report
-        ? '<p class="word mute">' + esc(t("market.range.context")) + "</p>"
-        : vd
+      (vd
         ? '<div class="delta ' + (r[C.margin] > 0 ? "up" : "dn") + '">' +
             pct(r[C.margin]) + "</div>" +
           '<p class="word ' + vd[1] + '">' + t(vd[2]) + "</p>" +
@@ -2188,17 +2173,16 @@ function screenLot(id) {
       // Same rule: the platform's promise is theirs to answer for and we quote
       // it either way, but our counter-number only appears when we have one.
       (r[C.promised] != null
-        ? '<p class="note">' + t(report ? "lot.note.promised.market" : own ? "lot.note.promised" : "lot.note.promised.noest", {
+        ? '<p class="note">' + t(own ? "lot.note.promised" : "lot.note.promised.noest", {
             promised: b(pct(-Math.abs(r[C.promised]), false)),
             margin: b(pct(r[C.margin])),
           }) + "</p>"
         : "") +
 
       (r[C.jud] ? '<p class="note">' + t("lot.note.court") + "</p>" : "") +
-    "</div>" +
-    "</div>" +
 
-    '<div class="lot-wide">' +
+      entryCard(r) +
+
       documentReportSlot(r[C.id]) +
       marketReportBlock(r[C.id]) +
 
@@ -2209,6 +2193,10 @@ function screenLot(id) {
       (r[C.src] === "caixa" && !documentReportFor(r[C.id])
         ? '<section class="mkt azbox" data-az="' + esc(r[C.id]) + '" data-az-source="' +
           esc(r[C.link] || "") + '"></section>' : "") +
+
+      (r[C.link] ? '<a class="cta" href="' + esc(r[C.link]) +
+        '" target="_blank" rel="noopener" data-out="' + esc(r[C.src] || "lot") + '">' +
+        t("lot.cta") + "</a>" : "") +
     "</div>" + lotHistory(r) + sameStreetLots(r) + relatedLots(r) + footer();
 }
 
@@ -2573,9 +2561,9 @@ function pageTrail(path) {
   return trail;
 }
 
-/* Sitemap dates come only from public lifecycle/evidence/report dates. A
- * scope page may use the maximum date among the exact rows it contains; there
- * is never a build-time fallback. */
+/* Sitemap dates come only from public lifecycle, evidence and report dates.
+ * A scope page can truthfully use the maximum such date among the rows it
+ * actually contains; it never falls back to the build timestamp. */
 function lotLastmodForRow(r) {
   if (!r) return null;
   var lc = lifecycle(r), dates = [];
@@ -2596,7 +2584,8 @@ function lotLastmodForRow(r) {
 }
 
 function scopeLastmod(rows) {
-  var dates = uniqueRows(rows).map(lotLastmodForRow).filter(Boolean).sort();
+  var dates = (Array.isArray(rows) ? rows : []).map(lotLastmodForRow).filter(Boolean);
+  dates.sort();
   return dates.length ? dates[dates.length - 1] : null;
 }
 
@@ -2705,9 +2694,7 @@ function headFor(path) {
     base.desc = main ? t("head.street.desc", {
       street: title(stx.name), district: areaName(stx.bairro),
       year: city.streets.year, value: money(main[0]), n: num(main[1]),
-    }) : t("head.street.catalog.desc", {
-      street: title(stx.name), city: name, lots: lots((lotsByStreet[streetBySlug[last]] || []).length),
-    });
+    }) : title(stx.name) + ", " + name + ". " + t("scope.dossier.note");
     if (!streetSeoEligible(streetBySlug[last])) base.noindex = true;
   } else if (slugToKey.fwd[last]) {
     var st = areaStat(slugToKey.fwd[last]);
@@ -2767,7 +2754,7 @@ function headFor(path) {
       : t("head.city.desc", {
           city: name, lots: lots(city.stats.lots), below: num(city.stats.below),
         });
-    if (!citySeoEligible()) base.noindex = true;
+    if (!citySeoEligible(city)) base.noindex = true;
   }
   return base;
 }
@@ -2793,38 +2780,19 @@ function render() {
 function wireGallery(root) {
   var gallery = root && root.querySelector ? root.querySelector("[data-gallery]") : null;
   if (!gallery) return;
-  if (gallery.getAttribute("data-gallery-wired") === "true") return;
-  gallery.setAttribute("data-gallery-wired", "true");
   var hero = gallery.querySelector("[data-gallery-hero]");
-  var open = gallery.querySelector("[data-gallery-open]");
-  var lightbox = gallery.querySelector("[data-gallery-lightbox]");
-  var lightboxImage = gallery.querySelector("[data-gallery-lightbox-image]");
-  var closeButtons = [].slice.call(gallery.querySelectorAll("[data-gallery-close]"));
-  var lightboxPrev = gallery.querySelector("[data-gallery-lightbox-prev]");
-  var lightboxNext = gallery.querySelector("[data-gallery-lightbox-next]");
-  var lightboxCount = gallery.querySelector("[data-gallery-lightbox-count]");
   var thumbs = [].slice.call(gallery.querySelectorAll("[data-gallery-index]"));
   var prev = gallery.querySelector("[data-gallery-prev]");
   var next = gallery.querySelector("[data-gallery-next]");
   var count = gallery.querySelector("[data-gallery-count]");
   var total = Number(gallery.getAttribute("data-gallery-total")) || thumbs.length;
-  var current = 0;
-  if (!hero) return;
+  if (!hero || total < 2 || thumbs.length < 2) return;
   gallery.setAttribute("tabindex", "0");
 
-  function syncLightbox() {
-    if (!lightboxImage) return;
-    lightboxImage.setAttribute("src", hero.getAttribute("src") || "");
-    lightboxImage.setAttribute("alt", hero.getAttribute("alt") || "");
-    if (lightboxCount) lightboxCount.textContent = galleryText("count", current + 1, total);
-    if (lightboxPrev) lightboxPrev.disabled = current === 0;
-    if (lightboxNext) lightboxNext.disabled = current === total - 1;
-  }
   function select(index, moveFocus) {
     index = Math.max(0, Math.min(total - 1, index));
     var button = thumbs[index], image = button && button.querySelector("img");
     if (!button || !image) return;
-    current = index;
     hero.setAttribute("src", image.getAttribute("src") || "");
     hero.setAttribute("alt", button.getAttribute("data-gallery-alt") || button.getAttribute("aria-label") || "");
     thumbs.forEach(function (item, i) {
@@ -2833,47 +2801,8 @@ function wireGallery(root) {
     if (count) count.textContent = galleryText("count", index + 1, total);
     if (prev) prev.disabled = index === 0;
     if (next) next.disabled = index === total - 1;
-    syncLightbox();
     if (moveFocus) button.focus();
   }
-  function closeLightbox() {
-    if (!lightbox || lightbox.hidden) return;
-    lightbox.hidden = true;
-    document.removeEventListener("keydown", onLightboxKey);
-    if (open) open.focus();
-  }
-  function onLightboxKey(event) {
-    if (event.key === "Escape") {
-      event.preventDefault(); closeLightbox();
-    } else if (total > 1 && event.key === "ArrowLeft") {
-      event.preventDefault(); select(current - 1, false);
-    } else if (total > 1 && event.key === "ArrowRight") {
-      event.preventDefault(); select(current + 1, false);
-    }
-  }
-  if (open && lightbox) open.addEventListener("click", function () {
-    syncLightbox();
-    lightbox.hidden = false;
-    document.addEventListener("keydown", onLightboxKey);
-    var closer = gallery.querySelector(".gallery-lightbox-close");
-    if (closer) closer.focus();
-  });
-  closeButtons.forEach(function (button) {
-    button.addEventListener("click", closeLightbox);
-  });
-  if (lightbox && total > 1) {
-    var touchStart = null;
-    lightbox.addEventListener("touchstart", function (event) {
-      touchStart = event.touches && event.touches[0] ? event.touches[0].clientX : null;
-    }, { passive: true });
-    lightbox.addEventListener("touchend", function (event) {
-      var end = event.changedTouches && event.changedTouches[0] ? event.changedTouches[0].clientX : null;
-      if (touchStart == null || end == null || Math.abs(end - touchStart) < 42) return;
-      select(current + (end < touchStart ? 1 : -1), false);
-      touchStart = null;
-    }, { passive: true });
-  }
-  if (total < 2 || thumbs.length < 2) return;
   thumbs.forEach(function (button, index) {
     button.addEventListener("click", function () { select(index, false); });
   });
@@ -2882,11 +2811,11 @@ function wireGallery(root) {
     select(current - 1, true);
   });
   if (next) next.addEventListener("click", function () {
+    var current = thumbs.findIndex(function (item) { return item.getAttribute("aria-current") === "true"; });
     select(current + 1, true);
   });
-  if (lightboxPrev) lightboxPrev.addEventListener("click", function () { select(current - 1, false); });
-  if (lightboxNext) lightboxNext.addEventListener("click", function () { select(current + 1, false); });
   gallery.addEventListener("keydown", function (event) {
+    var current = thumbs.findIndex(function (item) { return item.getAttribute("aria-current") === "true"; });
     if (event.key === "ArrowLeft" || event.key === "ArrowUp") {
       event.preventDefault(); select(current - 1, true);
     } else if (event.key === "ArrowRight" || event.key === "ArrowDown") {
@@ -2905,20 +2834,8 @@ function wire() {
   var near = $("near");
   if (near) near.addEventListener("click", askNear);
   wireCity($("view"));
-  wireAnalysisCTA($("view"));
   wireGallery($("view"));
   wireDocumentReport($("view"));
-}
-
-function wireAnalysisCTA(root) {
-  var button = root && root.querySelector ? root.querySelector("[data-analysis-cta]") : null;
-  var target = root && root.querySelector ? root.querySelector("[data-az]") : null;
-  if (!button || !target) return;
-  button.addEventListener("click", function () {
-    target.scrollIntoView({ behavior: "smooth", block: "start" });
-    var control = target.querySelector("button, input, [tabindex]");
-    if (control && typeof control.focus === "function") control.focus({ preventScroll: true });
-  });
 }
 
 /* Asked for only on a tap, used only in the browser, never sent anywhere. */

@@ -10,7 +10,7 @@ const functions = source.split('/* ---- boot ')[0];
 assert.ok(functions.length < source.length, 'boot boundary exists');
 const cat = JSON.parse(readFileSync(new URL('../site/i18n/pt.json', import.meta.url)));
 const cols = ['id', 'src', 'bairro', 'end', 'tipo', 'area', 'quartos', 'preco', 'hammer',
-  'margin', 'mkt', 'aval', 'avalpct', 'n', 'ring', 'conf', 'jud', 'mod', 'data', 'link'];
+  'margin', 'mkt', 'aval', 'avalpct', 'n', 'ring', 'conf', 'jud', 'mod', 'data', 'link', 'srcdetail'];
 const row = fields => cols.map(k => fields[k] ?? null);
 const city = {
   slug: 'rio-de-janeiro-rj', uf: 'rj', cslug: 'rio-de-janeiro', nome: 'Rio de Janeiro',
@@ -144,7 +144,19 @@ const documented = row({ id: 'documented', tipo: 'apartamento', bairro: 'COPACAB
 const seededOnly = row({ id: 'seeded-only', tipo: 'apartamento', bairro: 'COPACABANA',
   end: 'Rua Só Bootstrap, 5', area: 50, preco: 123000,
   link: 'https://source.example/lots/seeded-only' });
-city.rows.push(strong, weak, bare, reliable, reported, documented, seededOnly);
+const partialCaixa = row({ id: 'partial-caixa', src: 'caixa', tipo: 'apartamento', bairro: 'COPACABANA',
+  end: 'Rua Observada, 4', area: 50, preco: 123000,
+  link: 'https://venda-imoveis.caixa.gov.br/sistema/detalhe-imovel.asp?hdnimovel=123456789' });
+const partialWrongSource = row({ id: 'partial-wrong-source', src: 'caixa', tipo: 'apartamento', bairro: 'COPACABANA',
+  end: 'Rua Fonte Incorreta, 3', area: 50, preco: 123000,
+  link: 'https://source.example/lots/partial-wrong-source' });
+const partialNoMarker = row({ id: 'partial-no-marker', src: 'caixa', tipo: 'apartamento', bairro: 'COPACABANA',
+  end: 'Rua Sem Marker, 8', area: 50, preco: 123000,
+  link: 'https://venda-imoveis.caixa.gov.br/sistema/detalhe-imovel.asp?hdnimovel=456789123' });
+const partialStale = row({ id: 'partial-stale', src: 'caixa', tipo: 'apartamento', bairro: 'COPACABANA',
+  end: 'Rua Antiga, 2', area: 50, preco: 123000,
+  link: 'https://venda-imoveis.caixa.gov.br/sistema/detalhe-imovel.asp?hdnimovel=987654321' });
+city.rows.push(strong, weak, bare, reliable, reported, documented, seededOnly, partialCaixa, partialWrongSource, partialNoMarker, partialStale);
 city.lifecycle = {
   strong: { status: 'active', slug: 'strong', first_seen_at: '2026-09-12T10:00:00Z',
     last_seen_at: '2026-09-13T10:00:00Z', last_checked_at: '2026-09-14T10:00:00Z',
@@ -163,6 +175,18 @@ city.lifecycle = {
     last_checked_at: '2026-09-14T10:00:00Z', missing_since: '2026-09-14T10:00:00Z',
     archived_at: '2026-09-14T10:00:00Z',
     history: [{ kind: 'seeded', observed_at: '2026-09-14T10:00:00Z', source_date: null, source_url: null }] },
+  'partial-caixa': { status: 'unverified', slug: 'partial-caixa', first_seen_at: null,
+    positive_source_observed_at: '2026-09-15T10:00:00Z', last_seen_at: '2026-09-15T10:00:00Z',
+    last_checked_at: '2026-09-15T10:00:00Z', missing_since: null, archived_at: null, history: [] },
+  'partial-wrong-source': { status: 'unverified', slug: 'partial-wrong-source', first_seen_at: null,
+    positive_source_observed_at: '2026-09-15T10:00:00Z', last_seen_at: '2026-09-15T10:00:00Z',
+    last_checked_at: '2026-09-15T10:00:00Z', missing_since: null, archived_at: null, history: [] },
+  'partial-no-marker': { status: 'unverified', slug: 'partial-no-marker', first_seen_at: null,
+    last_seen_at: '2026-09-15T10:00:00Z', last_checked_at: '2026-09-15T10:00:00Z',
+    missing_since: null, archived_at: null, history: [] },
+  'partial-stale': { status: 'unverified', slug: 'partial-stale', first_seen_at: null,
+    positive_source_observed_at: '2026-09-11T10:00:00Z', last_seen_at: '2026-09-11T10:00:00Z',
+    last_checked_at: '2026-09-11T10:00:00Z', missing_since: null, archived_at: null, history: [] },
 };
 window.__D__.market_reports = { reported: { schema: 'market-v1' } };
 window.__D__.saved_analyses = { documented: {} };
@@ -182,15 +206,57 @@ assert.equal(ctx.headFor(ctx.href('/l/reported')).noindex, undefined);
 assert.equal(ctx.headFor(ctx.href('/l/documented')).noindex, undefined);
 assert.equal(ctx.headFor(ctx.href('/l/seeded-only')).noindex, true,
   'a collector/bootstrap timestamp alone is not independent historical evidence');
-assert.match(ctx.headFor(strongPath).desc, /lance inicial por m²/);
-assert.match(ctx.headFor(strongPath).desc, /status da disponibilidade/);
-assert.match(ctx.screenStreet('seo'), /Inventário publicado/);
+assert.equal(ctx.lotStatus(partialCaixa), 'unverified', 'presence evidence must not assert active availability');
+assert.equal(ctx.headFor(ctx.href('/l/partial-caixa')).noindex, undefined,
+  'a fresh, directly observed Caixa row can be indexed without absence inference');
+assert.match(ctx.screenLot('partial-caixa'), /Disponibilidade não verificada/,
+  'the indexed partial row still discloses its unverified availability');
+assert.equal(ctx.headFor(ctx.href('/l/partial-wrong-source')).noindex, true,
+  'a partial marker without the official Caixa detail URL is not enough');
+assert.equal(ctx.headFor(ctx.href('/l/partial-no-marker')).noindex, true,
+  'generic lifecycle dates cannot masquerade as a positive source observation');
+assert.equal(ctx.headFor(ctx.href('/l/partial-stale')).noindex, true,
+  'positive observation evidence expires after three days');
+assert.match(ctx.screenLot('strong'), /Dados deste lote/);
+assert.match(ctx.screenLot('strong'), /status da disponibilidade/);
+assert.match(ctx.screenLot('strong'), /lance inicial por m²/);
+assert.match(ctx.screenStreet('seo'), /Resumo do catálogo desta página/);
 assert.equal(ctx.headFor(ctx.href('/r/seo')).noindex, undefined);
 assert.equal(ctx.headFor(base + 'copacabana/').noindex, undefined);
 assert.equal(ctx.lotLastmod(strongPath), '2026-09-14');
 assert.equal(ctx.routeLastmod(ctx.href('/r/seo')), '2026-09-14');
-assert.equal(ctx.routeLastmod(base + 'copacabana/'), '2026-09-14');
-assert.equal(ctx.routeLastmod(base), '2026-09-14');
+assert.equal(ctx.routeLastmod(base + 'copacabana/'), '2026-09-15');
+assert.equal(ctx.routeLastmod(base), '2026-09-15');
+
+// Separate Caixa units may have the same normalised address, type, area and
+// price. A bounded source-stated unit detail must survive into both the body
+// and search metadata; a hash reference by itself is not useful page content.
+const salas801 = row({ id: 'salas-801', src: 'caixa', tipo: 'sala', bairro: 'COPACABANA',
+  end: 'Avenida Exemplo, 109', area: 50, preco: 123000,
+  link: 'https://venda-imoveis.caixa.gov.br/sistema/detalhe-imovel.asp?hdnimovel=801',
+  srcdetail: 'SALAS 801/802' });
+const salas803 = row({ id: 'salas-803', src: 'caixa', tipo: 'sala', bairro: 'COPACABANA',
+  end: 'Avenida Exemplo, 109', area: 50, preco: 123000,
+  link: 'https://venda-imoveis.caixa.gov.br/sistema/detalhe-imovel.asp?hdnimovel=803',
+  srcdetail: 'SALAS 803/804' });
+city.rows.push(salas801, salas803);
+for (const id of ['salas-801', 'salas-803']) city.lifecycle[id] = {
+  status: 'active', slug: id, first_seen_at: '2026-09-14T10:00:00Z',
+  last_seen_at: '2026-09-15T10:00:00Z', last_checked_at: '2026-09-15T10:00:00Z',
+  missing_since: null, archived_at: null, history: [],
+};
+ctx.indexCity(city);
+const salas801Head = ctx.headFor(ctx.href('/l/salas-801'));
+const salas803Head = ctx.headFor(ctx.href('/l/salas-803'));
+assert.notEqual(salas801Head.title, salas803Head.title);
+assert.notEqual(salas801Head.desc, salas803Head.desc);
+assert.match(salas801Head.title, /Salas 801\/802/);
+assert.match(salas803Head.desc, /Salas 803\/804/);
+assert.match(ctx.screenLot('salas-801'), /Identificação da unidade informada pela fonte: Salas 801\/802/);
+assert.match(ctx.screenLot('salas-803'), /Identificação da unidade informada pela fonte: Salas 803\/804/);
+salas801[cols.indexOf('srcdetail')] = '<script>private title</script>';
+assert.doesNotMatch(ctx.screenLot('salas-801'), /private title|source-detail/,
+  'rendering rejects a raw/unapproved source title even if a payload is tampered');
 
 assert.equal(ctx.citySeoEligible({ rows: [], market: { year: null, d: { X: { f: [9000, 12] } } },
   streets: { d: {} } }), false, 'undated market payload cannot index a city');
@@ -204,7 +270,7 @@ city.streets.d.catalogue = { name: 'Rua Catálogo', slug: 'rua-catalogo', bairro
 ctx.indexCity(city);
 const catalogueStreet = ctx.headFor(ctx.href('/r/catalogue'));
 assert.equal(catalogueStreet.noindex, true, 'a street without deed evidence remains out of the sitemap');
-assert.match(catalogueStreet.desc, /não afirma uma avaliação/);
+assert.match(catalogueStreet.desc, /Contagens são registros do catálogo/);
 
 for (const path of ['/leilao-de-imoveis/', '/leilao-de-imoveis/rj/', base + 'rua/',
   base + 'lote/', base + 'missing/', base + 'todos-os-lotes/extra/',
@@ -216,12 +282,8 @@ for (const path of ['/leilao-de-imoveis/', '/leilao-de-imoveis/rj/', base + 'rua
 }
 assert.equal(ctx.headFor('/404').noindex, true);
 ctx.atCity = true;
-const firstTrail = Array.from(ctx.pageTrail(urls[0]), x => x.path);
-assert.deepEqual(firstTrail.slice(0, 3), ['/', base, base + 'copacabana/']);
-assert.equal(firstTrail.at(-1), urls[0]);
-const unmappedTrail = Array.from(ctx.pageTrail(urls[84]), x => x.path);
-assert.deepEqual(unmappedTrail.slice(0, 2), ['/', base]);
-assert.equal(unmappedTrail.at(-1), urls[84]);
+assert.deepEqual(Array.from(ctx.pageTrail(urls[0]), x => x.path), ['/', base, base + 'copacabana/', urls[0]]);
+assert.deepEqual(Array.from(ctx.pageTrail(urls[84]), x => x.path), ['/', base, urls[84]]);
 city.streets = { d: { '1': { name: 'Rua Real', slug: 'rua-real', bairro: 'COPACABANA' } } };
 ctx.indexCity(city);
 assert.deepEqual(Array.from(ctx.pageTrail(base + 'rua/rua-real/'), x => x.path),
