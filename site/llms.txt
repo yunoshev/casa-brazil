@@ -1,0 +1,14 @@
+# Preço Real
+
+> Catálogo público de imóveis em leilão no Brasil, com contexto histórico e de mercado quando os dados publicados permitem.
+
+Preço Real reúne registros públicos de lotes, preços publicados em anúncios, avaliações bancárias, faixas de preços pedidos em anúncios e observações agregadas de ITBI. Esses números descrevem coisas diferentes: preço pedido não é transação concluída; avaliação bancária não é preço de venda; e uma referência calculada não confirma que um lote foi arrematado por aquele valor.
+
+Lotes arquivados ou ausentes da fonte podem continuar publicados como histórico. A ausência atual não prova venda, retirada ou cancelamento. Datas de publicação, observação, importação e resultado são mantidas separadas quando disponíveis.
+
+Relatórios de mercado usam apenas os dados e a amostra indicados na página. A análise assistida por IA pode estar indisponível; quando existe, é uma referência informativa e não substitui o edital, a matrícula, a fonte original, vistoria ou orientação profissional.
+
+## Links
+
+- [Página inicial](https://precodemartelo.com/): visão geral do catálogo.
+- [Catálogo de leilões no Rio de Janeiro](https://precodemartelo.com/leilao-de-imoveis/rj/rio-de-janeiro/): exemplo de catálogo publicado por cidade.

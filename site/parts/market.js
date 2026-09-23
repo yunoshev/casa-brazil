@@ -60,7 +60,10 @@
     if (value.source !== "ZAP Imóveis" && value.source !== "Viva Real") return false;
     if (typeof value.url !== "string" || !/^https:\/\/(?:www\.)?(?:zapimoveis\.com\.br|vivareal\.com\.br)\/imove/i.test(value.url) || /[?#\s]/.test(value.url)) return false;
     if (typeof value.observed_at !== "string" || !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2}(?:\.\d{1,6})?)?Z$/.test(value.observed_at)) return false;
-    return finiteNumber(value.price_brl) && value.price_brl > 0 && finiteNumber(value.area_m2) && value.area_m2 > 0 && finiteNumber(value.price_per_m2) && value.price_per_m2 > 0 && finiteNumber(value.distance_m) && value.distance_m >= 0;
+    return finiteNumber(value.price_brl) && value.price_brl > 0 &&
+      finiteNumber(value.area_m2) && value.area_m2 > 0 &&
+      finiteNumber(value.price_per_m2) && value.price_per_m2 > 0 &&
+      finiteNumber(value.distance_m) && value.distance_m >= 0;
   }
 
   function validReport(report) {
@@ -81,7 +84,8 @@
         !integer(report.sample.freshness_days, 0, 3650) ||
         CONFIDENCE.indexOf(report.sample.confidence) === -1) return false;
 
-    return Array.isArray(report.comparables) && report.comparables.length <= 20 && report.comparables.every(validComparable) &&
+    return Array.isArray(report.comparables) && report.comparables.length <= 20 &&
+      report.comparables.every(validComparable) &&
       typeof report.disclaimer === "string" &&
       report.disclaimer.trim().length > 0 && report.disclaimer.length <= 2000;
   }

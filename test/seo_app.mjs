@@ -258,6 +258,27 @@ salas801[cols.indexOf('srcdetail')] = '<script>private title</script>';
 assert.doesNotMatch(ctx.screenLot('salas-801'), /private title|source-detail/,
   'rendering rejects a raw/unapproved source title even if a payload is tampered');
 
+// Unique route IDs and self-canonicals do not cure duplicate content. Every
+// indistinguishable current member stays out of search and the sitemap until
+// the source provides a bounded fact that separates it.
+const duplicateA = row({ id: 'duplicate-a', src: 'leilaoimovel', tipo: 'outros', bairro: 'CENTRO',
+  end: 'Av. Churchill, n 109', area: 0, preco: 320000, data: '2026-09-04',
+  link: 'https://www.leilaoimovel.com.br/imovel/rj/rio-de-janeiro/outros-imovel-2942455' });
+const duplicateB = row({ id: 'duplicate-b', src: 'leilaoimovel', tipo: 'outros', bairro: 'CENTRO',
+  end: 'Av. Churchill, n 109', area: 0, preco: 320000, data: '2026-09-04',
+  link: 'https://www.leilaoimovel.com.br/imovel/rj/rio-de-janeiro/outros-imovel-2942454' });
+city.rows.push(duplicateA, duplicateB);
+for (const id of ['duplicate-a', 'duplicate-b']) city.lifecycle[id] = {
+  status: 'active', slug: id, first_seen_at: '2026-09-14T10:00:00Z',
+  last_seen_at: '2026-09-15T10:00:00Z', last_checked_at: '2026-09-15T10:00:00Z',
+  missing_since: null, archived_at: null, history: [],
+};
+ctx.indexCity(city);
+assert.equal(ctx.hasDuplicatePublicContent(duplicateA), true);
+assert.equal(ctx.hasDuplicatePublicContent(duplicateB), true);
+assert.equal(ctx.headFor(ctx.href('/l/duplicate-a')).noindex, true);
+assert.equal(ctx.headFor(ctx.href('/l/duplicate-b')).noindex, true);
+
 assert.equal(ctx.citySeoEligible({ rows: [], market: { year: null, d: { X: { f: [9000, 12] } } },
   streets: { d: {} } }), false, 'undated market payload cannot index a city');
 assert.equal(ctx.citySeoEligible({ rows: [], market: { year: 2099, d: { X: { f: [9000, 12] } } },

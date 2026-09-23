@@ -47,10 +47,24 @@ class PublicConfigTest(unittest.TestCase):
     def test_analysis_requires_exact_lowercase_true(self):
         for value in (None, "false", "TRUE", "1"):
             env = {} if value is None else {"BRAZIL_PUBLIC_ANALYSIS_ENABLED": value}
-            self.assertFalse(settings(self.site, env)["analysis"]["enabled"])
-        self.assertTrue(
-            settings(self.site, {"BRAZIL_PUBLIC_ANALYSIS_ENABLED": "true"})["analysis"]["enabled"]
-        )
+            cfg = settings(self.site, env)["analysis"]
+            self.assertFalse(cfg["enabled"])
+            self.assertFalse(cfg["uploadEnabled"])
+
+        cfg = settings(self.site, {"BRAZIL_PUBLIC_ANALYSIS_ENABLED": "true"})["analysis"]
+        self.assertTrue(cfg["enabled"])
+        self.assertTrue(cfg["uploadEnabled"])
+
+    def test_upload_is_fail_closed_for_an_overridden_api_origin(self):
+        cfg = settings(
+            self.site,
+            {
+                "BRAZIL_PUBLIC_ANALYSIS_ENABLED": "true",
+                "ANALYSIS_API_BASE": "https://other-worker.example",
+            },
+        )["analysis"]
+        self.assertTrue(cfg["enabled"])
+        self.assertFalse(cfg["uploadEnabled"])
 
     def test_readonly_reports_require_explicit_flag_and_are_independent(self):
         for value in (None, "false", "TRUE", "1"):

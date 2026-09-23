@@ -41,7 +41,13 @@ import build as classic
 import shapes
 from market_release import compact_json as market_compact_json
 from market_release import lifecycle_binding, public_artifact
-from public_config import analysis_script_src, app_script_src, copy_script_src, snippet, stylesheet_href
+from public_config import (
+    analysis_script_src,
+    app_script_src,
+    copy_script_src,
+    snippet,
+    stylesheet_href,
+)
 from release_check import validate_release_site_url
 from release_promotion import (
     MANIFEST_NAME,
@@ -281,20 +287,53 @@ def load_document_reports(path: Path, source: dict) -> dict:
     cols = {name: i for i, name in enumerate(source["cols"])}
     rows = {str(row[cols["id"]]): row for city in source["cities"] for row in city["rows"]}
     result = {}
-    allowed = {"source_kind", "original_pdf_available", "reviewed", "source_id", "source_url",
-               "captured_at", "document_date", "page_count", "language", "model", "summary",
-               "findings", "unknowns", "next_checks", "limitations"}
+    allowed = {
+        "source_kind",
+        "original_pdf_available",
+        "reviewed",
+        "source_id",
+        "source_url",
+        "captured_at",
+        "document_date",
+        "page_count",
+        "language",
+        "model",
+        "summary",
+        "findings",
+        "unknowns",
+        "next_checks",
+        "limitations",
+    }
+
     def safe(value):
-        return isinstance(value, str) and 0 < len(value) <= 2000 and not re.search(r"[<>\x00-\x08]", value)
+        return (
+            isinstance(value, str)
+            and 0 < len(value) <= 2000
+            and not re.search(r"[<>\x00-\x08]", value)
+        )
+
     for lot_id, report in data["reports"].items():
-        if not re.fullmatch(r"[a-f0-9]{16}", lot_id) or not isinstance(report, dict) or set(report) != allowed:
+        if (
+            not re.fullmatch(r"[a-f0-9]{16}", lot_id)
+            or not isinstance(report, dict)
+            or set(report) != allowed
+        ):
             raise ValueError("invalid reviewed report fields")
-        if (report["source_kind"] != "browser_screenshots" or report["original_pdf_available"] is not False
-                or report["reviewed"] is not True or report["language"] != "pt"
-                or type(report["page_count"]) is not int or not 1 <= report["page_count"] <= 150
-                or not isinstance(report["source_id"], str) or not re.fullmatch(r"\d{8,20}", report["source_id"])):
+        if (
+            report["source_kind"] != "browser_screenshots"
+            or report["original_pdf_available"] is not False
+            or report["reviewed"] is not True
+            or report["language"] != "pt"
+            or type(report["page_count"]) is not int
+            or not 1 <= report["page_count"] <= 150
+            or not isinstance(report["source_id"], str)
+            or not re.fullmatch(r"\d{8,20}", report["source_id"])
+        ):
             raise ValueError("invalid reviewed report provenance")
-        expected = "https://venda-imoveis.caixa.gov.br/sistema/detalhe-imovel.asp?hdnimovel=" + report["source_id"]
+        expected = (
+            "https://venda-imoveis.caixa.gov.br/sistema/detalhe-imovel.asp?hdnimovel="
+            + report["source_id"]
+        )
         if report["source_url"] != expected:
             raise ValueError("invalid reviewed report source")
         try:
@@ -307,14 +346,22 @@ def load_document_reports(path: Path, source: dict) -> dict:
         if not safe(report["summary"]) or not safe(report["model"]):
             raise ValueError("invalid reviewed report text")
         for key in ("unknowns", "next_checks", "limitations"):
-            if not isinstance(report[key], list) or not 1 <= len(report[key]) <= 12 or not all(safe(x) for x in report[key]):
+            if (
+                not isinstance(report[key], list)
+                or not 1 <= len(report[key]) <= 12
+                or not all(safe(x) for x in report[key])
+            ):
                 raise ValueError("invalid reviewed report section")
         if not isinstance(report["findings"], list) or not 1 <= len(report["findings"]) <= 12:
             raise ValueError("invalid reviewed report findings")
         for finding in report["findings"]:
-            if (not isinstance(finding, dict) or set(finding) != {"page", "title", "quote", "text"}
-                    or type(finding["page"]) is not int or not 1 <= finding["page"] <= report["page_count"]
-                    or not all(safe(finding[k]) for k in ("title", "quote", "text"))):
+            if (
+                not isinstance(finding, dict)
+                or set(finding) != {"page", "title", "quote", "text"}
+                or type(finding["page"]) is not int
+                or not 1 <= finding["page"] <= report["page_count"]
+                or not all(safe(finding[k]) for k in ("title", "quote", "text"))
+            ):
                 raise ValueError("invalid reviewed report citation")
         row = rows.get(lot_id)
         if row is None:
@@ -323,6 +370,7 @@ def load_document_reports(path: Path, source: dict) -> dict:
             raise ValueError("document report does not match catalog source")
         result[lot_id] = report
     return result
+
 
 MARKET_KEYS = {
     "schema",
@@ -508,15 +556,26 @@ def _validate_market_report(value: Any, label: str) -> None:
         raise ValueError(f"{label}.disclaimer is invalid")
     comparables = value.get("comparables")
     if comparables is None:
+        # Private exporter input is the stable market-v1 aggregate.  The
+        # release boundary appends independently sanitised direct evidence.
         return
     if not isinstance(comparables, list) or len(comparables) > 20:
         raise ValueError(f"{label}.comparables is invalid")
     for number, comparable in enumerate(comparables, 1):
         if not isinstance(comparable, dict) or set(comparable) != {
-            "source", "url", "observed_at", "price_brl", "area_m2", "price_per_m2", "distance_m"
+            "source",
+            "url",
+            "observed_at",
+            "price_brl",
+            "area_m2",
+            "price_per_m2",
+            "distance_m",
         }:
             raise ValueError(f"{label}.comparables[{number}] has invalid fields")
-        if not isinstance(comparable["source"], str) or comparable["source"] not in {"ZAP Imóveis", "Viva Real"}:
+        if not isinstance(comparable["source"], str) or comparable["source"] not in {
+            "ZAP Imóveis",
+            "Viva Real",
+        }:
             raise ValueError(f"{label}.comparables[{number}].source is invalid")
         url = comparable["url"]
         parsed = urlsplit(url) if isinstance(url, str) else None
@@ -524,15 +583,35 @@ def _validate_market_report(value: Any, label: str) -> None:
             not isinstance(url, str)
             or not parsed
             or parsed.scheme != "https"
-            or parsed.hostname not in {"zapimoveis.com.br", "www.zapimoveis.com.br", "vivareal.com.br", "www.vivareal.com.br"}
-            or parsed.query or parsed.fragment or parsed.username or parsed.password
+            or parsed.hostname
+            not in {
+                "zapimoveis.com.br",
+                "www.zapimoveis.com.br",
+                "vivareal.com.br",
+                "www.vivareal.com.br",
+            }
+            or parsed.query
+            or parsed.fragment
+            or parsed.username
+            or parsed.password
             or not parsed.path.startswith("/imove")
         ):
             raise ValueError(f"{label}.comparables[{number}].url is invalid")
-        for key, maximum in (("price_brl", 100_000_000_000), ("area_m2", 10_000_000), ("price_per_m2", 100_000_000_000), ("distance_m", 100_000)):
-            if not _market_number(comparable[key]) or comparable[key] < 0 or comparable[key] > maximum:
+        for key, maximum in (
+            ("price_brl", 100_000_000_000),
+            ("area_m2", 10_000_000),
+            ("price_per_m2", 100_000_000_000),
+            ("distance_m", 100_000),
+        ):
+            if (
+                not _market_number(comparable[key])
+                or comparable[key] < 0
+                or comparable[key] > maximum
+            ):
                 raise ValueError(f"{label}.comparables[{number}].{key} is invalid")
-        if not isinstance(comparable["observed_at"], str) or not re.fullmatch(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2}(?:\.\d{1,6})?)?Z", comparable["observed_at"]):
+        if not isinstance(comparable["observed_at"], str) or not re.fullmatch(
+            r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2}(?:\.\d{1,6})?)?Z", comparable["observed_at"]
+        ):
             raise ValueError(f"{label}.comparables[{number}].observed_at is invalid")
 
 

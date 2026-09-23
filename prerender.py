@@ -38,7 +38,14 @@ from typing import Any, cast
 from urllib.parse import urlsplit
 
 import websockets
-from public_config import analysis_script_src, app_script_src, copy_script_src, privacy_page, snippet, stylesheet_href
+from public_config import (
+    analysis_script_src,
+    app_script_src,
+    copy_script_src,
+    privacy_page,
+    snippet,
+    stylesheet_href,
+)
 from release_check import validate_release_site_url
 from release_promotion import observed_partial_without_global_freshness
 from seo import (
@@ -82,6 +89,7 @@ LANG = "pt"
 #: output directory is the whole site.
 ASSETS = (
     "favicon.svg",
+    "llms.txt",
     "v2/style.css",
     "v2/fonts/bricolage.woff2",
     "v2/fonts/instrument.woff2",
@@ -93,7 +101,6 @@ ASSETS = (
     "parts/copy-analysis.js",
     "parts/analytics.js",
     "parts/market.js",
-    "v2/app.js",
     "data/market_reports.json",
 )
 
@@ -296,8 +303,9 @@ def shell(
     split: bool,
     ld: list,
     chrome: dict,
-    home: bool = False,
+    *,
     lot: bool = False,
+    home: bool = False,
 ) -> str:
     """One rendered screen, wrapped in the page it ships as."""
     scripts = "\n".join(f'<script type="application/ld+json">{blob(x)}</script>' for x in ld if x)
@@ -320,6 +328,26 @@ def shell(
         .replace('src="/v2/app.js"', f'src="{app_script_src()}"')
         .replace('href="/v2/style.css"', f'href="{stylesheet_href()}"')
     )
+
+
+def unique_routes(routes) -> list[str]:
+    """Keep the first occurrence of every valid route in the prerender queue.
+
+    The queue is seeded from catalogue city records as well as the root and
+    404 routes.  A duplicate city slug must not render, count, or validate the
+    same artifact twice; malformed records must fail closed instead of creating
+    an empty or filesystem-escaping output path.
+    """
+    result: list[str] = []
+    seen: set[str] = set()
+    for path in routes:
+        if not isinstance(path, str) or not path:
+            raise ValueError("prerender route must be a non-empty string")
+        route_file(path)
+        if path not in seen:
+            seen.add(path)
+            result.append(path)
+    return result
 
 
 def complete_head(html: str) -> str:
@@ -383,29 +411,20 @@ def esc_attr(s: str) -> str:
 #: without the theme keys the regex has stopped matching, and the build says so
 #: instead of shipping pages whose only visible string is a key name.
 KEY_RE = re.compile(r"""["']([a-z][a-z0-9_]*(?:\.[a-z0-9_]+)+)["']""")
-# `plur()` receives a translation-key base and resolves the locale-specific
-# `.one`, `.few`, `.many`, or `.other` key at runtime. Those bases are not
-# catalogue entries themselves, so do not make the static key audit reject a
-# shipped runtime merely because app.js contains a pluralized label.
-PLURAL_CALL_RE = re.compile(r"\bplur\([^;\n]{0,160}")
 KEY_CANARY = "nav.theme"
 
 
 def runtime_keys() -> set[str]:
     keys: set[str] = set()
-    plural_bases: set[str] = set()
     for rel in ASSETS:
         if rel.endswith(".js"):
-            source = (SITE / rel).read_text()
-            keys |= set(KEY_RE.findall(source))
-            for call in PLURAL_CALL_RE.findall(source):
-                plural_bases |= set(KEY_RE.findall(call))
+            keys |= set(KEY_RE.findall((SITE / rel).read_text()))
     if KEY_CANARY not in keys:
         raise SystemExit(
             f"в parts/*.js не нашлось даже {KEY_CANARY!r} — разбор ключей сломан, "
             f"страницы уехали бы с именами ключей вместо слов"
         )
-    return keys - plural_bases
+    return keys
 
 
 #: Written into every output directory this script creates. `--out` is emptied
@@ -520,7 +539,7 @@ async def run(a, ws_url: str, tpl: str, out: Path) -> None:
             # "/" first in the queue: it is where every link from outside lands,
             # and it is the one page the walk cannot discover, because nothing
             # in a body links up to it — the brand lives in the template.
-            queue = ["/"] + city_paths
+            queue = unique_routes(["/", *city_paths, *FLAT])
             glyphs = font_charset()
             unknown: set[str] = set()
             # The shell has no route of its own, so it redirects on load — and
@@ -566,7 +585,6 @@ async def run(a, ws_url: str, tpl: str, out: Path) -> None:
             runtime_payload = json.loads(await tab.settled("JSON.stringify(__D__)"))
             a.generated = payload_date(runtime_payload, asserted=a.generated, release=a.release)
 
-            queue += list(FLAT)
             seen, written, t0 = set(queue), 0, time.time()
             emitted = {}
             route_dates = {}
@@ -592,9 +610,7 @@ async def run(a, ws_url: str, tpl: str, out: Path) -> None:
                             raise SystemExit(f"{path}: lot {label} is empty")
                         previous = registry.get(value)
                         if previous is not None:
-                            raise SystemExit(
-                                f"duplicate lot {label}: {previous} and {path}"
-                            )
+                            raise SystemExit(f"duplicate lot {label}: {previous} and {path}")
                         registry[value] = path
                 html = shell(
                     tpl,
@@ -607,8 +623,8 @@ async def run(a, ws_url: str, tpl: str, out: Path) -> None:
                         "cities": menu,
                         "here": {"city": page["city"] or ("sao-paulo-sp" if path == "/" else "")},
                     },
-                    path == "/",
-                    page.get("lot", False),
+                    lot=page.get("lot", False),
+                    home=path == "/",
                 )
                 left = [m for m in MARKERS if m in html]
                 if left:
@@ -649,7 +665,9 @@ async def run(a, ws_url: str, tpl: str, out: Path) -> None:
             )
             if orphan_lots:
                 sample = ", ".join(orphan_lots[:5])
-                raise SystemExit(f"{len(orphan_lots)} emitted lot pages have no internal link: {sample}")
+                raise SystemExit(
+                    f"{len(orphan_lots)} emitted lot pages have no internal link: {sample}"
+                )
 
             # Map fragments are not routes: no document shell/canonical and no
             # sitemap entry. The current payload contains five supported cities.

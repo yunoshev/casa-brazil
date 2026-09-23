@@ -42,6 +42,9 @@ _EVIDENCE = frozenset(
         "distance_m",
     }
 )
+_PUBLIC_COMPARABLE = frozenset(
+    {"source", "url", "observed_at", "price_brl", "area_m2", "price_per_m2", "distance_m"}
+)
 _PUBLIC_SOURCE_HOSTS = frozenset(
     {"zapimoveis.com.br", "www.zapimoveis.com.br", "vivareal.com.br", "www.vivareal.com.br"}
 )
@@ -185,8 +188,9 @@ def _safe_public_market_text(market: Any) -> None:
 def _public_comparables(evidence: list[Any]) -> list[dict[str, Any]]:
     """Expose only independently safe, direct portal evidence.
 
-    Older database rows may have no source URL. They remain valid aggregate
-    evidence, but are not turned into guessed portal links.
+    Older database rows may have no source URL.  They remain valid aggregate
+    evidence, but are not turned into guessed portal links.  A missing link is
+    therefore an honest absence, never a release failure or a fabricated URL.
     """
     output: list[dict[str, Any]] = []
     seen: set[str] = set()
@@ -308,6 +312,9 @@ def public_artifact(
         if sample_count > evidence_count:
             raise ValueError(f"{label} has fewer evidence rows than its claimed sample")
         if lot_id in known_lot_ids:
+            # The aggregate DTO stays unchanged.  The small, independently
+            # sanitised list adds only direct public portal evidence; private
+            # ids and all source snapshot content remain excluded.
             projected = dict(market)
             projected["comparables"] = _public_comparables(item["evidence"])
             output[lot_id] = projected

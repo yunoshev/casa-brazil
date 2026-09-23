@@ -20,6 +20,28 @@ from seo import breadcrumbs, canonical_url, route_file
 
 
 class BuildIntegrationTest(unittest.TestCase):
+    def test_prerender_seed_routes_are_unique_and_fail_closed(self):
+        self.assertEqual(
+            prerender.unique_routes(["/", "/cidade/", "/cidade/", "/404", "/"]),
+            ["/", "/cidade/", "/404"],
+        )
+        with self.assertRaises(ValueError):
+            prerender.unique_routes(["/", ""])
+        with self.assertRaises(ValueError):
+            prerender.unique_routes(["/", "../escape/"])
+
+    def test_subpath_rebase_prefixes_internal_root_links_only(self):
+        prerender.BASE = "/casa-brazil"
+        html = (
+            '<a href="/leilao-de-imoveis/rj/rio-de-janeiro/">Rio</a>'
+            '<script src="/parts/lang.js"></script>'
+            '<link rel="canonical" href="https://yunoshev.github.io/casa-brazil/">'
+        )
+        rebased = prerender.rebase(html)
+        self.assertIn('href="/casa-brazil/leilao-de-imoveis/rj/rio-de-janeiro/"', rebased)
+        self.assertIn('src="/casa-brazil/parts/lang.js"', rebased)
+        self.assertIn('href="https://yunoshev.github.io/casa-brazil/"', rebased)
+
     def test_clean_temp_strict_partial_build_replaces_every_stale_release_artifact(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -192,6 +214,7 @@ class BuildIntegrationTest(unittest.TestCase):
             "PUBLIC_OPERATOR_CONTACT": "privacy@example.net",
             "GA4_ID": "G-TEST1234",
             "GA4_ENHANCED_MEASUREMENT_DISABLED": "true",
+            "BRAZIL_PUBLIC_ANALYSIS_ENABLED": "true",
         }
         for site in ["https://yunoshev.github.io/casa-brazil", "https://precodemartelo.com"]:
             with self.subTest(site=site), tempfile.TemporaryDirectory() as directory:
@@ -238,6 +261,7 @@ class BuildIntegrationTest(unittest.TestCase):
                     rendered = prerender.rebase(html)
                     self.assertIn(f'<link rel="icon" href="{favicon}"', rendered)
                     self.assertIn("window.__ANALYSIS__=", html)
+                    self.assertIn('"enabled":true,"uploadEnabled":true', html)
                     self.assertIn('"enhancedMeasurementDisabled":true', html)
                     self.assertLess(html.index("/parts/lang.js"), html.index("/parts/analytics.js"))
                     self.assertIn("/parts/market.js", html)
@@ -262,6 +286,14 @@ class BuildIntegrationTest(unittest.TestCase):
                     target.parent.mkdir(parents=True, exist_ok=True)
                     shutil.copy2(BRAZIL / "site" / asset, target)
                 self.assertFalse((out / "data/market_reports.json").exists())
+                llms_source = (BRAZIL / "site/llms.txt").read_text(encoding="utf-8")
+                self.assertEqual((out / "llms.txt").read_text(encoding="utf-8"), llms_source)
+                self.assertIn("https://precodemartelo.com/", llms_source)
+                self.assertIn(
+                    "https://precodemartelo.com/leilao-de-imoveis/rj/rio-de-janeiro/",
+                    llms_source,
+                )
+                self.assertNotIn("/como-calculamos/", llms_source)
                 prerender.write_sitemap(out, emitted, site, None)
                 prerender.write_robots(out, site)
                 result = check(out, site, release=site == "https://precodemartelo.com")

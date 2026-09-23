@@ -21,7 +21,6 @@ class Element {
   hasAttribute(k) { return k in this.attrs; }
   appendChild(el) { this.children.push(el); el.parent = this; return el; }
   addEventListener(name, fn) { (this.listeners[name] ||= []).push(fn); }
-  removeEventListener(name, fn) { this.listeners[name] = (this.listeners[name] || []).filter(listener => listener !== fn); }
   async click() {
     if (this.disabled) return;
     this.clicked = true;

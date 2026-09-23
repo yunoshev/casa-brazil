@@ -153,14 +153,9 @@ test('all shipped runtime literals exist in each catalogue; no hosts mistaken fo
   assert.ok(files.includes('parts/analytics.js'));
   const sources = files.map(f => readFileSync(new URL('../' + f, import.meta.url), 'utf8')).join('\n');
   const keys = [...sources.matchAll(/["']([a-z][a-z0-9_]*(?:\.[a-z0-9_]+)+)["']/g)].map(m => m[1]);
-  const pluralBases = new Set([...sources.matchAll(/\bplur\([^;\n]{0,160}/g)].flatMap(m =>
-    [...m[0].matchAll(/["']([a-z][a-z0-9_.]+)["']/g)].map(part => part[1])));
   assert.ok(keys.includes('nav.theme'));
   const cats = ['pt', 'en', 'ru'].map(lang => JSON.parse(readFileSync(new URL('../i18n/' + lang + '.json', import.meta.url))));
-  for (const cat of cats) for (const key of keys) {
-    if (pluralBases.has(key)) continue;
-    assert.equal(typeof cat[key], 'string', key);
-  }
+  for (const cat of cats) for (const key of keys) assert.equal(typeof cat[key], 'string', key);
   const scoped = cat => Object.keys(cat).filter(k => /^(az|analytics)\./.test(k)).sort();
   assert.deepEqual(scoped(cats[0]), scoped(cats[1])); assert.deepEqual(scoped(cats[0]), scoped(cats[2]));
 });

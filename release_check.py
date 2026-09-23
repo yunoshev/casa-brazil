@@ -11,6 +11,7 @@ import argparse
 import hashlib
 import json
 import re
+from datetime import date
 from html.parser import HTMLParser
 from pathlib import Path
 from urllib.parse import unquote, urljoin, urlsplit
@@ -32,6 +33,9 @@ class Page(HTMLParser):
         self.doctype = False
         self.lang = ""
         self.titles = 0
+        self.title_text = ""
+        self._title_parts: list[str] | None = None
+        self.descriptions: list[str] = []
         self.h1s = 0
         self.canonicals: list[str] = []
         self.og_urls: list[str] = []
@@ -52,6 +56,7 @@ class Page(HTMLParser):
             self.lang = a.get("lang") or ""
         if tag == "title":
             self.titles += 1
+            self._title_parts = []
         if tag == "h1":
             self.h1s += 1
         if tag == "link" and "canonical" in (a.get("rel") or "").lower().split():
@@ -60,6 +65,8 @@ class Page(HTMLParser):
             self.favicons.append(a.get("href") or "")
         if tag == "meta" and (a.get("property") or "").lower() == "og:url":
             self.og_urls.append(a.get("content") or "")
+        if tag == "meta" and (a.get("name") or "").lower() == "description":
+            self.descriptions.append(a.get("content") or "")
         if tag == "meta" and (a.get("name") or "").lower() in {"robots", "googlebot"}:
             directives = (a.get("content") or "").lower().replace(",", " ").split()
             self.noindex |= "noindex" in directives or "none" in directives
@@ -71,8 +78,13 @@ class Page(HTMLParser):
     def handle_data(self, data: str):
         if self._ld is not None:
             self._ld.append(data)
+        if self._title_parts is not None:
+            self._title_parts.append(data)
 
     def handle_endtag(self, tag: str):
+        if tag == "title" and self._title_parts is not None:
+            self.title_text = "".join(self._title_parts)
+            self._title_parts = None
         if tag == "script" and self._ld is not None:
             self.structured.append("".join(self._ld))
             self._ld = None
@@ -113,6 +125,16 @@ def local_file(out: Path, site: str, url: str) -> Path | None:
     """Resolve only this origin and site subpath; never follow symlinks out."""
     root = urlsplit(site)
     u = urlsplit(url)
+    if (
+        u.hostname
+        and u.hostname == root.hostname
+        and (u.scheme, u.netloc)
+        != (
+            root.scheme,
+            root.netloc,
+        )
+    ):
+        raise ValueError("same-host URL must use the canonical HTTPS origin")
     if (u.scheme, u.netloc) != (root.scheme, root.netloc):
         return None
     base = root.path.rstrip("/")
@@ -190,11 +212,7 @@ def _check_manifest_public_artifacts(out: Path, errors: list[str]) -> None:
             continue
         unresolved = out / relative
         target = unresolved.resolve()
-        if (
-            unresolved.is_symlink()
-            or not target.is_relative_to(root)
-            or not target.is_file()
-        ):
+        if unresolved.is_symlink() or not target.is_relative_to(root) or not target.is_file():
             errors.append(f"{label}: deployed file is missing or unsafe")
             continue
         try:
@@ -208,6 +226,23 @@ def _check_manifest_public_artifacts(out: Path, errors: list[str]) -> None:
                 f"{label}: deployed bytes do not match lifecycle manifest "
                 f"(expected {size} bytes/{digest[:12]}, got {len(public)} bytes/{actual[:12]})"
             )
+
+
+def _check_lastmod(node, context: str, errors: list[str]) -> None:
+    """Reject malformed or future dates before a sitemap can be published."""
+    value = node.text or ""
+    if not re.fullmatch(r"\d{4}-\d{2}-\d{2}", value):
+        errors.append(f"{context}: lastmod must be YYYY-MM-DD")
+        return
+    try:
+        parsed = date.fromisoformat(value)
+    except ValueError:
+        errors.append(f"{context}: invalid lastmod date")
+        return
+    if parsed > date.today():
+        errors.append(f"{context}: lastmod is in the future")
+
+
 def check(out: Path, site: str, *, release: bool = False) -> dict:
     site = validate_release_site_url(site) if release else site_url(site)
     out = out.resolve()
@@ -231,18 +266,29 @@ def check(out: Path, site: str, *, release: bool = False) -> dict:
         if tree.tag == f"{{{NS['s']}}}sitemapindex":
             for node in tree.findall("s:sitemap/s:loc", NS):
                 try:
+                    loc = node.text or ""
+                    parsed = urlsplit(loc)
+                    if parsed.query or parsed.fragment:
+                        raise ValueError("sitemap loc must not contain query or fragment")
                     target = local_file(out, site, node.text or "")
                     if target is None or target.suffix != ".xml":
                         raise ValueError("non-local sitemap")
+                    lastmod = node.find("s:lastmod", NS)
+                    if lastmod is not None:
+                        _check_lastmod(lastmod, f"{path.name}: sitemap", errors)
                     read_sitemap(target)
                 except ValueError as exc:
                     errors.append(str(exc))
         elif tree.tag == f"{{{NS['s']}}}urlset":
-            for node in tree.findall("s:url/s:loc", NS):
-                url = node.text or ""
+            for url_node in tree.findall("s:url", NS):
+                loc_node = url_node.find("s:loc", NS)
+                url = (loc_node.text if loc_node is not None else "") or ""
                 if url in urls:
                     errors.append(f"duplicate sitemap URL: {url}")
                 urls.add(url)
+                lastmod = url_node.find("s:lastmod", NS)
+                if lastmod is not None:
+                    _check_lastmod(lastmod, f"{path.name}: {url or '<empty loc>'}", errors)
         else:
             errors.append(f"unknown sitemap root: {path.name}")
 
@@ -282,8 +328,12 @@ def check(out: Path, site: str, *, release: bool = False) -> dict:
         own_url = site + "/" + route
         if not page.doctype or page.lang.lower() not in {"pt", "pt-br"}:
             errors.append(f"{rel}: missing HTML doctype or Portuguese lang")
-        if page.titles != 1:
-            errors.append(f"{rel}: expected one title")
+        if page.titles != 1 or not page.title_text.strip():
+            errors.append(f"{rel}: expected one non-empty title")
+        if len(page.descriptions) != 1 or not page.descriptions[0].strip():
+            errors.append(f"{rel}: expected one non-empty meta description")
+        if page.canonicals != [own_url]:
+            errors.append(f"{rel}: missing or non-self canonical")
         if rel == "404.html":
             if not page.noindex:
                 errors.append("404.html: must be noindex")
@@ -291,8 +341,6 @@ def check(out: Path, site: str, *, release: bool = False) -> dict:
             expected.add(own_url)
             if page.h1s != 1:
                 errors.append(f"{rel}: expected one H1")
-            if page.canonicals != [own_url]:
-                errors.append(f"{rel}: missing or non-self canonical")
         if page.og_urls != [own_url]:
             errors.append(f"{rel}: missing or non-self og:url")
         favicon_href = (urlsplit(site).path.rstrip("/") + "/favicon.svg") or "/favicon.svg"

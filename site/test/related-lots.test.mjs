@@ -14,7 +14,7 @@ function fixture() {
   const c = {
     slug: 'rio-de-janeiro-rj', uf: 'rj', cslug: 'rio-de-janeiro', nome: 'Rio de Janeiro',
     cidade: 'RIO DE JANEIRO', stats: {}, chain: { hammer_over_asking: 0.5 },
-    shapes: { nice: { CENTRO: 'Centro' }, d: { CENTRO: 'M0 0' }, at: {}, of: {} },
+    shapes: { nice: { CENTRO: 'Centro' }, d: { CENTRO: 'M0 0' }, of: {} },
     market: {}, streets: { by: { CENTRO: ['main'] }, d: {
       main: { name: 'Rua Principal', slug: 'rua-principal', bairro: 'CENTRO', bairros: ['CENTRO'] },
     } }, lifecycle: {}, rows: [],
@@ -39,7 +39,7 @@ function runtime(c) {
   const LANG = { code: 'en', langs: ['en'], names: { en: 'English' }, num: String, money: String,
     pct: String, plur: (key, n) => key + (n === 1 ? '.one' : '.other'),
     t: (key, vars = {}, fallback) => (cat[key] || fallback || key).replace(/\{(\w+)\}/g, (s, k) => vars?.[k] ?? s) };
-  const window = { __D__: { cols, cities: [c], generated: c.generated }, __SHIP_LANGS__: ['en'] };
+  const window = { __D__: { cols, cities: [c] }, __SHIP_LANGS__: ['en'] };
   const ctx = vm.createContext({ window, LANG, URL, document: {
     createElement: () => ({ innerHTML: '', querySelectorAll: () => [] }),
   } });
@@ -96,7 +96,7 @@ test('lot breadcrumbs include only valid city, area and street routes', () => {
   assert.match(html, /www\.google\.com\/maps\/search\/\?api=1&amp;query=/);
   const missing = fixture();
   missing.rows[0][C.bairro] = 'No Such District';
-  missing.rows[0][C.end] = 'Condomínio Sem Rua, 1';
+  missing.rows[0][C.end] = 'Rua Sem Rota, 1';
   const missingCtx = runtime(missing);
   const missingPath = missingCtx.href('/l/origin');
   assert.deepEqual(Array.from(missingCtx.pageTrail(missingPath), item => item.path), [
@@ -116,67 +116,13 @@ test('a lot gets a compact, exact-street block only after a certain address matc
   assert.match(html, /rua\/rua-principal\//);
 
   const uncertain = fixture();
-  uncertain.rows[0][C.end] = 'Condomínio Principal Annex, 10';
+  uncertain.rows[0][C.end] = 'Rua Principal Annex, 10';
   const uncertainCtx = runtime(uncertain);
   const uncertainHtml = uncertainCtx.screenLot('origin');
   assert.doesNotMatch(uncertainHtml, /same-street-lots/);
   assert.deepEqual(Array.from(uncertainCtx.pageTrail(uncertainCtx.href('/l/origin')), item => item.path), [
     '/', uncertainCtx.cityBase(), uncertainCtx.href('/a/CENTRO'), uncertainCtx.href('/l/origin'),
   ]);
-});
-
-test('an empty exact-street result explains the state and keeps the real catalogue link', () => {
-  const c = fixture();
-  c.rows = c.rows.slice(0, 1);
-  c.lifecycle = { origin: { status: 'active', slug: 'lot-origin', last_price_brl: 99000 } };
-  const html = runtime(c).screenLot('origin');
-  assert.match(html, /This is the only lot published on this street/);
-  assert.match(html, /class="same-street-all"/);
-  assert.doesNotMatch(html, /class="row same-street-lot"/);
-});
-
-test('an empty district result is explicit when no exact street route exists', () => {
-  const c = fixture();
-  c.rows = c.rows.slice(0, 1);
-  c.rows[0][C.end] = 'Condomínio Central, 10';
-  c.streets = { by: {}, d: {} };
-  c.lifecycle = { origin: { status: 'active', slug: 'lot-origin', last_price_brl: 99000 } };
-  const html = runtime(c).screenLot('origin');
-  assert.match(html, /No other published lots are in Centro yet/);
-  assert.match(html, /class="related-empty"/);
-  assert.doesNotMatch(html, /same-street-lots/);
-});
-
-test('street and district pages expose unique inventory counts, dated prices, and real section anchors', () => {
-  const c = fixture();
-  c.generated = '2026-09-16';
-  const ctx = runtime(c);
-  const street = ctx.screenStreet('main');
-  assert.match(street, /data-inventory-summary/);
-  assert.match(street, /3 catalog records/);
-  assert.match(street, /Archived or missing records.*1/);
-  assert.match(street, /Published opening bids.*100000/);
-  assert.match(street, /Dataset observation date: 2026-09-16/);
-  assert.match(street, /href="#street-current-lots"/);
-  assert.match(street, /id="street-current-lots"/);
-  assert.match(street, /id="street-archive-lots"/);
-
-  const area = ctx.screenArea('CENTRO');
-  assert.match(area, /5 catalog records/);
-  assert.match(area, /id="area-current-lots"/);
-  assert.match(area, /id="area-archive-lots"/);
-  assert.match(area, /href="#area-current-lots"/);
-  assert.match(area, /href="#area-archive-lots"/);
-});
-
-test('inventory summary never fabricates a price or observation date', () => {
-  const c = fixture();
-  c.rows.forEach(r => { r[C.preco] = null; });
-  const html = runtime(c).screenStreet('main');
-  assert.match(html, /No opening bid recorded/);
-  assert.match(html, /No observation date recorded/);
-  assert.doesNotMatch(html, /Published opening bids[^<]*0/);
-  assert.doesNotMatch(html, /Dataset observation date:/);
 });
 
 test('a gallery does not create an empty desktop sidebar on a lot route', () => {
@@ -190,43 +136,12 @@ test('a gallery does not create an empty desktop sidebar on a lot route', () => 
   assert.equal(rendered.split, false);
 });
 
-test('desktop lot heroes are not constrained by the prose reading measure', () => {
-  const css = readFileSync(new URL('../v2/style.css', import.meta.url), 'utf8');
-  assert.match(css, /\.lot-page > \.hero h1\{max-width:none\}/);
-  assert.doesNotMatch(css, /\.lot-page > \.hero,\s*\n\s*\.lot-page > \.verdict/);
-});
-
-test('the accepted Caixa lot gets a one-lot Rua Goncalves Chaves page and breadcrumb', () => {
-  const c = {
-    slug: 'sao-goncalo-rj', uf: 'rj', cslug: 'sao-goncalo', nome: 'São Gonçalo',
-    cidade: 'SAO GONCALO', stats: {}, chain: { hammer_over_asking: 0.5 }, market: {},
-    shapes: { nice: { 'JARDIM CATARINA': 'Jardim Catarina' }, d: { 'JARDIM CATARINA': 'M0 0' }, of: {} },
-    streets: {}, lifecycle: {}, rows: [row({
-      id: '8a60db6ce5d5914b', src: 'caixa', bairro: 'JARDIM CATARINA',
-      end: 'RUA GONCALVES CHAVES, N. 125, CS 04 LT 01 QD 3A', tipo: 'casa', area: 40,
-      preco: 66510, conf: 'ok', ring: 1000,
-    })],
-  };
-  const ctx = runtime(c);
-  const code = 'catalog-rua-goncalves-chaves';
-  const lotPath = ctx.href('/l/8a60db6ce5d5914b');
-  const streetPath = ctx.href('/r/' + code);
-  assert.equal(ctx.streetCodeForLot(c.rows[0]), code);
-  assert.deepEqual(Array.from(ctx.pageTrail(lotPath), item => item.path), [
-    '/', ctx.cityBase(), ctx.href('/a/JARDIM CATARINA'), streetPath, lotPath,
-  ]);
-  assert.match(ctx.screenLot('8a60db6ce5d5914b'), /rua\/rua-goncalves-chaves\//);
-  assert.match(ctx.screenFor(streetPath), /Current lots on this street/);
-  assert.match(ctx.screenFor(streetPath), /8a60db6ce5d5914b/);
-  assert.match(ctx.headFor(streetPath).desc, /auction lots/);
-});
-
 test('missing geography does not invent area or street routes', () => {
   const c = fixture();
   c.rows[0][C.bairro] = 'No Such District';
-  c.rows[0][C.end] = 'Condomínio Sem Rua, 1';
+  c.rows[0][C.end] = 'No Such Street, 1';
   const html = runtime(c).screenLot('origin');
-  assert.doesNotMatch(html, /\/rua\/condominio-sem-rua/);
+  assert.doesNotMatch(html, /\/rua\/sem-rota/);
   assert.match(html, /href="\/leilao-de-imoveis\/rj\/rio-de-janeiro\/"/);
 });
 

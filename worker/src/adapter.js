@@ -327,6 +327,7 @@ function publicResponse(status, body, typedPending = false) {
 export default {
   async fetch(request, env) {
     const origin = request.headers.get("Origin");
+    let phase = "request", coreStatus = null;
     try {
       if (!ORIGINS.has(origin)) fail(403, "bad_origin");
       const url = new URL(request.url);
@@ -383,9 +384,13 @@ export default {
         headers: { ...forwarded,
           "X-Brazil-Origin": origin, "X-Brazil-Timestamp": timestamp, "X-Brazil-Nonce": nonce,
           "X-Brazil-Subject": subject, "X-Brazil-Signature": signature }, ...(method === "POST" ? { body } : {}) });
+      coreStatus = response.status;
+      phase = "core_content_type";
       if (response.status >= 300 && response.status < 400) fail(503, "analysis_unavailable");
       if (response.headers.get("Content-Type")?.split(";")[0].trim().toLowerCase() !== "application/json") fail(502, "invalid_response");
+      phase = "core_json";
       const raw = JSON.parse(await bounded(response, reportID ? 32768 : 262144, 10000));
+      phase = "core_contract";
       const result = reportID || (oneClick && raw?.status === "historical_document") ?
         publicReport(response.status, raw, reportID || oneClick) : publicResponse(response.status, raw, Boolean(oneClick));
       const headers = {};
@@ -394,6 +399,9 @@ export default {
       if (/^\d{1,5}$/.test(response.headers.get("Retry-After") || "")) headers["Retry-After"] = response.headers.get("Retry-After");
       return json(response.status, result, origin, headers);
     } catch (e) {
+      if (coreStatus !== null) console.warn("brazil_proxy_failure", JSON.stringify({
+        phase, core_status: coreStatus, error: e instanceof PublicError ? e.code : "analysis_unavailable",
+      }));
       return json(e instanceof PublicError ? e.status : 503, {
         error: e instanceof PublicError ? e.code : "analysis_unavailable",
       }, origin);

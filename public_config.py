@@ -83,6 +83,12 @@ def settings(site: str, env=None) -> dict:
     if maps_embed_key and not re.fullmatch(r"AIza[A-Za-z0-9_-]{35}", maps_embed_key):
         raise ValueError("MAPS_EMBED_API_KEY must be a Google API key")
     analytics = {k: v for k, v in (("ga4", ga4), ("cf", cf)) if v}
+    # The public flag is intentionally one switch for the complete analysis
+    # experience. Uploads are only exposed for the pinned Worker origin: the
+    # browser refuses any other origin too, but keeping the build contract
+    # fail-closed avoids publishing an upload UI for an accidental override.
+    analysis_enabled = env.get("BRAZIL_PUBLIC_ANALYSIS_ENABLED") == "true"
+    upload_enabled = analysis_enabled and api == DEFAULT_API
     if ga4:
         analytics["enhancedMeasurementDisabled"] = (
             env.get("GA4_ENHANCED_MEASUREMENT_DISABLED") == "true"
@@ -93,7 +99,8 @@ def settings(site: str, env=None) -> dict:
         "contact": contact,
         "analysis": {
             "apiBase": api,
-            "enabled": env.get("BRAZIL_PUBLIC_ANALYSIS_ENABLED") == "true",
+            "enabled": analysis_enabled,
+            "uploadEnabled": upload_enabled,
             "reportsEnabled": env.get("LOT_REPORTS_ENABLED") == "true",
             "privacyUrl": site + "/privacidade/",
             "privacyContact": (operator + " · " + contact) if operator and contact else "",

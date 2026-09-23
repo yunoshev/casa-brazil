@@ -20,6 +20,7 @@ class ReleaseCheckTest(unittest.TestCase):
         self.site = "https://yunoshev.github.io/casa-brazil"
         self.html = (
             '<!doctype html><html lang="pt-BR"><head><title>Imóveis</title>'
+            '<meta name="description" content="Informação pública sobre leilões.">'
             '<link rel="canonical" href="' + self.site + '/">'
             '<meta property="og:url" content="' + self.site + '/">'
             '<link rel="icon" href="/casa-brazil/favicon.svg" type="image/svg+xml"></head>'
@@ -97,6 +98,37 @@ class ReleaseCheckTest(unittest.TestCase):
             self.html.replace("</head>", '<meta name="robots" content="noindex"></head>')
         )
         self.assertFalse(self.result()["ok"])
+
+    def test_noindex_page_still_requires_a_self_canonical(self):
+        self.sitemap([])
+        noindex = (
+            self.html.replace(f'href="{self.site}/"', f'href="{self.site}/other/"')
+            .replace(f'content="{self.site}/"', f'content="{self.site}/other/"')
+            .replace("</head>", '<meta name="robots" content="noindex"></head>')
+        )
+        (self.out / "index.html").write_text(noindex)
+        result = self.result()
+        self.assertFalse(result["ok"])
+        self.assertTrue(any("non-self canonical" in e for e in result["errors"]))
+
+    def test_same_host_http_link_is_not_treated_as_external(self):
+        (self.out / "index.html").write_text(
+            self.html + f'<a href="http://{self.site.removeprefix("https://")}/city/">Cidade</a>'
+        )
+        result = self.result()
+        self.assertFalse(result["ok"])
+        self.assertTrue(any("canonical HTTPS origin" in e for e in result["errors"]))
+
+    def test_future_sitemap_lastmod_fails(self):
+        future = "2999-01-01"
+        (self.out / "sitemap.xml").write_text(
+            '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">'
+            f"<url><loc>{self.site}/</loc><lastmod>{future}</lastmod></url>"
+            "</urlset>"
+        )
+        result = self.result()
+        self.assertFalse(result["ok"])
+        self.assertTrue(any("lastmod is in the future" in e for e in result["errors"]))
 
     def test_external_links_are_not_fetched(self):
         (self.out / "index.html").write_text(
@@ -179,7 +211,10 @@ class ReleaseCheckTest(unittest.TestCase):
         result = CHECK.check(self.out, self.site, release=True)
         self.assertFalse(result["ok"])
         self.assertTrue(
-            any("deployed bytes do not match lifecycle manifest" in error for error in result["errors"])
+            any(
+                "deployed bytes do not match lifecycle manifest" in error
+                for error in result["errors"]
+            )
         )
 
 

@@ -136,9 +136,7 @@ class LotMediaBuildTest(unittest.TestCase):
         site.mkdir(parents=True)
         real_public_market_reports = BUILD.PUBLIC_MARKET_REPORTS
         real_market_before = (
-            real_public_market_reports.read_bytes()
-            if real_public_market_reports.exists()
-            else None
+            real_public_market_reports.read_bytes() if real_public_market_reports.exists() else None
         )
         public_market_reports = self.root / "site" / "data" / "market_reports.json"
         public_market_reports.parent.mkdir(parents=True)

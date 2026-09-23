@@ -32,7 +32,7 @@ LOT = CITY + "lote/apartamento-123/"
 def page(site, path, *, noindex=False, ld=None):
     return (
         '<!doctype html><html lang="pt-BR"><head>'
-        '<title>Unique page title</title>'
+        "<title>Unique page title</title>"
         '<meta name="description" content="A useful page description.">'
         f'<link rel="canonical" href="{canonical_url(site, path)}">'
         f'<meta name="robots" content="{"noindex, follow" if noindex else "index, follow"}">'

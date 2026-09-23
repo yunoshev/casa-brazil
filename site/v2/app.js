@@ -203,6 +203,44 @@ function hasDocumentedHistory(r) {
   });
 }
 
+var duplicateContentLotIdsByCity = {};
+function contentNumber(value) {
+  return typeof value === "number" && isFinite(value) ? String(value) : "";
+}
+function lotContentFingerprint(r) {
+  var address = normKey(r[C.end]), type = normKey(r[C.tipo]);
+  if (address.length < 5 || type.length < 2 || !positiveNumber(r[C.preco]) || !httpsSource(r[C.link])) {
+    return null;
+  }
+  return [
+    normKey(r[C.src]), address, normKey(sourceDetail(r) || ""), type,
+    contentNumber(r[C.area]), contentNumber(r[C.quartos]), contentNumber(r[C.preco]),
+    contentNumber(r[C.aval]), auctionDate(r) || "", normKey(r[C.mod]),
+  ].join("\u001f");
+}
+function duplicateContentLotIds(c) {
+  c = c || city;
+  var cacheKey = String(c.slug || "");
+  if (duplicateContentLotIdsByCity[cacheKey]) return duplicateContentLotIdsByCity[cacheKey];
+  var groups = {}, duplicates = {};
+  c.rows.forEach(function (r) {
+    if (!isCurrent(r, c)) return;
+    var fingerprint = lotContentFingerprint(r);
+    if (!fingerprint) return;
+    (groups[fingerprint] = groups[fingerprint] || []).push(String(r[C.id]));
+  });
+  Object.keys(groups).forEach(function (fingerprint) {
+    if (groups[fingerprint].length > 1) groups[fingerprint].forEach(function (id) {
+      duplicates[id] = true;
+    });
+  });
+  duplicateContentLotIdsByCity[cacheKey] = duplicates;
+  return duplicates;
+}
+function hasDuplicatePublicContent(r, c) {
+  return !!duplicateContentLotIds(c || city)[String(r[C.id])];
+}
+
 /* A useful result is not merely a page that happens to have an address. The
  * bootstrap deliberately permits an unverified availability state: inherited
  * rows all have it. It does not, however, permit a bare address, area or bank
@@ -217,6 +255,10 @@ function lotSeoEligible(r) {
   var type = String(r[C.tipo] || "").trim();
   var hasCore = address.length >= 5 && type.length >= 2 && positiveNumber(r[C.preco]) && !!httpsSource(r[C.link]);
   if (!hasCore) return false;
+  // A self-canonical cannot make two indistinguishable documents unique.
+  // Exclude every member until a bounded source fact actually separates them;
+  // never nominate an arbitrary sibling as canonical for the rest.
+  if (hasDuplicatePublicContent(r)) return false;
   var sourceObserved = lotStatus(r) === "active" && !!lifecycleDate(r);
   var partialSourceObserved = observedPartialCaixaPresence(r);
   var evidence = reliable(r) || !!auctionDate(r) || sourceObserved || partialSourceObserved || !!confirmedOutcome(r) ||
@@ -811,6 +853,7 @@ function indexCity(c) {
   historyByArea = {};
   lotById = {};
   lotBySlug = {};
+  delete duplicateContentLotIdsByCity[String(c.slug || "")];
   refreshStats(c);
   var streets = (c.streets || {}).d || {};
   // A street URL is a promise.  Do not use a row merely because its text

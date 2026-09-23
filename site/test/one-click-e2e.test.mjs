@@ -61,3 +61,21 @@ test('offline browser one-click -> Worker HMAC -> mock core -> bounded poll -> g
     assert.match(site.box.querySelector('.azout').innerHTML, /az\.generic\.title|Regras gerais/);
   } finally { globalThis.fetch = originalFetch; }
 });
+
+test('known source block is unavailable without a futile Retry', async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async () => new Response(JSON.stringify({ error: 'source_blocked' }),
+    { status: 503, headers: { 'Content-Type': 'application/json' } });
+  try {
+    const site = setup({ lotId: id, source, fetch: async request => worker.fetch(
+      new Request('https://worker.test' + new URL(request.url).pathname, {
+        method: request.method,
+        headers: { ...request.headers, Origin: origin, 'CF-Connecting-IP': '192.0.2.1' },
+        ...(request.body ? { body: request.body } : {}),
+      }), env) });
+    site.load('analyze'); await site.analyze();
+    assert.equal(site.box.getAttribute('data-az-state'), 'unavailable');
+    assert.equal(site.box.querySelector('button').disabled, true);
+    assert.equal(site.box.querySelector('button').getAttribute('data-az-terminal'), 'source_blocked');
+  } finally { globalThis.fetch = originalFetch; }
+});
