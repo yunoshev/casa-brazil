@@ -62,8 +62,209 @@ PUBLIC_MARKET_REPORTS = HERE / "site" / "data" / "market_reports.json"
 # never stop publishing just because no approved photo projection exists yet.
 LOT_MEDIA = HERE / "data" / "lot-media.json"
 DOCUMENT_REPORTS = HERE / "site" / "content" / "document-reports.json"
+# Reviewed, hand-authored context for a publishable area or street.  This is
+# intentionally a tiny editorial projection: it is never populated by a
+# crawler and is embedded at build time rather than fetched by a reader.
+LOCAL_PROFILES = HERE / "site" / "content" / "local-profiles.json"
 SAVED_ANALYSES = HERE / "site" / "content" / "saved-analyses.json"
 LIFECYCLE_RECEIPT = HERE / "data" / "site.json.release.json"
+
+# A profile is editorial work, not a mechanism for opening arbitrary landing
+# pages.  Start with the routes selected for the twenty-page pilot; additional
+# places require an explicit code review of both the route and its sources.
+PILOT_LOCAL_PROFILE_ROUTES = {
+    "area": {
+        "rio-de-janeiro-rj": {"campo-grande", "santa-cruz", "barra-da-tijuca", "copacabana"},
+        "recife-pe": {"poco-da-panela", "boa-viagem"},
+        "sao-paulo-sp": {"jardim-paulista", "mooca"},
+        "fortaleza-ce": {"praia-de-iracema", "farias-brito"},
+    },
+    "street": {
+        "rio-de-janeiro-rj": {
+            "rua-antonio-basilio",
+            "avenida-rui-barbosa",
+            "praia-do-flamengo",
+            "rua-vilela-tavares",
+            "rua-dos-invalidos",
+            "estrada-do-campinho",
+            "rua-andre-cavalcanti",
+            "rua-prof-henrique-costa",
+            "estrada-dos-bandeirantes",
+            "avenida-nossa-senhora-de-copacabana",
+        },
+    },
+}
+
+
+def load_local_profiles(path: Path, cities: list[dict]) -> dict:
+    """Load reviewed local context without making it an unbounded CMS.
+
+    Profiles are optional, but an artifact which *is* present is strict: each
+    entry names an already-published city route and its public area/street
+    URL slug, carries
+    a dated source trail, and provides the three shipped interface languages.
+    The normalized return value is deliberately route-keyed so the browser can
+    only render context on its matching page.
+    """
+    empty: dict[str, dict[str, dict[str, Any]]] = {"area": {}, "street": {}}
+    if not path.exists():
+        return empty
+    try:
+        data = json.loads(path.read_text())
+    except (OSError, json.JSONDecodeError) as exc:
+        raise ValueError("invalid local profiles JSON") from exc
+    if set(data) != {"schema", "license", "profiles"} or data["schema"] != "local-profiles-v1":
+        raise ValueError("invalid local profiles schema")
+    expected_license = {
+        "scope": "OpenStreetMap-derived POI counts and names in these profiles",
+        "attribution": "© OpenStreetMap contributors",
+        "license": "ODbL-1.0",
+        "url": "https://www.openstreetmap.org/copyright",
+    }
+    if data["license"] != expected_license:
+        raise ValueError("invalid local profiles license")
+    if not isinstance(data["profiles"], list):
+        raise ValueError("invalid local profiles list")
+
+    def route_slug(value: str) -> str:
+        folded = unicodedata.normalize("NFKD", value).encode("ascii", "ignore").decode()
+        return re.sub(r"^-+|-+$", "", re.sub(r"[^a-z0-9]+", "-", folded.lower()))
+
+    route_keys: dict[str, dict[str, dict[str, str | None]]] = {}
+    for city in cities:
+        areas: dict[str, str | None] = {}
+        for key, name in ((city.get("shapes") or {}).get("nice") or {}).items():
+            route = route_slug(name)
+            if route in areas and areas[route] != key:
+                route = route + "-" + route_slug(key)[:6]
+            areas[route] = key
+        streets: dict[str, str | None] = {}
+        for key, street in ((city.get("streets") or {}).get("d") or {}).items():
+            street_route = street.get("slug") if isinstance(street, dict) else None
+            if not isinstance(street_route, str) or not street_route:
+                continue
+            streets[street_route] = None if street_route in streets else key
+        route_keys[city["slug"]] = {"area": areas, "street": streets}
+    required = {
+        "scope",
+        "city",
+        "route",
+        "observed_at",
+        "summary",
+        "attribution",
+        "limitations",
+        "citations",
+    }
+
+    def text(value: Any, limit: int) -> bool:
+        return (
+            isinstance(value, str)
+            and 0 < len(value.strip()) <= limit
+            and not re.search(r"[<>\x00-\x08]", value)
+        )
+
+    def timestamp(value: Any) -> datetime:
+        if not isinstance(value, str) or not re.fullmatch(
+            r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,6})?Z", value
+        ):
+            raise ValueError("invalid local profile observed_at")
+        try:
+            parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+        except ValueError as exc:
+            raise ValueError("invalid local profile observed_at") from exc
+        if parsed.tzinfo is None:
+            raise ValueError("invalid local profile observed_at")
+        return parsed
+
+    def source_url(value: Any) -> bool:
+        if not isinstance(value, str) or not value or re.search(r"[\s<>\"'\\\\]", value):
+            return False
+        try:
+            parsed = urlsplit(value)
+        except ValueError:
+            return False
+        return (
+            parsed.scheme == "https"
+            and bool(parsed.hostname)
+            and parsed.username is None
+            and parsed.password is None
+            and urlunsplit(parsed) == value
+        )
+
+    seen: set[tuple[str, str, str]] = set()
+    result: dict[str, dict[str, dict[str, Any]]] = {"area": {}, "street": {}}
+    for profile in data["profiles"]:
+        if not isinstance(profile, dict) or set(profile) != required:
+            raise ValueError("invalid local profile fields")
+        scope, city_slug, route = profile["scope"], profile["city"], profile["route"]
+        if (
+            scope not in result
+            or not isinstance(city_slug, str)
+            or not isinstance(route, str)
+            or route not in PILOT_LOCAL_PROFILE_ROUTES.get(scope, {}).get(city_slug, set())
+            or route not in route_keys.get(city_slug, {}).get(scope, {})
+            or route_keys[city_slug][scope][route] is None
+        ):
+            raise ValueError("local profile does not match published route")
+        identity = (scope, city_slug, route)
+        if identity in seen:
+            raise ValueError("duplicate local profile")
+        seen.add(identity)
+        observed = timestamp(profile["observed_at"])
+        localized = {}
+        for field, limit in (("summary", 1200), ("attribution", 360), ("limitations", 700)):
+            value = profile[field]
+            if (
+                not isinstance(value, dict)
+                or set(value) != {"pt", "en", "ru"}
+                or not all(text(value[lang], limit) for lang in value)
+            ):
+                raise ValueError(f"invalid local profile {field}")
+            localized[field] = value
+        citations = profile["citations"]
+        if not isinstance(citations, list) or not 1 <= len(citations) <= 8:
+            raise ValueError("invalid local profile citations")
+        cleaned_citations = []
+        for citation in citations:
+            if not isinstance(citation, dict) or set(citation) != {
+                "label",
+                "url",
+                "observed_at",
+                "evidence",
+            }:
+                raise ValueError("invalid local profile citation")
+            citation_observed = timestamp(citation["observed_at"])
+            if citation_observed > observed or not source_url(citation["url"]):
+                raise ValueError("invalid local profile citation")
+            localized_citation = {}
+            for field, limit in (("label", 180), ("evidence", 700)):
+                value = citation[field]
+                if (
+                    not isinstance(value, dict)
+                    or set(value) != {"pt", "en", "ru"}
+                    or not all(text(value[lang], limit) for lang in value)
+                ):
+                    raise ValueError("invalid local profile citation")
+                localized_citation[field] = value
+            cleaned_citations.append(
+                {
+                    **localized_citation,
+                    "url": citation["url"],
+                    "observed_at": citation["observed_at"],
+                }
+            )
+        # The public artifact says `route`, while the renderer receives the
+        # data key it already uses after route parsing.  This keeps authored
+        # content bound to a URL without duplicating routing logic in JSON.
+        key = route_keys[city_slug][scope][route]
+        if key is None:  # Defensive narrowing; duplicate slugs were rejected above.
+            raise ValueError("local profile route is ambiguous")
+        result[scope].setdefault(city_slug, {})[key] = {
+            "observed_at": profile["observed_at"],
+            **localized,
+            "citations": cleaned_citations,
+        }
+    return result
 
 
 def load_document_reports(path: Path, source: dict) -> dict:
@@ -1055,6 +1256,7 @@ def main() -> None:
     if market_reports:
         payload["market_reports"] = market_reports
     payload["document_reports"] = load_document_reports(DOCUMENT_REPORTS, src)
+    payload["local_profiles"] = load_local_profiles(LOCAL_PROFILES, cities)
     from saved_analyses import load_saved_analyses
 
     payload["saved_analyses"] = load_saved_analyses(SAVED_ANALYSES, src)

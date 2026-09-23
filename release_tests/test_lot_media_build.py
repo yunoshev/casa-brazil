@@ -166,6 +166,7 @@ class LotMediaBuildTest(unittest.TestCase):
         ]
         with (
             mock.patch.object(BUILD, "SITE", site),
+            mock.patch.object(BUILD, "LOCAL_PROFILES", self.root / "missing-local-profiles.json"),
             mock.patch.object(BUILD, "PUBLIC_MARKET_REPORTS", public_market_reports),
             mock.patch.object(BUILD, "build_city", return_value=built_city),
             mock.patch.object(BUILD, "save_shape_cache"),

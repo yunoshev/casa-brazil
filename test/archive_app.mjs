@@ -55,6 +55,7 @@ function runtime(cities, lang = 'en', datasetCols = cols, options = {}) {
   const contextCities = options.localData ? JSON.parse(JSON.stringify(cities)) : cities;
   const windowData = { __D__: { cols: datasetCols, cities: contextCities, generated: null }, __SHIP_LANGS__: [lang] };
   if (options.marketReports) windowData.__D__.market_reports = options.marketReports;
+  if (options.localProfiles) windowData.__D__.local_profiles = options.localProfiles;
   const document = options.marketReports ? {} : undefined;
   const ctx = vm.createContext({ window: {}, LANG: options.localData ? undefined : LANG, URL, document });
   vm.runInContext(`window = JSON.parse(${JSON.stringify(JSON.stringify(windowData))})`, ctx);
@@ -124,6 +125,53 @@ assert.match(marketCtx.screenArea('CENTRO'), /1 lots on this page have a market 
 assert.match(marketCtx.screenStreet('1'), /1 lots on this page have a market report available/);
 assert.doesNotMatch(marketCtx.screenStreet('1'), /Market estimate/,
   'street availability never claims an aggregate valuation');
+
+const localProfiles = {
+  area: { 'rio-de-janeiro-rj': { CENTRO: {
+    observed_at: '2026-09-20T10:00:00Z',
+    summary: { pt: 'Contexto em português.', en: 'Reviewed local context.', ru: 'Проверенный местный контекст.' },
+    attribution: { pt: 'Fontes citadas.', en: 'Compiled from cited sources.', ru: 'По указанным источникам.' },
+    limitations: { pt: 'Não substitui diligência.', en: 'It does not replace diligence.', ru: 'Не заменяет проверку.' },
+    citations: [{ label: { pt: 'Fonte pública', en: 'Public source', ru: 'Открытый источник' },
+      url: 'https://source.example/context?x=1&y=2', observed_at: '2026-09-19T10:00:00Z',
+      evidence: { pt: 'Evidência pública.', en: 'A <documented> public result.', ru: 'Открытые данные.' } }],
+  } } },
+  street: { 'rio-de-janeiro-rj': { '1': {
+    observed_at: '2026-09-20T10:00:00Z',
+    summary: { pt: 'Contexto da rua.', en: 'Reviewed street context.', ru: 'Проверенный контекст улицы.' },
+    attribution: { pt: 'Fontes citadas.', en: 'Compiled from cited sources.', ru: 'По указанным источникам.' },
+    limitations: { pt: 'Não substitui diligência.', en: 'It does not replace diligence.', ru: 'Не заменяет проверку.' },
+    citations: [{ label: { pt: 'Fonte da rua', en: 'Street source', ru: 'Источник улицы' },
+      url: 'https://source.example/street', observed_at: '2026-09-18T10:00:00Z',
+      evidence: { pt: 'Resultado datado.', en: 'A dated street result.', ru: 'Данные с датой.' } }],
+  } } },
+};
+const localCtx = runtime([fixture()], 'en', cols, { localProfiles });
+const localArea = localCtx.screenArea('CENTRO');
+assert.match(localArea, /Documented local context/);
+assert.match(localArea, /Reviewed local context\./);
+assert.match(localArea, /observed 2026-09-20/);
+assert.match(localArea, /https:\/\/source.example\/context\?x=1&amp;y=2/);
+assert.match(localArea, /A &lt;documented&gt; public result\./);
+assert.match(localArea, /Compiled from cited sources\./);
+assert.match(localArea, /Limits of this context/);
+assert.match(localArea, /It does not replace diligence\./);
+assert.match(localCtx.screenStreet('1'), /Reviewed street context\./);
+assert.equal(localCtx.headFor(localCtx.href('/a/centro/')).noindex,
+  ctx.headFor(ctx.href('/a/centro/')).noindex,
+  'a profile enriches a route but does not change indexability');
+assert.doesNotMatch(ctx.screenArea('CENTRO'), /local-profile/,
+  'missing optional data leaves the existing route untouched');
+const ptFallback = JSON.parse(JSON.stringify(localProfiles));
+delete ptFallback.area['rio-de-janeiro-rj'].CENTRO.summary.en;
+assert.match(runtime([fixture()], 'en', cols, { localProfiles: ptFallback }).screenArea('CENTRO'),
+  /Contexto em português\./, 'old static payloads fall back to Portuguese copy');
+const unsafeProfile = JSON.parse(JSON.stringify(localProfiles));
+unsafeProfile.area['rio-de-janeiro-rj'].CENTRO.citations[0].url = 'javascript:alert(1)';
+assert.doesNotMatch(runtime([fixture()], 'en', cols, { localProfiles: unsafeProfile }).screenArea('CENTRO'),
+  /local-profile/, 'an unsafe runtime citation suppresses the complete profile');
+assert.match(runtime([fixture()], 'ru', cols, { localProfiles }).screenArea('CENTRO'),
+  /Проверенный местный контекст\./, 'profile copy follows the selected locale');
 
 const current = crawl(ctx, false), archived = crawl(ctx, true);
 assert.equal(current.length, 205);

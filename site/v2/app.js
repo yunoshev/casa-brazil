@@ -237,6 +237,69 @@ function lifecycleBanner(r, compact) {
       (status === "missing" || lc.missing_since ? dateFact("archive.date.missing", lc.missing_since) : "") +
       (status === "archived" ? dateFact("archive.date.archived", lc.archived_at) : "") + '</div></section>';
 }
+
+/* Local profiles are a small reviewed editorial layer, not an inference from
+ * the catalogue. A malformed or partial profile disappears rather than
+ * leaving an unsourced claim on a static route. */
+function localProfileTimestamp(value) {
+  if (typeof value !== "string" ||
+      !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,6})?Z$/.test(value)) return null;
+  var parsed = new Date(value);
+  return !isNaN(parsed.getTime()) ? value : null;
+}
+function localProfile(scope, key) {
+  var profiles = D.local_profiles;
+  if (!profiles || typeof profiles !== "object" || !profiles[scope] ||
+      typeof profiles[scope] !== "object" || !profiles[scope][city.slug] ||
+      typeof profiles[scope][city.slug] !== "object") return null;
+  var profile = profiles[scope][city.slug][key];
+  if (!profile || typeof profile !== "object" || !localProfileTimestamp(profile.observed_at) ||
+      !profile.summary || typeof profile.summary !== "object" ||
+      !profile.attribution || typeof profile.attribution !== "object" ||
+      !profile.limitations || typeof profile.limitations !== "object" ||
+      !Array.isArray(profile.citations) || !profile.citations.length) return null;
+  var summary = profile.summary[LANG.code] || profile.summary.pt;
+  var attribution = profile.attribution[LANG.code] || profile.attribution.pt;
+  var limitations = profile.limitations[LANG.code] || profile.limitations.pt;
+  if (typeof summary !== "string" || !summary.trim() ||
+      typeof attribution !== "string" || !attribution.trim() ||
+      typeof limitations !== "string" || !limitations.trim()) return null;
+  var citations = [];
+  for (var i = 0; i < profile.citations.length; i++) {
+    var citation = profile.citations[i] || {};
+    if (!citation.label || typeof citation.label !== "object" ||
+        !citation.evidence || typeof citation.evidence !== "object" ||
+        !httpsSource(citation.url) || !localProfileTimestamp(citation.observed_at) ||
+        citation.observed_at > profile.observed_at) return null;
+    var label = citation.label[LANG.code] || citation.label.pt;
+    var evidence = citation.evidence[LANG.code] || citation.evidence.pt;
+    if (typeof label !== "string" || !label.trim() ||
+        typeof evidence !== "string" || !evidence.trim()) return null;
+    citations.push({ label: label, evidence: evidence, url: citation.url,
+      observed_at: citation.observed_at });
+  }
+  return { observed_at: profile.observed_at, summary: summary, attribution: attribution,
+    limitations: limitations, citations: citations };
+}
+function localProfileBlock(scope, key) {
+  var profile = localProfile(scope, key);
+  if (!profile) return "";
+  var heading = scope === "street" ? "local_profile.street.h2" : "local_profile.area.h2";
+  return '<section class="mkt local-profile local-profile-' + esc(scope) + '"><div class="sechead"><h2>' +
+    esc(t(heading)) + '</h2><span class="n">' +
+    esc(t("local_profile.observed", { date: profile.observed_at.slice(0, 10) })) +
+    '</span></div><p>' + esc(profile.summary) + '</p><h3>' +
+    esc(t("local_profile.sources.h3")) + '</h3><p class="foot">' + esc(profile.attribution) +
+    '</p><ol class="profile-citations">' +
+    profile.citations.map(function (citation) {
+      return '<li><a href="' + esc(citation.url) + '" target="_blank" rel="noopener noreferrer nofollow">' +
+        esc(citation.label) + '</a><p>' + esc(citation.evidence) + '</p><span class="foot">' +
+        esc(t("local_profile.citation.observed", { date: citation.observed_at.slice(0, 10) })) +
+        '</span></li>';
+    }).join("") + '</ol><h3>' + esc(t("local_profile.limitations.h3")) + '</h3><p>' +
+    esc(profile.limitations) + '</p><p class="foot">' + esc(t("local_profile.notice")) + "</p></section>";
+}
+
 function lotHistory(r) {
   var lc = lifecycle(r), outcome = confirmedOutcome(r);
   var history = (Array.isArray(lc.history) ? lc.history : []).filter(function (event) {
@@ -1139,6 +1202,7 @@ function screenStreet(code) {
         return link("/a/" + encodeURIComponent(k), esc(areaName(k)));
       }).join(" · "),
     }) + "</p>" : "") +
+    localProfileBlock("street", code) +
     marketAvailabilityNote(lotsByStreet[code] || []) +
     streetLotLists(code) +
     footer();
@@ -1470,7 +1534,7 @@ function screenArea(key) {
           : t(marketOnly() ? "area.lede.market" : "area.lede.nodata",
               { lots: lots(a.n) })) + "</p></div>" + mini +
     inventorySummary((byArea[key] || []).concat(historyByArea[key] || []), { current: "area-current-lots", archived: "area-archive-lots" }) +
-    inventoryNotice() + marketAvailabilityNote(byArea[key] || []) + marketCard(key) + upkeepCard(key) + streetList(key) +
+    inventoryNotice() + localProfileBlock("area", key) + marketAvailabilityNote(byArea[key] || []) + marketCard(key) + upkeepCard(key) + streetList(key) +
     (a.n ? '<section id="area-current-lots" class="sec" aria-labelledby="area-current-lots-title"><div class="sechead"><h2 id="area-current-lots-title">' + esc(t("area.lots.current")) + '</h2><span class="n">' + esc(num(a.n)) + '</span></div><div class="rowlist">' +
       a.rows.slice().sort(function (x, y) {
         var rx = reliable(x), ry = reliable(y);

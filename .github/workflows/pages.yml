@@ -118,6 +118,7 @@ jobs:
           node --test site/test/geo.test.mjs
           node --test site/test/gallery.test.mjs
           python -m unittest discover -s test -p 'test_document_reports.py' -v
+          python -m unittest discover -s test -p 'test_local_profiles.py' -v
           node --test site/test/document-reports.test.mjs
           node --test site/test/related-lots.test.mjs
           node --test site/test/lot-map.test.mjs
