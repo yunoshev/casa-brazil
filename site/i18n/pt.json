@@ -459,6 +459,7 @@
  "street.lede": "O que os imóveis desta rua custaram de verdade nas escrituras de {year} — e como isso se compara com {district}.",
  "street.list.h2": "O que pagaram, rua a rua",
  "street.note": "Mediana por m² das escrituras registradas nesta rua, do ITBI da prefeitura — o imposto que só é pago depois da escritura assinada. Não é preço de anúncio nem avaliação de banco. A comparação é com o bairro <b>no mesmo ano</b>: os valores do registro são nominais, e comparar anos diferentes mediria inflação.",
+ "street.others.h2": "Outras ruas em {district}",
  "street.spans": "A rua atravessa mais de um bairro: {list}.",
  "street.vs": "{pct} vs. o bairro",
  "unit.beds.one": "quarto",

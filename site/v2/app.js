@@ -1270,7 +1270,30 @@ function screenStreet(code) {
     localProfileBlock("street", code) +
     marketAvailabilityNote(lotsByStreet[code] || []) +
     streetLotLists(code) +
+    otherStreets(code) +
     footer();
+}
+
+/* Up to eight other streets of the same district with a page of their own,
+ * taken from a ring around this street's position in the district list: 486
+ * of 594 street pages were reachable from one district page and nothing
+ * else. Rotating spreads the links so each street is named by its
+ * neighbours, not only by the district. */
+var OTHER_STREET_LIMIT = 8;
+function otherStreets(code) {
+  var sts = city.streets, st = sts && sts.d ? sts.d[code] : null;
+  if (!st || !sts.by || !sts.by[st.bairro]) return "";
+  var codes = sts.by[st.bairro].filter(publishedStreetCode);
+  var at = codes.indexOf(code), picked = [];
+  for (var step = 1; step < codes.length && picked.length < OTHER_STREET_LIMIT; step++) {
+    var other = codes[(Math.max(at, 0) + step) % codes.length];
+    if (other !== code && picked.indexOf(other) < 0) picked.push(other);
+  }
+  if (!picked.length) return "";
+  return '<section class="sec other-streets" aria-labelledby="other-streets-title"><div class="sechead"><h2 id="other-streets-title">' +
+    esc(t("street.others.h2", { district: areaName(st.bairro) })) +
+    '</h2><span class="n">' + t("mkt.year", { year: sts.year }) + "</span></div>" +
+    '<div class="rowlist">' + picked.map(streetRow).join("") + "</div></section>";
 }
 
 /* A street statistic and its current inventory answer different questions.
@@ -1305,18 +1328,20 @@ function streetLine(kind, own, base) {
 /* The district's streets, ranked by how much actually changed hands. Every
  * street page is discovered through this list — the walk follows links, so a
  * street that is on no list is a page that does not exist. */
+function streetRow(code) {
+  var st = city.streets.d[code];
+  var main = st.f || st.h;
+  return '<a class="row" href="' + href("/r/" + encodeURIComponent(code)) + '">' +
+    '<div class="r1"><span class="nm">' + esc(title(st.name)) + "</span>" +
+      (main ? '<span class="pill mute">' + money(main[0]) + "/" + t("unit.m2") + "</span>" : "") + "</div>" +
+    '<div class="sub">' + t("mkt.deals", { n: num((st.f ? st.f[1] : 0) + (st.h ? st.h[1] : 0)) }) +
+    "</div></a>";
+}
+
 function streetList(key) {
   var sts = city.streets;
   if (!sts || !sts.by || !sts.by[key]) return "";
-  var rows = sts.by[key].map(function (code) {
-    var st = sts.d[code];
-    var main = st.f || st.h;
-    return '<a class="row" href="' + href("/r/" + encodeURIComponent(code)) + '">' +
-      '<div class="r1"><span class="nm">' + esc(title(st.name)) + "</span>" +
-        '<span class="pill mute">' + money(main[0]) + "/" + t("unit.m2") + "</span></div>" +
-      '<div class="sub">' + t("mkt.deals", { n: num((st.f ? st.f[1] : 0) + (st.h ? st.h[1] : 0)) }) +
-      "</div></a>";
-  });
+  var rows = sts.by[key].map(streetRow);
   return '<section class="sec"><div class="sechead"><h2>' + t("street.list.h2") +
     '</h2><span class="n">' + t("mkt.year", { year: sts.year }) + "</span></div>" +
     '<div class="rowlist">' + rows.join("") + "</div></section>";
@@ -1804,35 +1829,58 @@ function relatedOrder(a, b) {
   return (isCurrent(a) ? 0 : 1) - (isCurrent(b) ? 0 : 1) ||
     String(a[C.id]).localeCompare(String(b[C.id]));
 }
+/* Six neighbours per lot, taken from a ring. Sorting every group by id and
+ * always printing its head made the first six ids of each district the only
+ * lots anyone linked to: 350 lots carried five or more inbound links while
+ * 312 were reachable from nothing but a paginated list. Starting each lot's
+ * walk just after its own position (current lots first, then the archive)
+ * spreads the same six links over the whole group, so every lot is linked
+ * from about six of its neighbours instead of none. */
+function ringGroup(rows) {
+  var current = [], archive = [], position = {};
+  rows.forEach(function (r) { (isCurrent(r) ? current : archive).push(r); });
+  current.forEach(function (r, i) { position[String(r[C.id])] = i; });
+  archive.forEach(function (r, i) { position[String(r[C.id])] = i; });
+  return { rows: rows, current: current, archive: archive, position: position };
+}
+function walkRing(list, position, originId, visit) {
+  var n = list.length;
+  if (!n) return;
+  var start = Object.prototype.hasOwnProperty.call(position, originId) &&
+    list[position[originId]] && String(list[position[originId]][C.id]) === originId
+    ? position[originId] + 1 : 0;
+  for (var step = 0; step < n; step++) {
+    if (visit(list[(start + step) % n]) === false) return;
+  }
+}
 function buildRelatedGroups() {
-  var groups = { street: {}, area: {}, city: lotsByCity.slice().sort(relatedOrder) };
+  var groups = { street: {}, area: {}, city: ringGroup(lotsByCity.slice().sort(relatedOrder)) };
   Object.keys(lotsByStreet).forEach(function (key) {
-    groups.street[key] = lotsByStreet[key].slice();
+    groups.street[key] = ringGroup(lotsByStreet[key].slice().sort(relatedOrder));
   });
   Object.keys(lotsByArea).forEach(function (key) {
-    groups.area[key] = lotsByArea[key].slice();
+    groups.area[key] = ringGroup(lotsByArea[key].slice().sort(relatedOrder));
   });
-  Object.keys(groups.street).forEach(function (key) { groups.street[key].sort(relatedOrder); });
-  Object.keys(groups.area).forEach(function (key) { groups.area[key].sort(relatedOrder); });
   relatedGroups = groups;
 
-  /* Materialize the original stage order once. The old renderer walked the
-   * whole city for every lot and relied on add() to stop after six rows. Keep
-   * that exact de-duplication behavior, but do the walk during city indexing. */
   relatedCandidates = {};
   lotsByCity.forEach(function (origin) {
     var originId = String(origin[C.id]), place = relatedPlace(origin), rows = [], seen = {};
     var add = function (candidate, tier) {
       var id = String(candidate[C.id]);
-      if (id === originId || seen[id] || rows.length >= RELATED_LOT_LIMIT) return;
+      if (rows.length >= RELATED_LOT_LIMIT) return false;
+      if (id === originId || seen[id]) return true;
       seen[id] = true;
       rows.push({ row: candidate, place: relatedPlace(candidate), tier: tier });
+      return rows.length < RELATED_LOT_LIMIT;
     };
     var addGroup = function (group, tier) {
-      for (var i = 0; i < group.length && rows.length < RELATED_LOT_LIMIT; i++) add(group[i], tier);
+      if (!group) return;
+      walkRing(group.current, group.position, originId, function (c) { return add(c, tier); });
+      walkRing(group.archive, group.position, originId, function (c) { return add(c, tier); });
     };
-    addGroup(place.street ? groups.street[place.street] || [] : [], 0);
-    addGroup(place.area ? groups.area[place.area] || [] : [], 1);
+    addGroup(place.street ? groups.street[place.street] : null, 0);
+    addGroup(place.area ? groups.area[place.area] : null, 1);
     addGroup(groups.city, 2);
     relatedCandidates[originId] = rows;
   });
@@ -1870,7 +1918,7 @@ var SAME_STREET_LOT_LIMIT = 4;
 function sameStreetLots(r) {
   var code = streetCodeForLot(r);
   if (!code || !publishedStreetCode(code)) return "";
-  var rows = (relatedGroups.street[code] || []).filter(function (candidate) {
+  var rows = ((relatedGroups.street[code] || {}).rows || []).filter(function (candidate) {
     return String(candidate[C.id]) !== String(r[C.id]);
   }).slice(0, SAME_STREET_LOT_LIMIT);
   if (!rows.length) return "";

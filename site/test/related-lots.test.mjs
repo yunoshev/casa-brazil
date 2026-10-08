@@ -52,7 +52,9 @@ test('ranks related lots by published place and keeps current lots ahead of arch
   const ctx = runtime(fixture());
   const html = ctx.screenLot('origin');
   const ids = [...html.matchAll(/class="row related-lot" href="[^"]*\/lote\/lot-([^/]+)\//g)].map(m => m[1]);
-  assert.deepEqual(ids, ['street-current', 'street-archive', 'area-current', 'area-archive', 'city-current', 'unknown-street']);
+  // Within a tier the walk is a ring that starts just after the origin's own
+  // position, so the city tier reads from the lot after 'origin' and wraps.
+  assert.deepEqual(ids, ['street-current', 'street-archive', 'area-current', 'area-archive', 'unknown-street', 'city-current']);
   assert.doesNotMatch(html, /lote\/lot-origin\//);
   assert.match(html, /Same street/);
   assert.match(html, /Same area/);
@@ -67,7 +69,7 @@ test('precomputes bounded per-lot candidates without changing the six-row limit'
     c.lifecycle[`city-${String(i).padStart(5, '0')}`] = { status: 'active', slug: `lot-city-${i}` };
   }
   const ctx = runtime(c);
-  assert.equal(ctx.relatedGroups.city.length, c.rows.length);
+  assert.equal(ctx.relatedGroups.city.rows.length, c.rows.length);
   assert.equal(ctx.relatedCandidates.origin.length, 6);
   const html = ctx.screenLot('origin');
   assert.equal([...html.matchAll(/class="row related-lot"/g)].length, 6);
@@ -153,4 +155,42 @@ test('street pages separate current and archived catalogue lots', () => {
   assert.match(html, /lote\/lot-street-current\//);
   assert.match(html, /lote\/lot-street-archive\//);
   assert.doesNotMatch(html, /lote\/lot-unknown-street\//);
+});
+
+test('related links are spread over a ring so every lot in a district is linked by its neighbours', () => {
+  const c = fixture();
+  c.rows = [];
+  c.lifecycle = {};
+  for (let i = 0; i < 12; i++) {
+    c.rows.push(row({ id: `ring-${String(i).padStart(2, '0')}`, bairro: 'CENTRO',
+      end: `Rua Anel, ${i}`, tipo: 'apartamento', area: 60, preco: 100000 + i }));
+    c.lifecycle[`ring-${String(i).padStart(2, '0')}`] = { status: 'active', slug: `ring-${i}` };
+  }
+  const ctx = runtime(c);
+  const inbound = {};
+  for (const r of c.rows) {
+    const html = ctx.screenLot(r[0]);
+    const ids = [...html.matchAll(/class="row related-lot" href="[^"]*\/lote\/ring-(\d+)\//g)].map(m => m[1]);
+    assert.equal(ids.length, 6, r[0]);
+    for (const id of ids) inbound[id] = (inbound[id] || 0) + 1;
+  }
+  // Twelve lots, six links each: with a ring every lot is linked exactly six times.
+  assert.deepEqual(Object.values(inbound), new Array(12).fill(6));
+  assert.deepEqual(Object.keys(inbound).sort(), c.rows.map((r, i) => String(i)).sort());
+});
+
+test('a street page names other streets of its district with a page of their own', () => {
+  const c = fixture();
+  c.streets = { year: 2025, by: { CENTRO: ['main', 'second', 'third', 'unpublished'] }, d: {
+    main: { name: 'Rua Principal', slug: 'rua-principal', bairro: 'CENTRO', bairros: ['CENTRO'], f: [9000, 12] },
+    second: { name: 'Rua Segunda', slug: 'rua-segunda', bairro: 'CENTRO', bairros: ['CENTRO'], f: [8000, 12] },
+    third: { name: 'Rua Terceira', slug: 'rua-terceira', bairro: 'CENTRO', bairros: ['CENTRO'], h: [7000, 15] },
+    unpublished: { name: 'Rua Sem Página', bairro: 'CENTRO', bairros: ['CENTRO'], f: [1000, 1] },
+  } };
+  const ctx = runtime(c);
+  const html = ctx.screenStreet('main');
+  assert.match(html, /Other streets in Centro/);
+  const others = [...html.matchAll(/class="row" href="[^"]*\/rua\/([^/"]+)\//g)].map(m => m[1]);
+  assert.deepEqual(others, ['rua-segunda', 'rua-terceira']);
+  assert.doesNotMatch(ctx.screenStreet('second'), /rua-segunda\/"/);
 });

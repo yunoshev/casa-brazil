@@ -459,6 +459,7 @@
  "street.lede": "What property on this street actually sold for in the {year} deeds — and how that compares with {district}.",
  "street.list.h2": "What was paid, street by street",
  "street.note": "Median per m² of the deeds registered on this street, from the city's ITBI — the tax only paid once a deed is signed. Not an asking price and not a bank appraisal. The comparison is with the district <b>in the same year</b>: the register's values are nominal, and comparing across years would measure inflation.",
+ "street.others.h2": "Other streets in {district}",
  "street.spans": "The street crosses more than one district: {list}.",
  "street.vs": "{pct} vs. the district",
  "unit.beds.one": "bed",
