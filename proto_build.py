@@ -72,6 +72,7 @@ DOCUMENT_REPORTS = HERE / "site" / "content" / "document-reports.json"
 # intentionally a tiny editorial projection: it is never populated by a
 # crawler and is embedded at build time rather than fetched by a reader.
 LOCAL_PROFILES = HERE / "site" / "content" / "local-profiles.json"
+DISTRICT_NOTES = HERE / "site" / "content" / "district-notes.json"
 SAVED_ANALYSES = HERE / "site" / "content" / "saved-analyses.json"
 LIFECYCLE_RECEIPT = HERE / "data" / "site.json.release.json"
 
@@ -80,23 +81,72 @@ LIFECYCLE_RECEIPT = HERE / "data" / "site.json.release.json"
 # places require an explicit code review of both the route and its sources.
 PILOT_LOCAL_PROFILE_ROUTES = {
     "area": {
-        "rio-de-janeiro-rj": {"campo-grande", "santa-cruz", "barra-da-tijuca", "copacabana"},
-        "recife-pe": {"poco-da-panela", "boa-viagem"},
-        "sao-paulo-sp": {"jardim-paulista", "mooca"},
-        "fortaleza-ce": {"praia-de-iracema", "farias-brito"},
+        "fortaleza-ce": {
+            "curio",
+            "farias-brito",
+            "praia-de-iracema",
+            "siqueira",
+        },
+        "recife-pe": {
+            "boa-viagem",
+            "poco-da-panela",
+            "santo-amaro",
+        },
+        "rio-de-janeiro-rj": {
+            "barra-da-tijuca",
+            "campo-grande",
+            "copacabana",
+            "cordovil",
+            "cosmos",
+            "engenho-da-rainha",
+            "guaratiba",
+            "jabour",
+            "madureira",
+            "pavuna",
+            "praca-seca",
+            "ramos",
+            "santa-cruz",
+            "taquara",
+            "vila-isabel",
+        },
+        "sao-goncalo-rj": {
+            "covanca",
+            "pacheco",
+            "pita",
+            "trindade",
+            "vista-alegre",
+        },
+        "sao-paulo-sp": {
+            "artur-alvim",
+            "barra-funda",
+            "brasilandia",
+            "cidade-lider",
+            "jardim-paulista",
+            "lajeado",
+            "mooca",
+            "parque-do-carmo",
+            "pirituba",
+            "santa-cecilia",
+            "sao-mateus",
+            "saude",
+            "tucuruvi",
+            "vila-andrade",
+            "vila-formosa",
+            "vila-mariana",
+        },
     },
     "street": {
         "rio-de-janeiro-rj": {
-            "rua-antonio-basilio",
-            "avenida-rui-barbosa",
-            "praia-do-flamengo",
-            "rua-vilela-tavares",
-            "rua-dos-invalidos",
-            "estrada-do-campinho",
-            "rua-andre-cavalcanti",
-            "rua-prof-henrique-costa",
-            "estrada-dos-bandeirantes",
             "avenida-nossa-senhora-de-copacabana",
+            "avenida-rui-barbosa",
+            "estrada-do-campinho",
+            "estrada-dos-bandeirantes",
+            "praia-do-flamengo",
+            "rua-andre-cavalcanti",
+            "rua-antonio-basilio",
+            "rua-dos-invalidos",
+            "rua-prof-henrique-costa",
+            "rua-vilela-tavares",
         },
     },
 }
@@ -269,6 +319,140 @@ def load_local_profiles(path: Path, cities: list[dict]) -> dict:
             "observed_at": profile["observed_at"],
             **localized,
             "citations": cleaned_citations,
+        }
+    return result
+
+
+def _published_area_keys(cities: list[dict]) -> dict[str, dict[str, str | None]]:
+    """Public district route slug -> data key per city, as load_local_profiles maps it."""
+
+    def route_slug(value: str) -> str:
+        folded = unicodedata.normalize("NFKD", value).encode("ascii", "ignore").decode()
+        return re.sub(r"^-+|-+$", "", re.sub(r"[^a-z0-9]+", "-", folded.lower()))
+
+    out: dict[str, dict[str, str | None]] = {}
+    for city in cities:
+        areas: dict[str, str | None] = {}
+        for key, name in ((city.get("shapes") or {}).get("nice") or {}).items():
+            route = route_slug(name)
+            if route in areas and areas[route] != key:
+                route = route + "-" + route_slug(key)[:6]
+            areas[route] = key
+        out[city["slug"]] = areas
+    return out
+
+
+def load_district_notes(path: Path, cities: list[dict], local_profiles: dict) -> dict:
+    """Reviewed editorial notes for district pages, bound to a documented profile.
+
+    A note is static authored copy: a few paragraphs, upsides, watch-outs and a
+    one-line teaser in the three shipped languages, plus the public sources it
+    was written from. It is accepted only for a district that already carries
+    a documented local profile, so the narrative never appears without the
+    dated, cited sample behind it. Nothing here is generated at render time.
+    """
+    if not path.exists():
+        return {}
+    try:
+        data = json.loads(path.read_text())
+    except (OSError, json.JSONDecodeError) as exc:
+        raise ValueError("invalid district notes JSON") from exc
+    if (
+        not isinstance(data, dict)
+        or set(data) != {"schema", "notes"}
+        or data["schema"] != "district-notes-v1"
+        or not isinstance(data["notes"], list)
+    ):
+        raise ValueError("invalid district notes schema")
+    langs = {"pt", "en", "ru"}
+    area_keys = _published_area_keys(cities)
+
+    def text(value: Any, limit: int) -> bool:
+        return (
+            isinstance(value, str)
+            and 0 < len(value.strip()) <= limit
+            and not re.search(r"[<>\x00-\x08]", value)
+        )
+
+    def localized_text(value: Any, limit: int) -> dict[str, str]:
+        if not isinstance(value, dict) or set(value) != langs:
+            raise ValueError("district note is missing a language")
+        if not all(text(value[lang], limit) for lang in langs):
+            raise ValueError("district note text is empty, too long or unsafe")
+        return {lang: value[lang] for lang in ("pt", "en", "ru")}
+
+    def localized_list(value: Any, low: int, high: int, limit: int) -> dict[str, list[str]]:
+        if not isinstance(value, dict) or set(value) != langs:
+            raise ValueError("district note is missing a language")
+        out: dict[str, list[str]] = {}
+        for lang in ("pt", "en", "ru"):
+            items = value[lang]
+            if not isinstance(items, list) or not low <= len(items) <= high:
+                raise ValueError("district note list has the wrong length")
+            if not all(text(item, limit) for item in items):
+                raise ValueError("district note list item is empty, too long or unsafe")
+            out[lang] = list(items)
+        return out
+
+    def timestamp(value: Any) -> datetime:
+        if not isinstance(value, str) or not re.fullmatch(
+            r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,6})?Z", value
+        ):
+            raise ValueError("invalid district note observed_at")
+        return datetime.fromisoformat(value.replace("Z", "+00:00"))
+
+    def source_url(value: Any) -> bool:
+        if not isinstance(value, str) or not value or re.search(r"[\s<>\"'\\\\]", value):
+            return False
+        try:
+            parsed = urlsplit(value)
+        except ValueError:
+            return False
+        return (
+            parsed.scheme == "https"
+            and bool(parsed.hostname)
+            and parsed.username is None
+            and parsed.password is None
+            and urlunsplit(parsed) == value
+        )
+
+    required = {"city", "route", "observed_at", "body", "pros", "cons", "teaser", "sources"}
+    result: dict[str, dict[str, dict[str, Any]]] = {}
+    for note in data["notes"]:
+        if not isinstance(note, dict) or set(note) != required:
+            raise ValueError("invalid district note fields")
+        city_slug, route = note["city"], note["route"]
+        key = area_keys.get(city_slug, {}).get(route) if isinstance(route, str) else None
+        if not isinstance(city_slug, str) or key is None:
+            raise ValueError("district note does not match a published district route")
+        if key not in (local_profiles.get("area") or {}).get(city_slug, {}):
+            raise ValueError("district note requires a documented local profile")
+        if key in result.get(city_slug, {}):
+            raise ValueError("duplicate district note")
+        observed = timestamp(note["observed_at"])
+        sources = note["sources"]
+        if not isinstance(sources, list) or not 1 <= len(sources) <= 8:
+            raise ValueError("district note needs 1..8 sources")
+        cleaned_sources = []
+        for source in sources:
+            if not isinstance(source, dict) or set(source) != {"label", "url", "observed_at"}:
+                raise ValueError("invalid district note source")
+            if timestamp(source["observed_at"]) > observed or not source_url(source["url"]):
+                raise ValueError("invalid district note source")
+            cleaned_sources.append(
+                {
+                    "label": localized_text(source["label"], 180),
+                    "url": source["url"],
+                    "observed_at": source["observed_at"],
+                }
+            )
+        result.setdefault(city_slug, {})[key] = {
+            "observed_at": note["observed_at"],
+            "body": localized_list(note["body"], 2, 6, 900),
+            "pros": localized_list(note["pros"], 1, 5, 240),
+            "cons": localized_list(note["cons"], 1, 5, 240),
+            "teaser": localized_text(note["teaser"], 220),
+            "sources": cleaned_sources,
         }
     return result
 
@@ -1336,6 +1520,9 @@ def main() -> None:
         payload["market_reports"] = market_reports
     payload["document_reports"] = load_document_reports(DOCUMENT_REPORTS, src)
     payload["local_profiles"] = load_local_profiles(LOCAL_PROFILES, cities)
+    payload["district_notes"] = load_district_notes(
+        DISTRICT_NOTES, cities, payload["local_profiles"]
+    )
     from saved_analyses import load_saved_analyses
 
     payload["saved_analyses"] = load_saved_analyses(SAVED_ANALYSES, src)

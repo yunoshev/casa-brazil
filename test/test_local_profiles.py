@@ -96,45 +96,25 @@ class LocalProfilesTest(unittest.TestCase):
             "https://example.test/source",
         )
 
-    def test_pilot_allowlist_is_exactly_twenty_public_routes(self):
-        self.assertEqual(
-            PILOT_LOCAL_PROFILE_ROUTES,
-            {
-                "area": {
-                    "rio-de-janeiro-rj": {
-                        "campo-grande",
-                        "santa-cruz",
-                        "barra-da-tijuca",
-                        "copacabana",
-                    },
-                    "recife-pe": {"poco-da-panela", "boa-viagem"},
-                    "sao-paulo-sp": {"jardim-paulista", "mooca"},
-                    "fortaleza-ce": {"praia-de-iracema", "farias-brito"},
-                },
-                "street": {
-                    "rio-de-janeiro-rj": {
-                        "rua-antonio-basilio",
-                        "avenida-rui-barbosa",
-                        "praia-do-flamengo",
-                        "rua-vilela-tavares",
-                        "rua-dos-invalidos",
-                        "estrada-do-campinho",
-                        "rua-andre-cavalcanti",
-                        "rua-prof-henrique-costa",
-                        "estrada-dos-bandeirantes",
-                        "avenida-nossa-senhora-de-copacabana",
-                    },
-                },
-            },
+    def test_reviewed_route_constant_matches_the_place_profile_allowlist(self):
+        allowlist = json.loads(
+            (
+                Path(__file__).resolve().parents[1] / "site/content/place-profiles.allowlist.json"
+            ).read_text()
         )
-        self.assertEqual(
-            sum(
-                len(routes)
-                for cities in PILOT_LOCAL_PROFILE_ROUTES.values()
-                for routes in cities.values()
-            ),
-            20,
+        expected: dict[str, dict[str, set[str]]] = {"area": {}, "street": {}}
+        for entry in allowlist["routes"]:
+            parts = [part for part in entry["route"].split("/") if part]
+            city = f"{parts[2]}-{parts[1]}"
+            expected[entry["kind"]].setdefault(city, set()).add(parts[-1])
+        self.assertEqual(PILOT_LOCAL_PROFILE_ROUTES, expected)
+        total = sum(
+            len(routes)
+            for cities in PILOT_LOCAL_PROFILE_ROUTES.values()
+            for routes in cities.values()
         )
+        self.assertGreaterEqual(total, 20)
+        self.assertLessEqual(total, 64)
 
     def test_rejects_unknown_routes_duplicate_profiles_and_unsafe_claims(self):
         cases = []

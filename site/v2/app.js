@@ -292,8 +292,10 @@ function streetSeoEligible(code) {
 }
 
 function areaSeoEligible(key) {
-  return hasAreaMarket(key) || (byArea[key] || []).concat(historyByArea[key] || [])
-    .filter(lotSeoEligible).length >= 10;
+  // A reviewed editorial note is content in its own right: a district that
+  // carries one is indexable even while its inventory is thin.
+  return !!districtNote(key) || hasAreaMarket(key) ||
+    (byArea[key] || []).concat(historyByArea[key] || []).filter(lotSeoEligible).length >= 10;
 }
 
 function citySeoEligible(c) {
@@ -468,6 +470,73 @@ function localProfileBlock(scope, key) {
         '</span></li>';
     }).join("") + '</ol><h3>' + esc(t("local_profile.limitations.h3")) + '</h3><p>' +
     esc(profile.limitations) + '</p><p class="foot">' + esc(t("local_profile.notice")) + "</p></section>";
+}
+
+/* Editorial notes for a district: static, reviewed copy shipped with the
+ * payload, never generated at render time. A note is only accepted by the
+ * build for a district that carries a documented local profile. */
+function districtNote(key) {
+  var notes = D.district_notes;
+  if (!notes || typeof notes !== "object" || !notes[city.slug] ||
+      typeof notes[city.slug] !== "object") return null;
+  var note = notes[city.slug][key];
+  if (!note || typeof note !== "object" || !localProfileTimestamp(note.observed_at)) return null;
+  function pick(field) {
+    var v = note[field];
+    return v && typeof v === "object" ? (v[LANG.code] || v.pt) : null;
+  }
+  function textList(list) {
+    return Array.isArray(list) && list.every(function (s) {
+      return typeof s === "string" && s.trim();
+    }) ? list : null;
+  }
+  var body = textList(pick("body")), pros = textList(pick("pros")) || [],
+      cons = textList(pick("cons")) || [], teaser = pick("teaser");
+  if (!body || !body.length || typeof teaser !== "string" || !teaser.trim()) return null;
+  var sources = [];
+  (Array.isArray(note.sources) ? note.sources : []).forEach(function (s) {
+    var label = s && s.label && typeof s.label === "object" ? (s.label[LANG.code] || s.label.pt) : null;
+    if (typeof label === "string" && label.trim() && httpsSource(s.url)) {
+      sources.push({ label: label, url: s.url });
+    }
+  });
+  return { observed_at: note.observed_at, body: body, pros: pros, cons: cons,
+    teaser: teaser, sources: sources };
+}
+
+function districtNoteBlock(key) {
+  var note = districtNote(key);
+  if (!note) return "";
+  function list(items, h3) {
+    if (!items.length) return "";
+    return '<div><h3>' + esc(t(h3)) + '</h3><ul>' + items.map(function (s) {
+      return '<li>' + esc(s) + '</li>';
+    }).join("") + '</ul></div>';
+  }
+  return '<section class="mkt district-note"><div class="sechead"><h2>' +
+    esc(t("notes.area.h2", { name: areaName(key) })) + '</h2><span class="n">' +
+    esc(t("notes.updated", { date: note.observed_at.slice(0, 10) })) + '</span></div>' +
+    note.body.map(function (par) { return '<p>' + esc(par) + '</p>'; }).join("") +
+    (note.pros.length || note.cons.length
+      ? '<div class="proscons">' + list(note.pros, "notes.pros.h3") + list(note.cons, "notes.cons.h3") + '</div>'
+      : "") +
+    (note.sources.length ? '<p class="foot">' + esc(t("notes.sources")) + " " +
+      note.sources.map(function (s) {
+        return '<a href="' + esc(s.url) + '" target="_blank" rel="noopener noreferrer nofollow">' +
+          esc(s.label) + '</a>';
+      }).join(" · ") + '</p>' : "") +
+    '<p class="foot">' + esc(t("notes.notice")) + '</p></section>';
+}
+
+/* One line per district on the city page: the teaser of its note, written in
+ * a different register from the page itself, with the lot count beside it. */
+function noteRow(a) {
+  var note = districtNote(a.key);
+  if (!note) return "";
+  return '<a class="row noted" href="' + href("/a/" + encodeURIComponent(a.key)) + '">' +
+    '<div class="r1"><span class="nm">' + esc(areaName(a.key)) + '</span>' +
+    '<span class="pill mute">' + esc(lots(a.n)) + '</span></div>' +
+    '<div class="sub">' + esc(note.teaser) + '</div></a>';
 }
 
 function lotHistory(r) {
@@ -1435,6 +1504,7 @@ function screenCity() {
     .sort(function (x, y) { return y.share - x.share || y.below - x.below; })
     .slice(0, 8);
   var top = currentRows().filter(reliable).slice(0, 3);
+  var noted = areas.filter(function (a) { return districtNote(a.key); });
 
   return '' +
     '<section class="hero">' +
@@ -1486,6 +1556,10 @@ function screenCity() {
         t("city.best.h2") + '</h2><span class="n">' + t("city.best.note") + "</span></div>" +
         '<div class="rowlist">' + best.map(areaRow).join("") + "</div></section>" : "") +
     "</div>" : "") +
+
+    (noted.length ? '<section class="sec district-notes"><div class="sechead"><h2>' +
+      t("city.districts.h2") + '</h2><span class="n">' + t("city.districts.note") + "</span></div>" +
+      '<div class="rowlist">' + noted.map(noteRow).join("") + "</div></section>" : "") +
 
     (top.length ? '<section class="sec"><div class="sechead"><h2>' + t("city.top.h2") +
       '</h2><span class="n">' + t("city.top.note", { n: num(s.reliable) }) + "</span></div>" +
@@ -1619,6 +1693,7 @@ function screenArea(key) {
           ? t("area.lede", { lots: lots(a.n), rel: a.rel, below: b(a.below) })
           : t(marketOnly() ? "area.lede.market" : "area.lede.nodata",
               { lots: lots(a.n) })) + "</p></div>" + mini +
+    districtNoteBlock(key) +
     inventoryNotice() + scopeDossier((byArea[key] || []).concat(historyByArea[key] || [])) +
     localProfileBlock("area", key) +
     marketAvailabilityNote(byArea[key] || []) + marketCard(key) + upkeepCard(key) + streetList(key) +
@@ -2867,6 +2942,12 @@ function headFor(path) {
     }
     if (!st.n) {
       base.desc = areaName(st.key) + ", " + name + ". " + emptyAreaText(st.key);
+    }
+    var note = districtNote(st.key);
+    if (note) {
+      base.desc = t("head.area.desc.note", {
+        teaser: note.teaser, lots: lots(st.n), name: areaName(st.key), city: name,
+      });
     }
   } else if (last === SEG.honest) {
     base.title = t("head.honest.title", { city: name });

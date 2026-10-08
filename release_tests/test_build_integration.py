@@ -143,6 +143,7 @@ class BuildIntegrationTest(unittest.TestCase):
                 patch.object(proto_build, "HERE", root),
                 patch.object(proto_build, "SITE", site),
                 patch.object(proto_build, "LOCAL_PROFILES", root / "missing-local-profiles.json"),
+                patch.object(proto_build, "DISTRICT_NOTES", root / "missing-district-notes.json"),
                 patch.object(
                     proto_build, "PUBLIC_MARKET_REPORTS", public_data / "market_reports.json"
                 ),

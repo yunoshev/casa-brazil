@@ -612,6 +612,15 @@ svg.map .lbl{fill:var(--ink); stroke:var(--card)}
 /* The paid-price block on a district page. Deliberately not a "tile": a tile is
    a count, and this is a price with a unit, a sample size and a comparison —
    four facts that only mean something while they stay attached to each other. */
+/* district editorial note */
+.district-note p{margin:0 0 10px; line-height:1.55; font-size:15px}
+.district-note .proscons{display:grid; gap:12px; margin-top:6px}
+.district-note .proscons h3{font-size:14px; font-weight:700; margin:0 0 4px}
+.district-note .proscons ul{margin:0; padding-left:18px}
+.district-note .proscons li{font-size:14px; line-height:1.45; margin:2px 0}
+.district-notes .row.noted .sub{white-space:normal}
+@media (min-width:900px){ .district-note .proscons{grid-template-columns:1fr 1fr} }
+
 .mkt{margin:18px 0 0}
 .mkt .mrow{
   padding:12px 14px; border:1px solid var(--line); border-radius:14px;

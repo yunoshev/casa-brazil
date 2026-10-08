@@ -1,0 +1,1013 @@
+{
+ "purpose": "A bounded, manually reviewed route list (at most 64). The first 20 routes were the pilot (10 areas from GSC impressions and the sitemap, 10 streets from GSC impressions and high ITBI samples); the areas added in October 2026 are the districts ranked highest by 90-day Search Console impressions of their district and lot pages. A profile describes mapped features around a stated operational anchor; it is not a bairro boundary analysis.",
+ "routes": [
+  {
+   "anchor": {
+    "lat": -3.733047,
+    "lon": -38.541741,
+    "method": "Mean of 1,065 CNEFE 2022 address points labelled Farias Brito; an operational sample point, not a legal boundary centroid.",
+    "source_label": "IBGE CNEFE 2022",
+    "source_observed_at": "2026-08-25T01:04:47Z",
+    "source_url": "https://www.ibge.gov.br/estatisticas/sociais/populacao/38734-cadastro-nacional-de-enderecos-para-fins-estatisticos.html"
+   },
+   "kind": "area",
+   "label": "Farias Brito",
+   "municipality": {
+    "ibge_code": "2304400",
+    "name": "Fortaleza",
+    "state": "CE"
+   },
+   "radius_m": 900,
+   "route": "/leilao-de-imoveis/ce/fortaleza/farias-brito/"
+  },
+  {
+   "anchor": {
+    "lat": -3.721272,
+    "lon": -38.514427,
+    "method": "Mean of 438 CNEFE 2022 address points labelled Praia de Iracema; an operational sample point, not a legal boundary centroid.",
+    "source_label": "IBGE CNEFE 2022",
+    "source_observed_at": "2026-08-25T01:04:47Z",
+    "source_url": "https://www.ibge.gov.br/estatisticas/sociais/populacao/38734-cadastro-nacional-de-enderecos-para-fins-estatisticos.html"
+   },
+   "kind": "area",
+   "label": "Praia de Iracema",
+   "municipality": {
+    "ibge_code": "2304400",
+    "name": "Fortaleza",
+    "state": "CE"
+   },
+   "radius_m": 900,
+   "route": "/leilao-de-imoveis/ce/fortaleza/praia-de-iracema/"
+  },
+  {
+   "anchor": {
+    "lat": -8.125321,
+    "lon": -34.902025,
+    "method": "Mean of 22,282 CNEFE 2022 address points labelled Boa Viagem; an operational sample point, not a legal boundary centroid.",
+    "source_label": "IBGE CNEFE 2022",
+    "source_observed_at": "2026-08-25T01:04:47Z",
+    "source_url": "https://www.ibge.gov.br/estatisticas/sociais/populacao/38734-cadastro-nacional-de-enderecos-para-fins-estatisticos.html"
+   },
+   "kind": "area",
+   "label": "Boa Viagem",
+   "municipality": {
+    "ibge_code": "2611606",
+    "name": "Recife",
+    "state": "PE"
+   },
+   "radius_m": 900,
+   "route": "/leilao-de-imoveis/pe/recife/boa-viagem/"
+  },
+  {
+   "anchor": {
+    "lat": -8.034969,
+    "lon": -34.923487,
+    "method": "Mean of 785 CNEFE 2022 address points labelled Poço da Panela; an operational sample point, not a legal boundary centroid.",
+    "source_label": "IBGE CNEFE 2022",
+    "source_observed_at": "2026-08-25T01:04:47Z",
+    "source_url": "https://www.ibge.gov.br/estatisticas/sociais/populacao/38734-cadastro-nacional-de-enderecos-para-fins-estatisticos.html"
+   },
+   "kind": "area",
+   "label": "Poço da Panela",
+   "municipality": {
+    "ibge_code": "2611606",
+    "name": "Recife",
+    "state": "PE"
+   },
+   "radius_m": 800,
+   "route": "/leilao-de-imoveis/pe/recife/poco-da-panela/"
+  },
+  {
+   "anchor": {
+    "lat": -23.001823,
+    "lon": -43.365127,
+    "method": "Mean of 3,829 official CadLog street-segment centroids labelled Barra da Tijuca; an operational sample point, not a legal boundary centroid.",
+    "source_label": "Prefeitura do Rio CadLog",
+    "source_observed_at": "2026-08-24T09:04:05Z",
+    "source_url": "https://pgeo3.rio.rj.gov.br/arcgis/rest/services/CadLog/Trechos_Logradouros/MapServer"
+   },
+   "kind": "area",
+   "label": "Barra da Tijuca",
+   "municipality": {
+    "ibge_code": "3304557",
+    "name": "Rio de Janeiro",
+    "state": "RJ"
+   },
+   "radius_m": 1200,
+   "route": "/leilao-de-imoveis/rj/rio-de-janeiro/barra-da-tijuca/"
+  },
+  {
+   "anchor": {
+    "lat": -22.894414,
+    "lon": -43.558943,
+    "method": "Mean of 12,192 official CadLog street-segment centroids labelled Campo Grande; an operational sample point, not a legal boundary centroid.",
+    "source_label": "Prefeitura do Rio CadLog",
+    "source_observed_at": "2026-08-24T09:04:05Z",
+    "source_url": "https://pgeo3.rio.rj.gov.br/arcgis/rest/services/CadLog/Trechos_Logradouros/MapServer"
+   },
+   "kind": "area",
+   "label": "Campo Grande",
+   "municipality": {
+    "ibge_code": "3304557",
+    "name": "Rio de Janeiro",
+    "state": "RJ"
+   },
+   "radius_m": 1200,
+   "route": "/leilao-de-imoveis/rj/rio-de-janeiro/campo-grande/"
+  },
+  {
+   "anchor": {
+    "lat": -22.973047,
+    "lon": -43.191227,
+    "method": "Mean of 1,219 official CadLog street-segment centroids labelled Copacabana; an operational sample point, not a legal boundary centroid.",
+    "source_label": "Prefeitura do Rio CadLog",
+    "source_observed_at": "2026-08-24T09:04:05Z",
+    "source_url": "https://pgeo3.rio.rj.gov.br/arcgis/rest/services/CadLog/Trechos_Logradouros/MapServer"
+   },
+   "kind": "area",
+   "label": "Copacabana",
+   "municipality": {
+    "ibge_code": "3304557",
+    "name": "Rio de Janeiro",
+    "state": "RJ"
+   },
+   "radius_m": 800,
+   "route": "/leilao-de-imoveis/rj/rio-de-janeiro/copacabana/"
+  },
+  {
+   "anchor": {
+    "lat": -22.920607,
+    "lon": -43.678757,
+    "method": "Mean of 7,947 official CadLog street-segment centroids labelled Santa Cruz; an operational sample point, not a legal boundary centroid.",
+    "source_label": "Prefeitura do Rio CadLog",
+    "source_observed_at": "2026-08-24T09:04:05Z",
+    "source_url": "https://pgeo3.rio.rj.gov.br/arcgis/rest/services/CadLog/Trechos_Logradouros/MapServer"
+   },
+   "kind": "area",
+   "label": "Santa Cruz",
+   "municipality": {
+    "ibge_code": "3304557",
+    "name": "Rio de Janeiro",
+    "state": "RJ"
+   },
+   "radius_m": 1200,
+   "route": "/leilao-de-imoveis/rj/rio-de-janeiro/santa-cruz/"
+  },
+  {
+   "anchor": {
+    "lat": -22.972949,
+    "lon": -43.185065,
+    "method": "Mean of 32 official CadLog segment centroids for street code 068882 in Copacabana; an operational sample point, not the full street geometry.",
+    "source_label": "Prefeitura do Rio CadLog",
+    "source_observed_at": "2026-08-24T09:04:05Z",
+    "source_url": "https://pgeo3.rio.rj.gov.br/arcgis/rest/services/CadLog/Trechos_Logradouros/MapServer"
+   },
+   "kind": "street",
+   "label": "Avenida Nossa Senhora de Copacabana",
+   "municipality": {
+    "ibge_code": "3304557",
+    "name": "Rio de Janeiro",
+    "state": "RJ"
+   },
+   "radius_m": 600,
+   "route": "/leilao-de-imoveis/rj/rio-de-janeiro/rua/avenida-nossa-senhora-de-copacabana/"
+  },
+  {
+   "anchor": {
+    "lat": -22.94003,
+    "lon": -43.173227,
+    "method": "Mean of 10 official CadLog segment centroids for street code 080473 in Flamengo; an operational sample point, not the full street geometry.",
+    "source_label": "Prefeitura do Rio CadLog",
+    "source_observed_at": "2026-08-24T09:04:05Z",
+    "source_url": "https://pgeo3.rio.rj.gov.br/arcgis/rest/services/CadLog/Trechos_Logradouros/MapServer"
+   },
+   "kind": "street",
+   "label": "Avenida Rui Barbosa",
+   "municipality": {
+    "ibge_code": "3304557",
+    "name": "Rio de Janeiro",
+    "state": "RJ"
+   },
+   "radius_m": 600,
+   "route": "/leilao-de-imoveis/rj/rio-de-janeiro/rua/avenida-rui-barbosa/"
+  },
+  {
+   "anchor": {
+    "lat": -22.895588,
+    "lon": -43.580575,
+    "method": "Mean of 81 official CadLog segment centroids for street code 015735 in Campo Grande; an operational sample point, not the full street geometry.",
+    "source_label": "Prefeitura do Rio CadLog",
+    "source_observed_at": "2026-08-24T09:04:05Z",
+    "source_url": "https://pgeo3.rio.rj.gov.br/arcgis/rest/services/CadLog/Trechos_Logradouros/MapServer"
+   },
+   "kind": "street",
+   "label": "Estrada do Campinho",
+   "municipality": {
+    "ibge_code": "3304557",
+    "name": "Rio de Janeiro",
+    "state": "RJ"
+   },
+   "radius_m": 700,
+   "route": "/leilao-de-imoveis/rj/rio-de-janeiro/rua/estrada-do-campinho/"
+  },
+  {
+   "anchor": {
+    "lat": -22.962268,
+    "lon": -43.396384,
+    "method": "Mean of 109 official CadLog segment centroids for street code 024331 in Jacarepaguá; an operational sample point, not the full street geometry.",
+    "source_label": "Prefeitura do Rio CadLog",
+    "source_observed_at": "2026-08-24T09:04:05Z",
+    "source_url": "https://pgeo3.rio.rj.gov.br/arcgis/rest/services/CadLog/Trechos_Logradouros/MapServer"
+   },
+   "kind": "street",
+   "label": "Estrada dos Bandeirantes",
+   "municipality": {
+    "ibge_code": "3304557",
+    "name": "Rio de Janeiro",
+    "state": "RJ"
+   },
+   "radius_m": 700,
+   "route": "/leilao-de-imoveis/rj/rio-de-janeiro/rua/estrada-dos-bandeirantes/"
+  },
+  {
+   "anchor": {
+    "lat": -22.93213,
+    "lon": -43.174126,
+    "method": "Mean of 27 official CadLog segment centroids for street code 071837 in Flamengo; an operational sample point, not the full street geometry.",
+    "source_label": "Prefeitura do Rio CadLog",
+    "source_observed_at": "2026-08-24T09:04:05Z",
+    "source_url": "https://pgeo3.rio.rj.gov.br/arcgis/rest/services/CadLog/Trechos_Logradouros/MapServer"
+   },
+   "kind": "street",
+   "label": "Praia do Flamengo",
+   "municipality": {
+    "ibge_code": "3304557",
+    "name": "Rio de Janeiro",
+    "state": "RJ"
+   },
+   "radius_m": 600,
+   "route": "/leilao-de-imoveis/rj/rio-de-janeiro/rua/praia-do-flamengo/"
+  },
+  {
+   "anchor": {
+    "lat": -22.919457,
+    "lon": -43.184951,
+    "method": "Mean of 2 official CadLog segment centroids for street code 060129 in Santa Teresa; an operational sample point, not the full street geometry.",
+    "source_label": "Prefeitura do Rio CadLog",
+    "source_observed_at": "2026-08-24T09:04:05Z",
+    "source_url": "https://pgeo3.rio.rj.gov.br/arcgis/rest/services/CadLog/Trechos_Logradouros/MapServer"
+   },
+   "kind": "street",
+   "label": "Rua André Cavalcanti",
+   "municipality": {
+    "ibge_code": "3304557",
+    "name": "Rio de Janeiro",
+    "state": "RJ"
+   },
+   "radius_m": 600,
+   "route": "/leilao-de-imoveis/rj/rio-de-janeiro/rua/rua-andre-cavalcanti/"
+  },
+  {
+   "anchor": {
+    "lat": -22.925861,
+    "lon": -43.236701,
+    "method": "Mean of 4 official CadLog segment centroids for street code 065334 in Tijuca; an operational sample point, not the full street geometry.",
+    "source_label": "Prefeitura do Rio CadLog",
+    "source_observed_at": "2026-08-24T09:04:05Z",
+    "source_url": "https://pgeo3.rio.rj.gov.br/arcgis/rest/services/CadLog/Trechos_Logradouros/MapServer"
+   },
+   "kind": "street",
+   "label": "Rua Antônio Basílio",
+   "municipality": {
+    "ibge_code": "3304557",
+    "name": "Rio de Janeiro",
+    "state": "RJ"
+   },
+   "radius_m": 600,
+   "route": "/leilao-de-imoveis/rj/rio-de-janeiro/rua/rua-antonio-basilio/"
+  },
+  {
+   "anchor": {
+    "lat": -22.91089,
+    "lon": -43.185087,
+    "method": "Mean of 5 official CadLog segment centroids for street code 061267 in Centro; an operational sample point, not the full street geometry.",
+    "source_label": "Prefeitura do Rio CadLog",
+    "source_observed_at": "2026-08-24T09:04:05Z",
+    "source_url": "https://pgeo3.rio.rj.gov.br/arcgis/rest/services/CadLog/Trechos_Logradouros/MapServer"
+   },
+   "kind": "street",
+   "label": "Rua dos Inválidos",
+   "municipality": {
+    "ibge_code": "3304557",
+    "name": "Rio de Janeiro",
+    "state": "RJ"
+   },
+   "radius_m": 600,
+   "route": "/leilao-de-imoveis/rj/rio-de-janeiro/rua/rua-dos-invalidos/"
+  },
+  {
+   "anchor": {
+    "lat": -22.932306,
+    "lon": -43.36261,
+    "method": "Mean of 9 official CadLog segment centroids for street code 040840 in Pechincha; an operational sample point, not the full street geometry.",
+    "source_label": "Prefeitura do Rio CadLog",
+    "source_observed_at": "2026-08-24T09:04:05Z",
+    "source_url": "https://pgeo3.rio.rj.gov.br/arcgis/rest/services/CadLog/Trechos_Logradouros/MapServer"
+   },
+   "kind": "street",
+   "label": "Rua Professor Henrique Costa",
+   "municipality": {
+    "ibge_code": "3304557",
+    "name": "Rio de Janeiro",
+    "state": "RJ"
+   },
+   "radius_m": 600,
+   "route": "/leilao-de-imoveis/rj/rio-de-janeiro/rua/rua-prof-henrique-costa/"
+  },
+  {
+   "anchor": {
+    "lat": -22.907563,
+    "lon": -43.287504,
+    "method": "Mean of 2 official CadLog segment centroids for street code 083402 in Méier; an operational sample point, not the full street geometry.",
+    "source_label": "Prefeitura do Rio CadLog",
+    "source_observed_at": "2026-08-24T09:04:05Z",
+    "source_url": "https://pgeo3.rio.rj.gov.br/arcgis/rest/services/CadLog/Trechos_Logradouros/MapServer"
+   },
+   "kind": "street",
+   "label": "Rua Vilela Tavares",
+   "municipality": {
+    "ibge_code": "3304557",
+    "name": "Rio de Janeiro",
+    "state": "RJ"
+   },
+   "radius_m": 600,
+   "route": "/leilao-de-imoveis/rj/rio-de-janeiro/rua/rua-vilela-tavares/"
+  },
+  {
+   "anchor": {
+    "lat": -23.566514,
+    "lon": -46.666759,
+    "method": "Area-weighted centroid of the official Jardim Paulista district polygon from GeoSampa (updated 2026-03-20).",
+    "source_label": "Prefeitura de São Paulo GeoSampa",
+    "source_observed_at": "2026-08-24T18:45:16Z",
+    "source_url": "https://download.geosampa.prefeitura.sp.gov.br/PaginasPublicas/_SBC.aspx"
+   },
+   "kind": "area",
+   "label": "Jardim Paulista",
+   "municipality": {
+    "ibge_code": "3550308",
+    "name": "São Paulo",
+    "state": "SP"
+   },
+   "radius_m": 900,
+   "route": "/leilao-de-imoveis/sp/sao-paulo/jardim-paulista/"
+  },
+  {
+   "anchor": {
+    "lat": -23.561346,
+    "lon": -46.596412,
+    "method": "Area-weighted centroid of the official Mooca district polygon from GeoSampa (updated 2026-03-20).",
+    "source_label": "Prefeitura de São Paulo GeoSampa",
+    "source_observed_at": "2026-08-24T18:45:16Z",
+    "source_url": "https://download.geosampa.prefeitura.sp.gov.br/PaginasPublicas/_SBC.aspx"
+   },
+   "kind": "area",
+   "label": "Mooca",
+   "municipality": {
+    "ibge_code": "3550308",
+    "name": "São Paulo",
+    "state": "SP"
+   },
+   "radius_m": 900,
+   "route": "/leilao-de-imoveis/sp/sao-paulo/mooca/"
+  },
+  {
+   "anchor": {
+    "lat": -23.521196,
+    "lon": -46.674087,
+    "method": "Area-weighted centroid of the official Barra Funda district polygon from GeoSampa (updated 2026-03-20).",
+    "source_label": "Prefeitura de São Paulo GeoSampa",
+    "source_observed_at": "2026-08-24T18:45:16Z",
+    "source_url": "https://download.geosampa.prefeitura.sp.gov.br/PaginasPublicas/_SBC.aspx"
+   },
+   "kind": "area",
+   "label": "Barra Funda",
+   "municipality": {
+    "ibge_code": "3550308",
+    "name": "São Paulo",
+    "state": "SP"
+   },
+   "radius_m": 900,
+   "route": "/leilao-de-imoveis/sp/sao-paulo/barra-funda/"
+  },
+  {
+   "anchor": {
+    "lat": -23.60006,
+    "lon": -46.481275,
+    "method": "Area-weighted centroid of the official Sao Mateus district polygon from GeoSampa (updated 2026-03-20).",
+    "source_label": "Prefeitura de São Paulo GeoSampa",
+    "source_observed_at": "2026-08-24T18:45:16Z",
+    "source_url": "https://download.geosampa.prefeitura.sp.gov.br/PaginasPublicas/_SBC.aspx"
+   },
+   "kind": "area",
+   "label": "Sao Mateus",
+   "municipality": {
+    "ibge_code": "3550308",
+    "name": "São Paulo",
+    "state": "SP"
+   },
+   "radius_m": 900,
+   "route": "/leilao-de-imoveis/sp/sao-paulo/sao-mateus/"
+  },
+  {
+   "anchor": {
+    "lat": -22.80866,
+    "lon": -42.963105,
+    "method": "Mean of 100 geocoded catalogue lots labelled Vista Alegre; an operational sample point, not a legal boundary centroid.",
+    "source_label": "Preço de Martelo catalogue",
+    "source_observed_at": "2026-10-01T00:00:00Z",
+    "source_url": "https://precodemartelo.com/lifecycle-projection.json"
+   },
+   "kind": "area",
+   "label": "Vista Alegre",
+   "municipality": {
+    "ibge_code": "3304904",
+    "name": "São Gonçalo",
+    "state": "RJ"
+   },
+   "radius_m": 900,
+   "route": "/leilao-de-imoveis/rj/sao-goncalo/vista-alegre/"
+  },
+  {
+   "anchor": {
+    "lat": -23.626231,
+    "lon": -46.728279,
+    "method": "Area-weighted centroid of the official Vila Andrade district polygon from GeoSampa (updated 2026-03-20).",
+    "source_label": "Prefeitura de São Paulo GeoSampa",
+    "source_observed_at": "2026-08-24T18:45:16Z",
+    "source_url": "https://download.geosampa.prefeitura.sp.gov.br/PaginasPublicas/_SBC.aspx"
+   },
+   "kind": "area",
+   "label": "Vila Andrade",
+   "municipality": {
+    "ibge_code": "3550308",
+    "name": "São Paulo",
+    "state": "SP"
+   },
+   "radius_m": 900,
+   "route": "/leilao-de-imoveis/sp/sao-paulo/vila-andrade/"
+  },
+  {
+   "anchor": {
+    "lat": -22.867499,
+    "lon": -43.295579,
+    "method": "Mean of 233 official CadLog street-segment centroids labelled Engenho da Rainha; an operational sample point, not a legal boundary centroid.",
+    "source_label": "Prefeitura do Rio CadLog",
+    "source_observed_at": "2026-08-24T09:04:05Z",
+    "source_url": "https://pgeo3.rio.rj.gov.br/arcgis/rest/services/CadLog/Trechos_Logradouros/MapServer"
+   },
+   "kind": "area",
+   "label": "Engenho da Rainha",
+   "municipality": {
+    "ibge_code": "3304557",
+    "name": "Rio de Janeiro",
+    "state": "RJ"
+   },
+   "radius_m": 900,
+   "route": "/leilao-de-imoveis/rj/rio-de-janeiro/engenho-da-rainha/"
+  },
+  {
+   "anchor": {
+    "lat": -22.814458,
+    "lon": -43.362527,
+    "method": "Mean of 1,899 official CadLog street-segment centroids labelled Pavuna; an operational sample point, not a legal boundary centroid.",
+    "source_label": "Prefeitura do Rio CadLog",
+    "source_observed_at": "2026-08-24T09:04:05Z",
+    "source_url": "https://pgeo3.rio.rj.gov.br/arcgis/rest/services/CadLog/Trechos_Logradouros/MapServer"
+   },
+   "kind": "area",
+   "label": "Pavuna",
+   "municipality": {
+    "ibge_code": "3304557",
+    "name": "Rio de Janeiro",
+    "state": "RJ"
+   },
+   "radius_m": 900,
+   "route": "/leilao-de-imoveis/rj/rio-de-janeiro/pavuna/"
+  },
+  {
+   "anchor": {
+    "lat": -22.923902,
+    "lon": -43.383091,
+    "method": "Mean of 2,100 official CadLog street-segment centroids labelled Taquara; an operational sample point, not a legal boundary centroid.",
+    "source_label": "Prefeitura do Rio CadLog",
+    "source_observed_at": "2026-08-24T09:04:05Z",
+    "source_url": "https://pgeo3.rio.rj.gov.br/arcgis/rest/services/CadLog/Trechos_Logradouros/MapServer"
+   },
+   "kind": "area",
+   "label": "Taquara",
+   "municipality": {
+    "ibge_code": "3304557",
+    "name": "Rio de Janeiro",
+    "state": "RJ"
+   },
+   "radius_m": 900,
+   "route": "/leilao-de-imoveis/rj/rio-de-janeiro/taquara/"
+  },
+  {
+   "anchor": {
+    "lat": -22.904211,
+    "lon": -43.611668,
+    "method": "Mean of 2,421 official CadLog street-segment centroids labelled Cosmos; an operational sample point, not a legal boundary centroid.",
+    "source_label": "Prefeitura do Rio CadLog",
+    "source_observed_at": "2026-08-24T09:04:05Z",
+    "source_url": "https://pgeo3.rio.rj.gov.br/arcgis/rest/services/CadLog/Trechos_Logradouros/MapServer"
+   },
+   "kind": "area",
+   "label": "Cosmos",
+   "municipality": {
+    "ibge_code": "3304557",
+    "name": "Rio de Janeiro",
+    "state": "RJ"
+   },
+   "radius_m": 1200,
+   "route": "/leilao-de-imoveis/rj/rio-de-janeiro/cosmos/"
+  },
+  {
+   "anchor": {
+    "lat": -22.874429,
+    "lon": -43.338454,
+    "method": "Mean of 666 official CadLog street-segment centroids labelled Madureira; an operational sample point, not a legal boundary centroid.",
+    "source_label": "Prefeitura do Rio CadLog",
+    "source_observed_at": "2026-08-24T09:04:05Z",
+    "source_url": "https://pgeo3.rio.rj.gov.br/arcgis/rest/services/CadLog/Trechos_Logradouros/MapServer"
+   },
+   "kind": "area",
+   "label": "Madureira",
+   "municipality": {
+    "ibge_code": "3304557",
+    "name": "Rio de Janeiro",
+    "state": "RJ"
+   },
+   "radius_m": 900,
+   "route": "/leilao-de-imoveis/rj/rio-de-janeiro/madureira/"
+  },
+  {
+   "anchor": {
+    "lat": -22.899589,
+    "lon": -43.353309,
+    "method": "Mean of 1,128 official CadLog street-segment centroids labelled Praça Seca; an operational sample point, not a legal boundary centroid.",
+    "source_label": "Prefeitura do Rio CadLog",
+    "source_observed_at": "2026-08-24T09:04:05Z",
+    "source_url": "https://pgeo3.rio.rj.gov.br/arcgis/rest/services/CadLog/Trechos_Logradouros/MapServer"
+   },
+   "kind": "area",
+   "label": "Praça Seca",
+   "municipality": {
+    "ibge_code": "3304557",
+    "name": "Rio de Janeiro",
+    "state": "RJ"
+   },
+   "radius_m": 900,
+   "route": "/leilao-de-imoveis/rj/rio-de-janeiro/praca-seca/"
+  },
+  {
+   "anchor": {
+    "lat": -23.614616,
+    "lon": -46.641078,
+    "method": "Area-weighted centroid of the official Saude district polygon from GeoSampa (updated 2026-03-20).",
+    "source_label": "Prefeitura de São Paulo GeoSampa",
+    "source_observed_at": "2026-08-24T18:45:16Z",
+    "source_url": "https://download.geosampa.prefeitura.sp.gov.br/PaginasPublicas/_SBC.aspx"
+   },
+   "kind": "area",
+   "label": "Saude",
+   "municipality": {
+    "ibge_code": "3550308",
+    "name": "São Paulo",
+    "state": "SP"
+   },
+   "radius_m": 900,
+   "route": "/leilao-de-imoveis/sp/sao-paulo/saude/"
+  },
+  {
+   "anchor": {
+    "lat": -22.91498,
+    "lon": -43.251408,
+    "method": "Mean of 1,028 official CadLog street-segment centroids labelled Vila Isabel; an operational sample point, not a legal boundary centroid.",
+    "source_label": "Prefeitura do Rio CadLog",
+    "source_observed_at": "2026-08-24T09:04:05Z",
+    "source_url": "https://pgeo3.rio.rj.gov.br/arcgis/rest/services/CadLog/Trechos_Logradouros/MapServer"
+   },
+   "kind": "area",
+   "label": "Vila Isabel",
+   "municipality": {
+    "ibge_code": "3304557",
+    "name": "Rio de Janeiro",
+    "state": "RJ"
+   },
+   "radius_m": 900,
+   "route": "/leilao-de-imoveis/rj/rio-de-janeiro/vila-isabel/"
+  },
+  {
+   "anchor": {
+    "lat": -3.823062,
+    "lon": -38.472553,
+    "method": "Mean of 1,080 CNEFE 2022 address points labelled Curio; an operational sample point, not a legal boundary centroid.",
+    "source_label": "IBGE CNEFE 2022",
+    "source_observed_at": "2026-08-25T01:04:47Z",
+    "source_url": "https://www.ibge.gov.br/estatisticas/sociais/populacao/38734-cadastro-nacional-de-enderecos-para-fins-estatisticos.html"
+   },
+   "kind": "area",
+   "label": "Curio",
+   "municipality": {
+    "ibge_code": "2304400",
+    "name": "Fortaleza",
+    "state": "CE"
+   },
+   "radius_m": 900,
+   "route": "/leilao-de-imoveis/ce/fortaleza/curio/"
+  },
+  {
+   "anchor": {
+    "lat": -23.586503,
+    "lon": -46.635799,
+    "method": "Area-weighted centroid of the official Vila Mariana district polygon from GeoSampa (updated 2026-03-20).",
+    "source_label": "Prefeitura de São Paulo GeoSampa",
+    "source_observed_at": "2026-08-24T18:45:16Z",
+    "source_url": "https://download.geosampa.prefeitura.sp.gov.br/PaginasPublicas/_SBC.aspx"
+   },
+   "kind": "area",
+   "label": "Vila Mariana",
+   "municipality": {
+    "ibge_code": "3550308",
+    "name": "São Paulo",
+    "state": "SP"
+   },
+   "radius_m": 900,
+   "route": "/leilao-de-imoveis/sp/sao-paulo/vila-mariana/"
+  },
+  {
+   "anchor": {
+    "lat": -23.531795,
+    "lon": -46.652877,
+    "method": "Area-weighted centroid of the official Santa Cecilia district polygon from GeoSampa (updated 2026-03-20).",
+    "source_label": "Prefeitura de São Paulo GeoSampa",
+    "source_observed_at": "2026-08-24T18:45:16Z",
+    "source_url": "https://download.geosampa.prefeitura.sp.gov.br/PaginasPublicas/_SBC.aspx"
+   },
+   "kind": "area",
+   "label": "Santa Cecilia",
+   "municipality": {
+    "ibge_code": "3550308",
+    "name": "São Paulo",
+    "state": "SP"
+   },
+   "radius_m": 900,
+   "route": "/leilao-de-imoveis/sp/sao-paulo/santa-cecilia/"
+  },
+  {
+   "anchor": {
+    "lat": -23.53363,
+    "lon": -46.40863,
+    "method": "Area-weighted centroid of the official Lajeado district polygon from GeoSampa (updated 2026-03-20).",
+    "source_label": "Prefeitura de São Paulo GeoSampa",
+    "source_observed_at": "2026-08-24T18:45:16Z",
+    "source_url": "https://download.geosampa.prefeitura.sp.gov.br/PaginasPublicas/_SBC.aspx"
+   },
+   "kind": "area",
+   "label": "Lajeado",
+   "municipality": {
+    "ibge_code": "3550308",
+    "name": "São Paulo",
+    "state": "SP"
+   },
+   "radius_m": 900,
+   "route": "/leilao-de-imoveis/sp/sao-paulo/lajeado/"
+  },
+  {
+   "anchor": {
+    "lat": -22.853493,
+    "lon": -43.089923,
+    "method": "Mean of 3 geocoded catalogue lots labelled Covanca; an operational sample point, not a legal boundary centroid.",
+    "source_label": "Preço de Martelo catalogue",
+    "source_observed_at": "2026-10-01T00:00:00Z",
+    "source_url": "https://precodemartelo.com/lifecycle-projection.json"
+   },
+   "kind": "area",
+   "label": "Covanca",
+   "municipality": {
+    "ibge_code": "3304904",
+    "name": "São Gonçalo",
+    "state": "RJ"
+   },
+   "radius_m": 900,
+   "route": "/leilao-de-imoveis/rj/sao-goncalo/covanca/"
+  },
+  {
+   "anchor": {
+    "lat": -23.575976,
+    "lon": -46.462978,
+    "method": "Area-weighted centroid of the official Parque Do Carmo district polygon from GeoSampa (updated 2026-03-20).",
+    "source_label": "Prefeitura de São Paulo GeoSampa",
+    "source_observed_at": "2026-08-24T18:45:16Z",
+    "source_url": "https://download.geosampa.prefeitura.sp.gov.br/PaginasPublicas/_SBC.aspx"
+   },
+   "kind": "area",
+   "label": "Parque Do Carmo",
+   "municipality": {
+    "ibge_code": "3550308",
+    "name": "São Paulo",
+    "state": "SP"
+   },
+   "radius_m": 900,
+   "route": "/leilao-de-imoveis/sp/sao-paulo/parque-do-carmo/"
+  },
+  {
+   "anchor": {
+    "lat": -23.475702,
+    "lon": -46.606043,
+    "method": "Area-weighted centroid of the official Tucuruvi district polygon from GeoSampa (updated 2026-03-20).",
+    "source_label": "Prefeitura de São Paulo GeoSampa",
+    "source_observed_at": "2026-08-24T18:45:16Z",
+    "source_url": "https://download.geosampa.prefeitura.sp.gov.br/PaginasPublicas/_SBC.aspx"
+   },
+   "kind": "area",
+   "label": "Tucuruvi",
+   "municipality": {
+    "ibge_code": "3550308",
+    "name": "São Paulo",
+    "state": "SP"
+   },
+   "radius_m": 900,
+   "route": "/leilao-de-imoveis/sp/sao-paulo/tucuruvi/"
+  },
+  {
+   "anchor": {
+    "lat": -22.818419,
+    "lon": -42.972907,
+    "method": "Mean of 48 geocoded catalogue lots labelled Pacheco; an operational sample point, not a legal boundary centroid.",
+    "source_label": "Preço de Martelo catalogue",
+    "source_observed_at": "2026-10-01T00:00:00Z",
+    "source_url": "https://precodemartelo.com/lifecycle-projection.json"
+   },
+   "kind": "area",
+   "label": "Pacheco",
+   "municipality": {
+    "ibge_code": "3304904",
+    "name": "São Gonçalo",
+    "state": "RJ"
+   },
+   "radius_m": 900,
+   "route": "/leilao-de-imoveis/rj/sao-goncalo/pacheco/"
+  },
+  {
+   "anchor": {
+    "lat": -22.822371,
+    "lon": -43.296499,
+    "method": "Mean of 480 official CadLog street-segment centroids labelled Cordovil; an operational sample point, not a legal boundary centroid.",
+    "source_label": "Prefeitura do Rio CadLog",
+    "source_observed_at": "2026-08-24T09:04:05Z",
+    "source_url": "https://pgeo3.rio.rj.gov.br/arcgis/rest/services/CadLog/Trechos_Logradouros/MapServer"
+   },
+   "kind": "area",
+   "label": "Cordovil",
+   "municipality": {
+    "ibge_code": "3304557",
+    "name": "Rio de Janeiro",
+    "state": "RJ"
+   },
+   "radius_m": 900,
+   "route": "/leilao-de-imoveis/rj/rio-de-janeiro/cordovil/"
+  },
+  {
+   "anchor": {
+    "lat": -23.480949,
+    "lon": -46.726177,
+    "method": "Area-weighted centroid of the official Pirituba district polygon from GeoSampa (updated 2026-03-20).",
+    "source_label": "Prefeitura de São Paulo GeoSampa",
+    "source_observed_at": "2026-08-24T18:45:16Z",
+    "source_url": "https://download.geosampa.prefeitura.sp.gov.br/PaginasPublicas/_SBC.aspx"
+   },
+   "kind": "area",
+   "label": "Pirituba",
+   "municipality": {
+    "ibge_code": "3550308",
+    "name": "São Paulo",
+    "state": "SP"
+   },
+   "radius_m": 900,
+   "route": "/leilao-de-imoveis/sp/sao-paulo/pirituba/"
+  },
+  {
+   "anchor": {
+    "lat": -22.85268,
+    "lon": -43.256797,
+    "method": "Mean of 457 official CadLog street-segment centroids labelled Ramos; an operational sample point, not a legal boundary centroid.",
+    "source_label": "Prefeitura do Rio CadLog",
+    "source_observed_at": "2026-08-24T09:04:05Z",
+    "source_url": "https://pgeo3.rio.rj.gov.br/arcgis/rest/services/CadLog/Trechos_Logradouros/MapServer"
+   },
+   "kind": "area",
+   "label": "Ramos",
+   "municipality": {
+    "ibge_code": "3304557",
+    "name": "Rio de Janeiro",
+    "state": "RJ"
+   },
+   "radius_m": 900,
+   "route": "/leilao-de-imoveis/rj/rio-de-janeiro/ramos/"
+  },
+  {
+   "anchor": {
+    "lat": -23.540144,
+    "lon": -46.485818,
+    "method": "Area-weighted centroid of the official Artur Alvim district polygon from GeoSampa (updated 2026-03-20).",
+    "source_label": "Prefeitura de São Paulo GeoSampa",
+    "source_observed_at": "2026-08-24T18:45:16Z",
+    "source_url": "https://download.geosampa.prefeitura.sp.gov.br/PaginasPublicas/_SBC.aspx"
+   },
+   "kind": "area",
+   "label": "Artur Alvim",
+   "municipality": {
+    "ibge_code": "3550308",
+    "name": "São Paulo",
+    "state": "SP"
+   },
+   "radius_m": 900,
+   "route": "/leilao-de-imoveis/sp/sao-paulo/artur-alvim/"
+  },
+  {
+   "anchor": {
+    "lat": -22.880878,
+    "lon": -43.493147,
+    "method": "Mean of 60 official CadLog street-segment centroids labelled Jabour; an operational sample point, not a legal boundary centroid.",
+    "source_label": "Prefeitura do Rio CadLog",
+    "source_observed_at": "2026-08-24T09:04:05Z",
+    "source_url": "https://pgeo3.rio.rj.gov.br/arcgis/rest/services/CadLog/Trechos_Logradouros/MapServer"
+   },
+   "kind": "area",
+   "label": "Jabour",
+   "municipality": {
+    "ibge_code": "3304557",
+    "name": "Rio de Janeiro",
+    "state": "RJ"
+   },
+   "radius_m": 900,
+   "route": "/leilao-de-imoveis/rj/rio-de-janeiro/jabour/"
+  },
+  {
+   "anchor": {
+    "lat": -22.970875,
+    "lon": -43.606271,
+    "method": "Mean of 5,873 official CadLog street-segment centroids labelled Guaratiba; an operational sample point, not a legal boundary centroid.",
+    "source_label": "Prefeitura do Rio CadLog",
+    "source_observed_at": "2026-08-24T09:04:05Z",
+    "source_url": "https://pgeo3.rio.rj.gov.br/arcgis/rest/services/CadLog/Trechos_Logradouros/MapServer"
+   },
+   "kind": "area",
+   "label": "Guaratiba",
+   "municipality": {
+    "ibge_code": "3304557",
+    "name": "Rio de Janeiro",
+    "state": "RJ"
+   },
+   "radius_m": 1200,
+   "route": "/leilao-de-imoveis/rj/rio-de-janeiro/guaratiba/"
+  },
+  {
+   "anchor": {
+    "lat": -22.825073,
+    "lon": -43.087555,
+    "method": "Mean of 48 geocoded catalogue lots labelled Trindade; an operational sample point, not a legal boundary centroid.",
+    "source_label": "Preço de Martelo catalogue",
+    "source_observed_at": "2026-10-01T00:00:00Z",
+    "source_url": "https://precodemartelo.com/lifecycle-projection.json"
+   },
+   "kind": "area",
+   "label": "Trindade",
+   "municipality": {
+    "ibge_code": "3304904",
+    "name": "São Gonçalo",
+    "state": "RJ"
+   },
+   "radius_m": 900,
+   "route": "/leilao-de-imoveis/rj/sao-goncalo/trindade/"
+  },
+  {
+   "anchor": {
+    "lat": -22.889569,
+    "lon": -43.274049,
+    "method": "Mean of 18 geocoded catalogue lots labelled Pita; an operational sample point, not a legal boundary centroid.",
+    "source_label": "Preço de Martelo catalogue",
+    "source_observed_at": "2026-10-01T00:00:00Z",
+    "source_url": "https://precodemartelo.com/lifecycle-projection.json"
+   },
+   "kind": "area",
+   "label": "Pita",
+   "municipality": {
+    "ibge_code": "3304904",
+    "name": "São Gonçalo",
+    "state": "RJ"
+   },
+   "radius_m": 900,
+   "route": "/leilao-de-imoveis/rj/sao-goncalo/pita/"
+  },
+  {
+   "anchor": {
+    "lat": -3.806585,
+    "lon": -38.616761,
+    "method": "Mean of 4,223 CNEFE 2022 address points labelled Siqueira; an operational sample point, not a legal boundary centroid.",
+    "source_label": "IBGE CNEFE 2022",
+    "source_observed_at": "2026-08-25T01:04:47Z",
+    "source_url": "https://www.ibge.gov.br/estatisticas/sociais/populacao/38734-cadastro-nacional-de-enderecos-para-fins-estatisticos.html"
+   },
+   "kind": "area",
+   "label": "Siqueira",
+   "municipality": {
+    "ibge_code": "2304400",
+    "name": "Fortaleza",
+    "state": "CE"
+   },
+   "radius_m": 900,
+   "route": "/leilao-de-imoveis/ce/fortaleza/siqueira/"
+  },
+  {
+   "anchor": {
+    "lat": -8.046734,
+    "lon": -34.880288,
+    "method": "Mean of 4,812 CNEFE 2022 address points labelled Santo Amaro; an operational sample point, not a legal boundary centroid.",
+    "source_label": "IBGE CNEFE 2022",
+    "source_observed_at": "2026-08-25T01:04:47Z",
+    "source_url": "https://www.ibge.gov.br/estatisticas/sociais/populacao/38734-cadastro-nacional-de-enderecos-para-fins-estatisticos.html"
+   },
+   "kind": "area",
+   "label": "Santo Amaro",
+   "municipality": {
+    "ibge_code": "2611606",
+    "name": "Recife",
+    "state": "PE"
+   },
+   "radius_m": 900,
+   "route": "/leilao-de-imoveis/pe/recife/santo-amaro/"
+  },
+  {
+   "anchor": {
+    "lat": -23.448622,
+    "lon": -46.688388,
+    "method": "Area-weighted centroid of the official Brasilandia district polygon from GeoSampa (updated 2026-03-20).",
+    "source_label": "Prefeitura de São Paulo GeoSampa",
+    "source_observed_at": "2026-08-24T18:45:16Z",
+    "source_url": "https://download.geosampa.prefeitura.sp.gov.br/PaginasPublicas/_SBC.aspx"
+   },
+   "kind": "area",
+   "label": "Brasilandia",
+   "municipality": {
+    "ibge_code": "3550308",
+    "name": "São Paulo",
+    "state": "SP"
+   },
+   "radius_m": 900,
+   "route": "/leilao-de-imoveis/sp/sao-paulo/brasilandia/"
+  },
+  {
+   "anchor": {
+    "lat": -23.562018,
+    "lon": -46.491303,
+    "method": "Area-weighted centroid of the official Cidade Lider district polygon from GeoSampa (updated 2026-03-20).",
+    "source_label": "Prefeitura de São Paulo GeoSampa",
+    "source_observed_at": "2026-08-24T18:45:16Z",
+    "source_url": "https://download.geosampa.prefeitura.sp.gov.br/PaginasPublicas/_SBC.aspx"
+   },
+   "kind": "area",
+   "label": "Cidade Lider",
+   "municipality": {
+    "ibge_code": "3550308",
+    "name": "São Paulo",
+    "state": "SP"
+   },
+   "radius_m": 900,
+   "route": "/leilao-de-imoveis/sp/sao-paulo/cidade-lider/"
+  },
+  {
+   "anchor": {
+    "lat": -23.567858,
+    "lon": -46.545991,
+    "method": "Area-weighted centroid of the official Vila Formosa district polygon from GeoSampa (updated 2026-03-20).",
+    "source_label": "Prefeitura de São Paulo GeoSampa",
+    "source_observed_at": "2026-08-24T18:45:16Z",
+    "source_url": "https://download.geosampa.prefeitura.sp.gov.br/PaginasPublicas/_SBC.aspx"
+   },
+   "kind": "area",
+   "label": "Vila Formosa",
+   "municipality": {
+    "ibge_code": "3550308",
+    "name": "São Paulo",
+    "state": "SP"
+   },
+   "radius_m": 900,
+   "route": "/leilao-de-imoveis/sp/sao-paulo/vila-formosa/"
+  }
+ ],
+ "schema": "place-profile-allowlist-v1"
+}
