@@ -18,7 +18,7 @@ const city = {
   shapes: { nice: { COPACABANA: 'Copacabana', EMPTY: 'Empty' }, d: {}, at: {}, of: {} },
   rows: Array.from({ length: 405 }, (_, i) => row({
     id: String(i).padStart(16, '0'), tipo: 'apartamento', preco: 100000 + i,
-    bairro: i < 80 ? 'COPACABANA' : 'Unmapped', end: 'Rua de Teste, ' + i, area: 60, data: '2025-01-01',
+    bairro: i < 80 ? 'COPACABANA' : 'Unmapped', end: 'Rua de Teste, ' + i, area: 60, data: '2026-09-10',
     link: 'https://source.example/lot/' + i,
   })),
 };
@@ -72,8 +72,8 @@ function assertUniqueLotMetadata(runtime, lotUrls, { bodies = false } = {}) {
     const slug = path.split('/').filter(Boolean).at(-1);
     const id = runtime.idFromSlug(slug);
     const head = runtime.headFor(path);
-    assert.ok(head.title.includes(id), `${path}: title lacks stable lot reference`);
     assert.ok(head.desc.includes(id), `${path}: description lacks stable lot reference`);
+    assert.match(head.title, /leilão de imóvel/, `${path}: title names the subject, not only the hash`);
     assert.ok(head.title.length <= 120, `${path}: title is not compact (${head.title.length})`);
     assert.ok(head.desc.length <= 260, `${path}: description is not compact (${head.desc.length})`);
     assert.ok(!titles.has(head.title), `${path}: duplicate lot title`);
@@ -156,7 +156,18 @@ const partialNoMarker = row({ id: 'partial-no-marker', src: 'caixa', tipo: 'apar
 const partialStale = row({ id: 'partial-stale', src: 'caixa', tipo: 'apartamento', bairro: 'COPACABANA',
   end: 'Rua Antiga, 2', area: 50, preco: 123000,
   link: 'https://venda-imoveis.caixa.gov.br/sistema/detalhe-imovel.asp?hdnimovel=987654321' });
-city.rows.push(strong, weak, bare, reliable, reported, documented, seededOnly, partialCaixa, partialWrongSource, partialNoMarker, partialStale);
+const strongTwin = row({ id: 'strong-twin', tipo: 'apartamento', bairro: 'COPACABANA', end: 'Rua Boa, 12',
+  area: 50, preco: 125000, data: '2026-09-10', link: 'https://source.example/lots/strong-twin' });
+const expiredOld = row({ id: 'expired-old', tipo: 'casa', bairro: 'COPACABANA', end: 'Rua Vencida, 1',
+  area: 90, preco: 223000, data: '2026-07-01', link: 'https://source.example/lots/expired-old' });
+const expiredRecent = row({ id: 'expired-recent', tipo: 'casa', bairro: 'COPACABANA', end: 'Rua Recente, 1',
+  area: 80, preco: 223000, data: '2026-08-20', link: 'https://source.example/lots/expired-recent' });
+const strongSame = row({ id: 'strong-same', tipo: 'apartamento', bairro: 'COPACABANA', end: 'Rua Boa, 10',
+  area: 50, preco: 127000, data: '2026-09-10', link: 'https://source.example/lots/strong-same' });
+const nowhere = row({ id: 'nowhere', tipo: 'casa', bairro: '', end: 'Rua Sem Bairro, 1',
+  area: 70, preco: 223000, data: '2026-09-10', link: 'https://source.example/lots/nowhere' });
+city.rows.push(strong, weak, bare, reliable, reported, documented, seededOnly, partialCaixa, partialWrongSource, partialNoMarker, partialStale,
+  strongTwin, expiredOld, expiredRecent, strongSame, nowhere);
 city.lifecycle = {
   strong: { status: 'active', slug: 'strong', first_seen_at: '2026-09-12T10:00:00Z',
     last_seen_at: '2026-09-13T10:00:00Z', last_checked_at: '2026-09-14T10:00:00Z',
@@ -199,6 +210,34 @@ const weakPath = ctx.href('/l/weak');
 const barePath = ctx.href('/l/bare');
 assert.equal(ctx.headFor(strongPath).noindex, undefined);
 assert.match(ctx.headFor(strongPath).desc, /Referência do lote: strong/);
+// Titles carry the subject; the hash reference is appended only when two
+// current lots in the city would otherwise read the same.
+assert.match(ctx.headFor(ctx.href('/l/strong-twin')).title, /^Apartamento · 50 m² na Rua Boa, 12, Copacabana, Rio de Janeiro — leilão de imóvel$/,
+  'a subject twin exists, so the address separates them');
+assert.match(ctx.headFor(ctx.href('/l/strong-same')).title, /^Apartamento · 50 m² em Copacabana, Rio de Janeiro — leilão de imóvel · lote strong-same$/,
+  'same subject and address: only the reference is left to separate them');
+assert.match(ctx.headFor(strongPath).title, /· lote strong$/);
+assert.match(ctx.headFor(ctx.href('/l/nowhere')).title, /^Casa · 70 m² em Rio de Janeiro — leilão de imóvel$/, 'no district: the city is named once');
+assert.match(ctx.headFor(ctx.href('/l/expired-recent')).title, /^Casa · 80 m² em Copacabana, Rio de Janeiro — leilão de imóvel$/,
+  'a unique subject needs no hash in the title');
+// A past auction date is evidence only for a grace window; after that the
+// page is a stale sales pitch and leaves the index (it stays linked).
+assert.equal(ctx.headFor(ctx.href('/l/expired-recent')).noindex, undefined, '26 days after the date is still evidence');
+assert.equal(ctx.headFor(ctx.href('/l/expired-old')).noindex, true, '76 days after the date is not');
+assert.equal(ctx.auctionDateEvidence(row({ data: '2026-08-16' })), true, 'exactly 30 days is inside the window');
+assert.equal(ctx.auctionDateEvidence(row({ data: '2026-08-15' })), false, '31 days is outside');
+// A district with lots but no reliable estimate must not advertise "0 of 0".
+assert.match(ctx.headFor(base + 'copacabana/').desc, /0 de 1 com estimativa confiável/);
+reliable[cols.indexOf('conf')] = null;
+ctx.indexCity(city);
+const copacabanaHead = ctx.headFor(base + 'copacabana/');
+assert.doesNotMatch(copacabanaHead.desc, /0 de 0/);
+assert.match(copacabanaHead.desc, /^Copacabana, Rio de Janeiro: .* em leilão, com lance inicial, data e fonte/);
+city.market = { year: 2025, city: {}, d: { COPACABANA: { f: [10000, 12] } } };
+assert.match(ctx.headFor(base + 'copacabana/').desc, /escrituras do ITBI/);
+city.market = {};
+reliable[cols.indexOf('conf')] = 'ok';
+ctx.indexCity(city);
 assert.equal(ctx.headFor(weakPath).noindex, true);
 assert.equal(ctx.headFor(barePath).noindex, true, 'area and appraisal alone are not independent evidence');
 assert.equal(ctx.headFor(ctx.href('/l/reliable')).noindex, undefined);

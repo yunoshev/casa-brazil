@@ -32,6 +32,19 @@ function auctionDate(r) {
   return !isNaN(parsed.getTime()) && parsed.toISOString().slice(0, 10) === value ? value : null;
 }
 
+/* A published auction date is evidence that the page describes a real event.
+ * Once that date is more than this many days in the past and nothing else was
+ * observed, the page is a stale sales pitch: the catalogue cannot say whether
+ * the lot was sold, withdrawn or relisted. Such pages stay reachable from the
+ * district lists but leave the index and the sitemap. */
+var AUCTION_DATE_GRACE_DAYS = 30;
+function auctionDateEvidence(r) {
+  var day = auctionDate(r);
+  if (!day) return false;
+  var at = Date.parse(day + "T00:00:00Z"), ref = Date.parse(dateReference + "T00:00:00Z");
+  return !isNaN(at) && !isNaN(ref) && (ref - at) <= AUCTION_DATE_GRACE_DAYS * 24 * 60 * 60 * 1000;
+}
+
 function auctionNote(r) {
   var day = auctionDate(r);
   var text = day
@@ -261,7 +274,7 @@ function lotSeoEligible(r) {
   if (hasDuplicatePublicContent(r)) return false;
   var sourceObserved = lotStatus(r) === "active" && !!lifecycleDate(r);
   var partialSourceObserved = observedPartialCaixaPresence(r);
-  var evidence = reliable(r) || !!auctionDate(r) || sourceObserved || partialSourceObserved || !!confirmedOutcome(r) ||
+  var evidence = reliable(r) || auctionDateEvidence(r) || sourceObserved || partialSourceObserved || !!confirmedOutcome(r) ||
     hasDocumentedHistory(r) || !!documentReportFor(r[C.id]) || hasPublishedMarketReport(r);
   return isCurrent(r) ? evidence : (!!confirmedOutcome(r) || hasDocumentedHistory(r) ||
     !!documentReportFor(r[C.id]) || hasPublishedMarketReport(r));
@@ -897,6 +910,7 @@ function indexCity(c) {
     slugToKey.rev[k] = sl;
   });
   buildRelatedGroups();
+  countLotTitles(c);
 }
 
 function publishedStreetCode(code) {
@@ -1668,6 +1682,55 @@ function lotLine(r) {
 /* Search snippets use only fields carried by the source row. The stable
  * reference makes two units at the same address distinguishable; the facts
  * make the description useful without claiming an estimate exists. */
+/* The hash reference is for people and machines that already hold the page;
+ * a search result needs the subject. The reference is appended only when two
+ * current lots in the city would otherwise carry the same title, so every
+ * title stays unique without every title carrying sixteen hex digits. */
+var lotTitleCounts = {};
+function lotTitlePlace(r) {
+  var where = r[C.bairro] ? metaText(title(r[C.bairro]), 32) : "";
+  return where ? where + ", " + city.nome : city.nome;
+}
+function lotTitleBase(r) {
+  return t("head.lot.title", { what: lotMetaSubject(r), place: lotTitlePlace(r) });
+}
+function lotTitleAddress(r) {
+  var address = String(r[C.end] || "").trim();
+  if (!address) return null;
+  return t("head.lot.title.address", {
+    what: lotMetaSubject(r), address: metaText(title(address), 48), place: lotTitlePlace(r),
+  });
+}
+/* Every current lot competes for a title, indexable or not: two pages with
+ * one title are a defect wherever they sit, and the address step below keeps
+ * the hash off almost all of them anyway. */
+function countLotTitles(c) {
+  lotTitleCounts = {};
+  var searchable = c.rows.filter(function (r) { return isCurrent(r, c); });
+  function count(key) { if (key) lotTitleCounts[key] = (lotTitleCounts[key] || 0) + 1; }
+  searchable.forEach(function (r) { count(lotTitleBase(r)); });
+  searchable.forEach(function (r) { count(lotTitleAddress(r)); });
+}
+var LOT_TITLE_MAX = 120;
+function lotTitle(r) {
+  var base = lotTitleBase(r);
+  if ((lotTitleCounts[base] || 0) <= 1 && base.length <= LOT_TITLE_MAX) return base;
+  var address = lotTitleAddress(r);
+  if (address && (lotTitleCounts[address] || 0) <= 1 && address.length <= LOT_TITLE_MAX) return address;
+  // The reference is unique by construction; only the subject may still be
+  // trimmed to keep the whole title compact.
+  var withRef = t("head.lot.title.ref", { title: base, ref: lotReference(r) });
+  var over = withRef.length - LOT_TITLE_MAX;
+  if (over > 0) {
+    var what = lotMetaSubject(r);
+    withRef = t("head.lot.title.ref", {
+      title: t("head.lot.title", { what: metaText(what, Math.max(12, what.length - over)), place: lotTitlePlace(r) }),
+      ref: lotReference(r),
+    });
+  }
+  return withRef;
+}
+
 function lotMetaSubject(r) {
   var bits = [];
   if (sourceDetailText(r)) bits.push(sourceDetailText(r));
@@ -2747,6 +2810,13 @@ function headFor(path) {
       lots: lots(st.n), below: num(st.below), rel: num(st.rel),
     });
     if (!areaSeoEligible(st.key)) base.noindex = true;
+    if (st.n && !st.rel) {
+      // "0 of 0 with a reliable estimate" is true and useless; say what the
+      // page does carry instead.
+      base.desc = t(hasAreaMarket(st.key) ? "head.area.desc.norel.market" : "head.area.desc.norel.catalog", {
+        name: areaName(st.key), city: name, lots: lots(st.n),
+      });
+    }
     if (!st.n) {
       base.desc = areaName(st.key) + ", " + name + ". " + emptyAreaText(st.key);
     }
@@ -2760,7 +2830,7 @@ function headFor(path) {
     var ref = r ? lotReference(r) : "";
     var address = r ? metaText(title(r[C.end] || where), 88) : where;
     var facts = r ? lotMetaFacts(r) : what;
-    base.title = t("head.lot.title", { what: what, where: where, city: name, ref: ref });
+    base.title = r ? lotTitle(r) : t("head.lot.title", { what: what, place: name });
     base.desc = metaText(t("head.lot.desc", {
       what: what, where: where, city: name, address: address, facts: facts, ref: ref,
       reftext: t("lot.reference", { ref: ref }),
