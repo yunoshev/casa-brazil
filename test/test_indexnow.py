@@ -84,6 +84,20 @@ class IndexNowTest(unittest.TestCase):
         self.assertEqual(len(first["urlList"]), indexnow.MAX_URLS)
         self.assertEqual(len(sent[1][1]["urlList"]), 5)
 
+    def test_a_refused_batch_reports_its_status_instead_of_crashing(self):
+        import io
+        import urllib.error
+        from unittest import mock
+
+        body = io.BytesIO(b'{"errorCode":"SiteVerificationNotCompleted"}')
+        refused = urllib.error.HTTPError(indexnow.ENDPOINT, 403, "Forbidden", {}, body)
+        with (
+            mock.patch("urllib.request.urlopen", side_effect=refused),
+            mock.patch("sys.stderr", new_callable=io.StringIO) as err,
+        ):
+            self.assertEqual(indexnow.submit(SITE, [f"{SITE}/a/"]), [403])
+        self.assertIn("SiteVerificationNotCompleted", err.getvalue())
+
 
 if __name__ == "__main__":
     unittest.main()

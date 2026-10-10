@@ -1214,6 +1214,9 @@ function screenHome() {
             esc(c.nome) + "</a>";
         }).join(" · "),
       }) + "</p>" +
+      (studyHref() ? '<p class="foot" style="margin-top:6px">' + t("home.study", {
+        n: b(esc(num(auctionStudy().building.n))), link: studyLink(esc(t("study.link"))),
+      }) + "</p>" : "") +
     "</section>" +
 
     '<p class="foot">' + footNote() + "</p>" + langbar();
@@ -2526,6 +2529,156 @@ function screenArchive(page) {
     '</div>' + (!rows.length ? '<p>' + esc(t("archive.empty")) + '</p>' : '') + '</section>' + archivePagination(page) + footer();
 }
 
+/* ---- the auction-discount study --------------------------------
+ * One question put to São Paulo's own register: when a flat goes at auction,
+ * how far below its neighbours does it sell? Every figure is an aggregate
+ * computed offline (study_auction_discount.py) and checked by the build. The
+ * only live part is "and today's lots", read from the city's own counts.
+ * Sentences that depend on a direction (rising, falling) are picked by
+ * comparing the numbers, so a refresh can never leave a claim behind. */
+var STUDY_FLAT_PP = 2;
+
+function auctionStudy() {
+  var s = D.auction_study;
+  return s && typeof s === "object" && s.building && Array.isArray(s.years) && s.years.length &&
+    Array.isArray(s.periods) && s.periods.length === 3 &&
+    Array.isArray(s.price_thirds) && s.price_thirds.length === 3 ? s : null;
+}
+function studyCity() {
+  var s = auctionStudy();
+  return s ? D.cities.filter(function (c) { return c.slug === s.city; })[0] || null : null;
+}
+function studyHref() {
+  var c = studyCity();
+  return c ? cityBase(c) + SEG.study + "/" : "";
+}
+function studyLink(text) {
+  var url = studyHref();
+  return url ? '<a href="' + esc(url) + '">' + text + "</a>" : "";
+}
+function trendKey(from, to, up, down, flat) {
+  return to - from > STUDY_FLAT_PP ? up : from - to > STUDY_FLAT_PP ? down : flat;
+}
+function studyPartialYear(s) {
+  var last = s.years[s.years.length - 1].year;
+  return String(s.data_until).slice(0, 4) === String(last) && String(s.data_until).slice(5) < "12-31";
+}
+
+/* Drawn as SVG in the page itself, so a crawler, a reader without JS and a
+ * screenshot in somebody's article all carry the same chart. */
+function studyChart(s) {
+  var ys = s.years, W = 520, H = 250, L = 46, R = 12, T = 14, B = 34;
+  var top = Math.max(10, Math.ceil(Math.max.apply(null, ys.map(function (r) { return r.p75; })) / 10) * 10);
+  var lo = Math.min(0, Math.floor(Math.min.apply(null, ys.map(function (r) { return r.p25; })) / 10) * 10);
+  var first = ys[0].year, last = ys[ys.length - 1].year, partial = studyPartialYear(s);
+  function x(year) { return L + (W - L - R) * (last === first ? 0.5 : (year - first) / (last - first)); }
+  function y(v) { return T + (H - T - B) * (top - v) / (top - lo); }
+  function pt(r, key) { return x(r.year).toFixed(1) + "," + y(r[key]).toFixed(1); }
+  var grid = "";
+  for (var g = lo; g <= top; g += 10) {
+    grid += '<line x1="' + L + '" x2="' + (W - R) + '" y1="' + y(g).toFixed(1) + '" y2="' + y(g).toFixed(1) + '"/>' +
+      '<text x="' + (L - 8) + '" y="' + (y(g) + 5).toFixed(1) + '" text-anchor="end">' + g + "%</text>";
+  }
+  var ticks = ys.filter(function (r, i) { return i % 4 === 0 || i === ys.length - 1; }).map(function (r) {
+    // The last label ends at the plot edge instead of straddling it.
+    var anchor = r.year === last && ys.length > 1 ? "end" : "middle";
+    return '<text x="' + (x(r.year) + (anchor === "end" ? R : 0)).toFixed(1) + '" y="' + (H - 10) +
+      '" text-anchor="' + anchor + '">' + r.year + "</text>";
+  }).join("");
+  var band = ys.map(function (r) { return pt(r, "p75"); })
+    .concat(ys.slice().reverse().map(function (r) { return pt(r, "p25"); })).join(" ");
+  var dots = ys.map(function (r, i) {
+    var open = partial && i === ys.length - 1;
+    return '<circle' + (open ? ' class="open"' : "") + ' cx="' + x(r.year).toFixed(1) + '" cy="' +
+      y(r.median).toFixed(1) + '" r="4"/>';
+  }).join("");
+  // No <title> inside the SVG: the page carries exactly one title, and the
+  // build rejects a second. The table below holds every point's value.
+  return '<figure class="study-chart"><svg viewBox="0 0 ' + W + " " + H +
+    '" role="img" aria-label="' + esc(t("study.chart.title")) + '">' +
+    '<g class="grid">' + grid + ticks + "</g>" +
+    '<polygon class="band" points="' + band + '"/>' +
+    '<polyline class="med" points="' + ys.map(function (r) { return pt(r, "median"); }).join(" ") + '"/>' +
+    dots + "</svg><figcaption>" + esc(t("study.chart.caption")) +
+    (partial ? " " + esc(t("study.chart.partial", { year: last, date: s.data_until })) : "") +
+    "</figcaption></figure>";
+}
+
+function studyTable(s) {
+  return '<div class="study-table"><table><thead><tr><th scope="col">' + esc(t("study.table.year")) +
+    '</th><th scope="col">' + esc(t("study.table.n")) + '</th><th scope="col">' + esc(t("study.table.median")) +
+    '</th><th scope="col">' + esc(t("study.table.iqr")) + '</th><th scope="col">' + esc(t("study.table.above")) +
+    "</th></tr></thead><tbody>" + s.years.map(function (r) {
+      return '<tr><th scope="row">' + r.year + "</th><td>" + esc(num(r.n)) + "</td><td>" +
+        esc(pct(r.median, false)) + "</td><td>" + esc(pct(r.p25, false)) + " – " + esc(pct(r.p75, false)) +
+        "</td><td>" + esc(pct(r.at_or_above, false)) + "</td></tr>";
+    }).join("") + "</tbody></table></div>";
+}
+
+function screenStudy() {
+  var s = auctionStudy();
+  if (!s || s.city !== city.slug) return null;
+  var B = s.building, P = s.periods, Th = s.price_thirds, ch = city.chain || {}, st = city.stats || {};
+  var first = s.years[0].year, last = s.years[s.years.length - 1].year;
+  var asking = ch.hammer_over_asking > 0 && ch.asking_premium > 0;
+  function fig(value, label) {
+    return '<div class="fig"><b>' + esc(value) + "</b><span>" + esc(label) + "</span></div>";
+  }
+  function sec(h2, body, note) {
+    return '<section class="sec study"><div class="sechead"><h2>' + esc(h2) + "</h2>" +
+      (note ? '<span class="n">' + esc(note) + "</span>" : "") + "</div>" + body + "</section>";
+  }
+  return '<div class="hero">' + back(href(), city.nome) +
+      '<p class="kicker"><i></i>' + esc(t("study.kicker")) + "</p>" +
+      "<h1>" + esc(t("study.h1", { city: city.nome })) + "</h1>" +
+      '<p class="lede">' + t("study.lede", {
+        n: b(esc(num(B.n))), deeds: esc(num(s.auction_deeds)), from: first, to: last, city: esc(city.nome),
+      }) + "</p></div>" +
+    '<div class="study-figs">' +
+      fig(pct(B.median, false), t("study.fig.median")) +
+      fig(pct(B.over_40, false), t("study.fig.over40")) +
+      fig(pct(B.at_or_above, false), t("study.fig.above")) +
+      (asking ? fig(Math.round(ch.hammer_over_asking * 100) + "%", t("study.fig.asking")) : "") +
+    "</div>" +
+    sec(t("study.year.h2"), studyChart(s) + "<p>" + t("study.year.p", {
+        p0: b(esc(pct(P[0].median, false))), from0: P[0].from, to0: P[0].to,
+        p1: b(esc(pct(P[1].median, false))), from1: P[1].from, to1: P[1].to,
+        p2: b(esc(pct(P[2].median, false))), from2: P[2].from, to2: P[2].to,
+      }) + " " +
+        t(trendKey(P[0].median, P[2].median, "study.year.up", "study.year.down", "study.year.flat")) + "</p>" + studyTable(s),
+      first + "–" + last) +
+    sec(t("study.risk.h2"), "<p>" + t("study.risk.p", {
+        old: b(esc(pct(P[0].at_or_above, false))), from: P[0].from, to: P[0].to,
+        now: b(esc(pct(P[2].at_or_above, false))), from2: P[2].from, to2: P[2].to,
+      }) + " " +
+        t(trendKey(P[0].at_or_above, P[2].at_or_above, "study.risk.up", "study.risk.down", "study.risk.flat")) + "</p><p>" +
+      t("study.risk.floor", { p25: b(esc(pct(P[2].p25, false))), from2: P[2].from, to2: P[2].to }) + "</p>") +
+    sec(t("study.thirds.h2"), "<p>" + t("study.thirds.p", {
+        cheap: b(esc(pct(Th[0].median, false))), mid: b(esc(pct(Th[1].median, false))),
+        rich: b(esc(pct(Th[2].median, false))),
+      }) + "</p>") +
+    (asking ? sec(t("study.asking.h2"), "<p>" + t("study.asking.p", {
+        premium: b(esc(pct((ch.asking_premium - 1) * 100, false))),
+        asking: b(Math.round(ch.hammer_over_asking * 100) + "%"),
+      }) + " " + t("study.asking.ladder", { honest: link("/honest", t("nav.honest")) }) + "</p>") : "") +
+    (st.reliable ? sec(t("study.today.h2"), "<p>" + t("study.today.p", {
+        rel: b(esc(num(st.reliable))), below: b(esc(num(st.below))), city: esc(city.nome),
+      }) + '</p><a class="cta" href="' + href() + '">' + esc(t("study.today.cta", { city: city.nome })) + "</a>") : "") +
+    sec(t("study.method.h2"), "<p>" + t("study.method.p1", { min: s.min_comps }) + "</p><p>" +
+      t("study.method.p2") + "</p><p>" + t("study.method.block", {
+        n: b(esc(num(s.block.n))), median: b(esc(pct(s.block.median, false))),
+      }) + "</p><p>" + t("study.method.caveats") + "</p>" +
+      '<p class="foot">' + t("study.method.source", {
+        link: '<a href="' + esc(httpsSource(s.source_url) || "") +
+          '" target="_blank" rel="noopener noreferrer nofollow">' + esc(t("study.source.label")) + "</a>",
+        date: esc(s.data_until),
+      }) + "</p>") +
+    sec(t("study.cite.h2"), "<p>" + t("study.cite.p") + '</p><blockquote class="cite">' +
+      esc(t("study.cite.text", { title: t("study.h1", { city: city.nome }), date: s.measured_at.slice(0, 10) })) +
+      "</blockquote>") +
+    footer();
+}
+
 function screenHonest() {
   var s = city.stats;
   var mo = marketOnly();
@@ -2544,6 +2697,9 @@ function screenHonest() {
         }) + "</p>" +
         ((city.market || {}).basis === "base_value"
           ? '<p class="say">' + t("honest.base") + "</p>" : "") + ladder() +
+        (studyHref() ? '<p class="say">' + t("honest.study", {
+          n: b(esc(num(auctionStudy().building.n))), link: studyLink(esc(t("study.link"))),
+        }) + "</p>" : "") +
         '<p class="say">' + t("honest.head") + "</p>") +
     (city.shapes ? '<p class="say">' + t("honest.map", {
       source: t(city.shapes.source),
@@ -2594,7 +2750,8 @@ function ladder() {
 
 function footer() {
   return '<p class="foot">' +
-    link("/all", t("nav.all")) + " · " + link("/archive", esc(t("archive.nav"))) + " · " + link("/honest", t("nav.honest")) + "<br>" +
+    link("/all", t("nav.all")) + " · " + link("/archive", esc(t("archive.nav"))) + " · " + link("/honest", t("nav.honest")) +
+    (studyHref() ? " · " + studyLink(esc(t("foot.study"))) : "") + "<br>" +
     footNote() + "</p>" + langbar();
 }
 
@@ -2652,7 +2809,8 @@ function back(url, label) {
  * Call sites still pass the short internal forms ("/a/COPACABANA", "/all") and
  * this is the single place that knows what they look like on the wire. */
 var ROOT = "/leilao-de-imoveis";
-var SEG = { all: "todos-os-lotes", archive: "arquivo", honest: "como-calculamos", lot: "lote", rua: "rua" };
+var SEG = { all: "todos-os-lotes", archive: "arquivo", honest: "como-calculamos", lot: "lote", rua: "rua",
+  study: "quanto-desconta-o-leilao" };
 
 /* A lot's URL carries what the lot is, not what the database calls it:
  *   /lote/apartamento-64m2-penha-circular-0e2af7f775f1e45c/
@@ -2755,6 +2913,7 @@ function screenFor(path) {
     return page ? screenAll(page) : null;
   }
   if (p.length === 1 && p[0] === SEG.honest) return screenHonest();
+  if (p.length === 1 && p[0] === SEG.study) return screenStudy();
   if (p.length === 2 && p[0] === SEG.lot) {
     var lot = lotById[idFromSlug(decodeURIComponent(p[1]))];
     return lot && lotSlug(lot) === p[1] ? screenLot(lot[C.id]) : null;
@@ -2799,6 +2958,8 @@ function pageTrail(path) {
     name = title(st.name);
   } else if (slugToKey.fwd[last]) {
     name = areaName(slugToKey.fwd[last]);
+  } else if (last === SEG.study) {
+    name = t("study.nav");
   } else {
     name = t(last === SEG.all ? "nav.all" : "nav.honest");
   }
@@ -2974,6 +3135,13 @@ function headFor(path) {
         teaser: note.teaser, lots: lots(st.n), name: areaName(st.key), city: name,
       });
     }
+  } else if (last === SEG.study && auctionStudy()) {
+    var sb = auctionStudy().building, sy = auctionStudy().years;
+    base.title = t("head.study.title", { city: name, median: pct(sb.median, false) });
+    base.desc = t("head.study.desc", {
+      n: num(sb.n), from: sy[0].year, to: sy[sy.length - 1].year,
+      median: pct(sb.median, false), above: pct(sb.at_or_above, false),
+    });
   } else if (last === SEG.honest) {
     base.title = t("head.honest.title", { city: name });
     base.desc = t("head.honest.desc", { city: name });

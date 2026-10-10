@@ -120,8 +120,10 @@ jobs:
           python -m unittest discover -s test -p 'test_document_reports.py' -v
           python -m unittest discover -s test -p 'test_local_profiles.py' -v
           python -m unittest discover -s test -p 'test_district_notes.py' -v
+          python -m unittest discover -s test -p 'test_auction_study.py' -v
           python -m unittest discover -s test -p 'test_indexnow.py' -v
           node --test site/test/district-notes.test.mjs
+          node --test site/test/auction-study.test.mjs
           node --test site/test/city-streets.test.mjs
           node --test site/test/document-reports.test.mjs
           node --test site/test/related-lots.test.mjs

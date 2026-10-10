@@ -23,6 +23,7 @@ import argparse
 import json
 import re
 import sys
+import urllib.error
 import urllib.request
 from collections.abc import Callable
 from datetime import UTC, date, datetime, timedelta
@@ -116,8 +117,15 @@ def submit(
             method="POST",
             headers={"Content-Type": "application/json; charset=utf-8", "User-Agent": USER_AGENT},
         )
-        with urllib.request.urlopen(request, timeout=60) as response:
-            return int(response.status)
+        try:
+            with urllib.request.urlopen(request, timeout=60) as response:
+                return int(response.status)
+        except urllib.error.HTTPError as exc:
+            # 403 SiteVerificationNotCompleted is normal for a fresh key: small
+            # batches are already accepted, a full one waits for verification.
+            detail = exc.read(300).decode("utf-8", "replace").strip()
+            print(f"indexnow: HTTP {exc.code} {detail}", file=sys.stderr, flush=True)
+            return int(exc.code)
 
     send = post or default_post
     statuses = []

@@ -73,6 +73,9 @@ DOCUMENT_REPORTS = HERE / "site" / "content" / "document-reports.json"
 # crawler and is embedded at build time rather than fetched by a reader.
 LOCAL_PROFILES = HERE / "site" / "content" / "local-profiles.json"
 DISTRICT_NOTES = HERE / "site" / "content" / "district-notes.json"
+# Aggregates of the São Paulo ITBI register written by study_auction_discount.py;
+# the register itself stays private.
+AUCTION_STUDY = HERE / "site" / "content" / "auction-study.json"
 SAVED_ANALYSES = HERE / "site" / "content" / "saved-analyses.json"
 LIFECYCLE_RECEIPT = HERE / "data" / "site.json.release.json"
 
@@ -455,6 +458,121 @@ def load_district_notes(path: Path, cities: list[dict], local_profiles: dict) ->
             "sources": cleaned_sources,
         }
     return result
+
+
+def load_auction_study(path: Path, cities: list[dict]) -> dict | None:
+    """The auction-discount study: published aggregates, never raw deeds.
+
+    Every figure is a count or a percentage computed offline from the ITBI
+    register; the page draws them as they are. Anything out of shape fails the
+    build instead of putting a wrong number on a page meant to be quoted.
+    """
+    if not path.exists():
+        return None
+    try:
+        data = json.loads(path.read_text())
+    except (OSError, json.JSONDecodeError) as exc:
+        raise ValueError("invalid auction study JSON") from exc
+    top = {
+        "schema",
+        "city",
+        "measured_at",
+        "data_until",
+        "source_url",
+        "min_comps",
+        "auction_deeds",
+        "building",
+        "block",
+        "years",
+        "periods",
+        "price_thirds",
+    }
+    if not isinstance(data, dict) or set(data) != top or data["schema"] != "auction-study-v1":
+        raise ValueError("invalid auction study schema")
+    if data["city"] not in {c["slug"] for c in cities}:
+        # A city leaving the catalogue must not stop every other page from
+        # publishing; the study simply has no page until the city is back.
+        print(
+            f"  note: auction study city {data['city']!r} is not published; no study page",
+            flush=True,
+        )
+        return None
+    if not re.fullmatch(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z", str(data["measured_at"])):
+        raise ValueError("invalid auction study measured_at")
+    if not re.fullmatch(r"\d{4}-\d{2}-\d{2}", str(data["data_until"])):
+        raise ValueError("invalid auction study data_until")
+    if data["data_until"] > data["measured_at"][:10]:
+        raise ValueError("auction study data end after its measurement")
+    if data["source_url"] != "https://www.prefeitura.sp.gov.br/itbi":
+        raise ValueError("unexpected auction study source")
+
+    def count(value: Any, low: int = 1) -> int:
+        if not isinstance(value, int) or isinstance(value, bool) or value < low:
+            raise ValueError("auction study count out of range")
+        return value
+
+    def share(value: Any, low: float = -100.0) -> float:
+        if not isinstance(value, (int, float)) or isinstance(value, bool):
+            raise ValueError("auction study share is not a number")
+        if not low <= value <= 100:
+            raise ValueError("auction study share out of range")
+        return float(value)
+
+    fields = {"n", "median", "p25", "p75", "at_or_above", "over_40"}
+
+    def summary(value: Any, extra: frozenset = frozenset()) -> dict:
+        if not isinstance(value, dict) or set(value) != fields | extra:
+            raise ValueError("invalid auction study summary")
+        out: dict[str, float] = {"n": count(value["n"], 30)}
+        for key in ("median", "p25", "p75"):
+            out[key] = share(value[key])
+        if not out["p25"] <= out["median"] <= out["p75"]:
+            raise ValueError("auction study quartiles out of order")
+        out["at_or_above"] = share(value["at_or_above"], 0)
+        out["over_40"] = share(value["over_40"], 0)
+        return out
+
+    count(data["min_comps"], 2)
+    building = summary(data["building"])
+    if count(data["auction_deeds"]) < building["n"]:
+        raise ValueError("auction study measured more deeds than it counted")
+    years = []
+    for row in data["years"] if isinstance(data["years"], list) else []:
+        year = row.get("year") if isinstance(row, dict) else None
+        if not isinstance(year, int) or not 1990 <= year <= int(data["data_until"][:4]):
+            raise ValueError("auction study year out of range")
+        years.append({"year": year, **summary(row, frozenset({"year"}))})
+    if len(years) < 5 or [y["year"] for y in years] != sorted({y["year"] for y in years}):
+        raise ValueError("auction study needs ascending, unique years")
+    periods = []
+    for row in data["periods"] if isinstance(data["periods"], list) else []:
+        if not isinstance(row, dict) or not all(
+            isinstance(row.get(k), int) for k in ("from", "to")
+        ):
+            raise ValueError("invalid auction study period")
+        if row["from"] > row["to"]:
+            raise ValueError("invalid auction study period")
+        periods.append(
+            {"from": row["from"], "to": row["to"], **summary(row, frozenset({"from", "to"}))}
+        )
+    if len(periods) != 3:
+        raise ValueError("auction study needs three periods")
+    thirds = data["price_thirds"]
+    if not isinstance(thirds, list) or len(thirds) != 3:
+        raise ValueError("auction study needs three price thirds")
+    return {
+        "city": data["city"],
+        "measured_at": data["measured_at"],
+        "data_until": data["data_until"],
+        "source_url": data["source_url"],
+        "min_comps": data["min_comps"],
+        "auction_deeds": data["auction_deeds"],
+        "building": building,
+        "block": summary(data["block"]),
+        "years": years,
+        "periods": periods,
+        "price_thirds": [summary(row) for row in thirds],
+    }
 
 
 def load_document_reports(path: Path, source: dict) -> dict:
@@ -1523,6 +1641,9 @@ def main() -> None:
     payload["district_notes"] = load_district_notes(
         DISTRICT_NOTES, cities, payload["local_profiles"]
     )
+    auction_study = load_auction_study(AUCTION_STUDY, cities)
+    if auction_study:
+        payload["auction_study"] = auction_study
     from saved_analyses import load_saved_analyses
 
     payload["saved_analyses"] = load_saved_analyses(SAVED_ANALYSES, src)
