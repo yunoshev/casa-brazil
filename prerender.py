@@ -38,6 +38,7 @@ from typing import Any, cast
 from urllib.parse import urlsplit
 
 import websockets
+from indexnow import write_key_file
 from public_config import (
     analysis_script_src,
     app_script_src,
@@ -716,6 +717,8 @@ async def run(a, ws_url: str, tpl: str, out: Path) -> None:
                     target.write_text(html)
             write_sitemap(out, emitted, a.site, a.generated, route_dates=route_dates)
             write_robots(out, a.site)
+            # IndexNow verifies key ownership through this root file (see indexnow.py).
+            write_key_file(out)
 
             for rel in asset_paths(release=a.release or a.legacy_baseline_release):
                 dst = out / rel

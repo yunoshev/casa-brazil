@@ -1407,6 +1407,29 @@ function streetRow(code) {
     "</div></a>";
 }
 
+/* The city page's own street list. Street pages carry the deed price per m2
+ * and are the second-best source of search impressions after lots, yet until
+ * Oct 2026 nothing the crawler still visits (home, city) linked to them: they
+ * were three clicks deep and 0 of 25 sampled had been crawled. Only streets
+ * that are themselves indexable are listed, most recorded sales first. */
+var CITY_STREET_LIMIT = 50;
+function cityStreets() {
+  var sts = city.streets;
+  if (!sts || !sts.d) return "";
+  function deals(code) {
+    var st = sts.d[code];
+    return (st.f ? Number(st.f[1]) || 0 : 0) + (st.h ? Number(st.h[1]) || 0 : 0);
+  }
+  var codes = Object.keys(sts.d).filter(function (code) {
+    return publishedStreetCode(code) && streetSeoEligible(code);
+  }).sort(function (x, y) { return deals(y) - deals(x) || (x < y ? -1 : x > y ? 1 : 0); });
+  if (!codes.length) return "";
+  return '<section class="sec city-streets" aria-labelledby="city-streets-title"><div class="sechead">' +
+    '<h2 id="city-streets-title">' + esc(t("city.streets.h2")) + '</h2><span class="n">' +
+    t("mkt.year", { year: sts.year }) + "</span></div>" +
+    '<div class="rowlist">' + codes.slice(0, CITY_STREET_LIMIT).map(streetRow).join("") + "</div></section>";
+}
+
 function streetList(key) {
   var sts = city.streets;
   if (!sts || !sts.by || !sts.by[key]) return "";
@@ -1560,6 +1583,8 @@ function screenCity() {
     (noted.length ? '<section class="sec district-notes"><div class="sechead"><h2>' +
       t("city.districts.h2") + '</h2><span class="n">' + t("city.districts.note") + "</span></div>" +
       '<div class="rowlist">' + noted.map(noteRow).join("") + "</div></section>" : "") +
+
+    cityStreets() +
 
     (top.length ? '<section class="sec"><div class="sechead"><h2>' + t("city.top.h2") +
       '</h2><span class="n">' + t("city.top.note", { n: num(s.reliable) }) + "</span></div>" +

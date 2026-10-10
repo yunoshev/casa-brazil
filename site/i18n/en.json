@@ -528,6 +528,7 @@
  "notes.notice": "Editorial text written from the data on this page and public sources; it does not replace a visit or reading the auction notice.",
  "city.districts.h2": "Districts at auction, in brief",
  "city.districts.note": "one line per district",
+ "city.streets.h2": "Streets with the most recorded sales",
  "head.area.desc.note": "{teaser} {lots} at auction in {name}, {city}.",
  "related.title": "Related lots",
  "related.street": "Same street",

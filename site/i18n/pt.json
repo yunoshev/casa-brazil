@@ -528,6 +528,7 @@
  "notes.notice": "Texto editorial escrito a partir dos dados desta página e de fontes públicas; não substitui uma visita nem a leitura do edital.",
  "city.districts.h2": "Bairros em leilão, em resumo",
  "city.districts.note": "uma linha por bairro",
+ "city.streets.h2": "As ruas com mais escrituras registradas",
  "head.area.desc.note": "{teaser} {lots} em leilão em {name}, {city}.",
  "related.title": "Lotes relacionados",
  "related.street": "Mesma rua",
