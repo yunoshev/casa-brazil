@@ -697,10 +697,18 @@ function galleryText(kind, index, total) {
   if (code === "en") return kind === "previous" ? "Previous photo" : kind === "next" ? "Next photo" : "Photo " + index + " of " + total;
   return kind === "previous" ? "Foto anterior" : kind === "next" ? "Próxima foto" : "Foto " + index + " de " + total;
 }
-function galleryAlt(r, index, total) {
-  var subject = title(r[C.end] || r[C.tipo] || t("lot.fallback"));
+/* Every photo says what it shows, even where the text beside it already does:
+ * an empty alt is right for a screen reader next to a captioned card, but Bing
+ * Site Scan reports it as missing (81 of 100 scanned pages, 2026-10-11), and
+ * image search has nothing else to read. */
+function photoAlt(r) {
+  // Source addresses often end in a comma ("N. 2357,"); it must not dangle before the dash.
+  var subject = title(r[C.end] || r[C.tipo] || t("lot.fallback")).replace(/[\s,;.\-–—]+$/, "");
   var place = title(r[C.bairro] || city.nome);
-  return subject + " — " + place + ", " + galleryText("count", index, total);
+  return subject + " — " + place;
+}
+function galleryAlt(r, index, total) {
+  return photoAlt(r) + ", " + galleryText("count", index, total);
 }
 function lotGallery(r) {
   var photos = lotPhotos(r);
@@ -722,7 +730,7 @@ function lotGallery(r) {
       html += '<button type="button" class="gallery-thumb" data-gallery-index="' + i +
         '" data-gallery-alt="' + esc(galleryAlt(r, i + 1, total)) +
         '" aria-label="' + esc(galleryText("photo", i + 1, total)) + '" aria-current="' + (i === 0 ? "true" : "false") + '">' +
-        '<img src="' + esc(url) + '" alt="" decoding="async"' + (i ? ' loading="lazy"' : '') +
+        '<img src="' + esc(url) + '" alt="' + esc(galleryAlt(r, i + 1, total)) + '" decoding="async"' + (i ? ' loading="lazy"' : '') +
         ' width="88" height="66" onerror="this.style.display=\'none\'">' +
         '</button>';
     });
@@ -2059,7 +2067,7 @@ function lotRow(r, i) {
     // the reader had scrolled — ten megabytes to read one page. The intrinsic
     // size is stated so the row does not jump when the picture lands.
     '<div class="ph">' + (ph
-      ? '<img src="' + esc(ph) + '" alt="" decoding="async" width="82" height="82"' +
+      ? '<img src="' + esc(ph) + '" alt="' + esc(photoAlt(r)) + '" decoding="async" width="82" height="82"' +
         (eager ? "" : ' loading="lazy"') + ' onerror="this.remove()">'
       : "<span>" + t("lot.nophoto") + "</span>") + "</div>" +
     '<div class="body">' +

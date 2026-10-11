@@ -102,3 +102,22 @@ test('gallery keyboard semantics are present in the shipped markup and wiring', 
   assert.match(source, /event\.preventDefault\(\)/);
   assert.match(source, /button\.focus\(\)/);
 });
+
+test('every photo carries alt text, on the lot page and in list cards', () => {
+  const ctx = runtime({ media: { gallery: [
+    { url: 'https://img.example.test/first.jpg' },
+    { url: 'https://img.example.test/second.jpg' },
+  ] } });
+  const lot = ctx.screenLot('lot-1');
+  // Bing Site Scan reports alt="" as missing, so no photo may ship without one.
+  assert.doesNotMatch(lot, /alt=""/);
+  assert.match(lot, /src="https:\/\/img\.example\.test\/second\.jpg" alt="Rua Principal, 10 — Centro, 2 of 2"/);
+
+  // List cards show the Caixa photo named by the lot's own link.
+  const listed = runtime({ link: 'https://venda-imoveis.caixa.gov.br/sistema/detalhe-imovel.asp?hdnimovel=8555531907646' });
+  const card = listed.lotRow(listed.lotById['lot-1'], 0);
+  assert.match(card, /<img src="https:\/\/venda-imoveis\.caixa\.gov\.br\/fotos\/F855553190764621\.jpg" alt="Rua Principal, 10 — Centro"/);
+
+  listed.lotById['lot-1'][listed.C.end] = 'Rua Principal, N. 10, ';
+  assert.match(listed.lotRow(listed.lotById['lot-1'], 0), /alt="Rua Principal, N\. 10 — Centro"/);
+});
