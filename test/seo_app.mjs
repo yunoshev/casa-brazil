@@ -73,8 +73,9 @@ function assertUniqueLotMetadata(runtime, lotUrls, { bodies = false } = {}) {
     const id = runtime.idFromSlug(slug);
     const head = runtime.headFor(path);
     assert.ok(head.desc.includes(id), `${path}: description lacks stable lot reference`);
-    assert.match(head.title, /leilão de imóvel/, `${path}: title names the subject, not only the hash`);
-    assert.ok(head.title.length <= 120, `${path}: title is not compact (${head.title.length})`);
+    assert.match(head.title, /— leilão/, `${path}: title names the subject, not only the hash`);
+    // Bing Site Scan flags titles over 70 characters; Google shows about 60.
+    assert.ok(head.title.length <= 70, `${path}: title is not compact (${head.title.length})`);
     assert.ok(head.desc.length <= 260, `${path}: description is not compact (${head.desc.length})`);
     assert.ok(!titles.has(head.title), `${path}: duplicate lot title`);
     assert.ok(!descriptions.has(head.desc), `${path}: duplicate lot description`);
@@ -212,10 +213,12 @@ assert.equal(ctx.headFor(strongPath).noindex, undefined);
 assert.match(ctx.headFor(strongPath).desc, /Referência do lote: strong/);
 // Titles carry the subject; the hash reference is appended only when two
 // current lots in the city would otherwise read the same.
-assert.match(ctx.headFor(ctx.href('/l/strong-twin')).title, /^Apartamento · 50 m² na Rua Boa, 12, Copacabana, Rio de Janeiro — leilão de imóvel$/,
+// The full "…, Rio de Janeiro — leilão de imóvel" form is 82 characters, so
+// the ladder keeps the street and district and drops the city and the tail.
+assert.match(ctx.headFor(ctx.href('/l/strong-twin')).title, /^Apartamento · 50 m² na Rua Boa, 12, Copacabana — leilão$/,
   'a subject twin exists, so the address separates them');
-assert.match(ctx.headFor(ctx.href('/l/strong-same')).title, /^Apartamento · 50 m² em Copacabana, Rio de Janeiro — leilão de imóvel · lote strong-same$/,
-  'same subject and address: only the reference is left to separate them');
+assert.match(ctx.headFor(ctx.href('/l/strong-same')).title, /^Rua Boa, 10 — leilão · lote strong-same$/,
+  'same subject and address: the reference separates them, the street still leads');
 assert.match(ctx.headFor(strongPath).title, /· lote strong$/);
 assert.match(ctx.headFor(ctx.href('/l/nowhere')).title, /^Casa · 70 m² em Rio de Janeiro — leilão de imóvel$/, 'no district: the city is named once');
 assert.match(ctx.headFor(ctx.href('/l/expired-recent')).title, /^Casa · 80 m² em Copacabana, Rio de Janeiro — leilão de imóvel$/,

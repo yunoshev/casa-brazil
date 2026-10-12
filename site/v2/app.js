@@ -1819,59 +1819,121 @@ function lotLine(r) {
  * reference makes two units at the same address distinguishable; the facts
  * make the description useful without claiming an estimate exists. */
 /* The hash reference is for people and machines that already hold the page;
- * a search result needs the subject. The reference is appended only when two
- * current lots in the city would otherwise carry the same title, so every
- * title stays unique without every title carrying sixteen hex digits. */
+ * a search result needs the subject. Each lot walks a ladder of titles, most
+ * descriptive first, and takes the first that no other current lot in the city
+ * could also produce and that fits TITLE_MAX. Bing Site Scan flags titles over
+ * 70 characters (91 of 500 pages, 2026-10-11: two lot titles in three, up to
+ * 120 characters with "Apto 403, Pav 04, Bl…"), and Google shows about 60, so
+ * the ladder trades the city, the "de imóvel" tail and the area before the
+ * street and number that address searches match. A unit (apto, bloco) is added
+ * only where two lots in one building would otherwise read the same. */
+var TITLE_MAX = 70;
 var lotTitleCounts = {};
+function fitTitle(options) {
+  var list = options.filter(Boolean);
+  for (var i = 0; i < list.length; i++) if (list[i].length <= TITLE_MAX) return list[i];
+  return metaText(list[list.length - 1], TITLE_MAX);
+}
 function lotTitlePlace(r) {
   var where = r[C.bairro] ? metaText(title(r[C.bairro]), 32) : "";
   return where ? where + ", " + city.nome : city.nome;
 }
-function lotTitleBase(r) {
-  return t("head.lot.title", { what: lotMetaSubject(r), place: lotTitlePlace(r) });
-}
-function lotTitleAddress(r) {
-  var address = String(r[C.end] || "").trim();
-  if (!address) return null;
-  return t("head.lot.title.address", {
-    what: lotMetaSubject(r), address: metaText(title(address), 48), place: lotTitlePlace(r),
+/* "RUA DOS SOLARES (ANTIGA RUA A), N. 255, Apto 404, BL 08 LT 02" ->
+ * street "Rua dos Solares, 255" and unit "ap. 404, bl. 08". Only the apartment,
+ * block, tower, house, room or shop survive into a title: they are what tells
+ * two lots of one building apart. Pavement, quadra, lot and a repeated district
+ * stay in the page body. */
+var ADDRESS_NUMBER = /^(n[º°o]?\.?\s*)?(\d+[a-z]?|s\/?n)$/i;
+var ADDRESS_UNITS = [
+  [/^ap(?:to|artamento)?\.?\s*(\S+)/i, "ap. "], [/^bl(?:oco)?\.?\s*(\S+)/i, "bl. "],
+  [/^torre\s*(\S+)/i, "torre "], [/^casa\s*(\S+)/i, "casa "],
+  [/^(?:sala|sl)\.?\s*(\S+)/i, "sala "], [/^(?:loja|lj)\.?\s*(\S+)/i, "loja "],
+];
+function addressUnit(segments) {
+  var out = [];
+  segments.join(" ").split(/[\s,]+(?=[a-z])/i).forEach(function (part) {
+    if (out.length >= 2) return;
+    for (var i = 0; i < ADDRESS_UNITS.length; i++) {
+      var m = ADDRESS_UNITS[i][0].exec(part.trim());
+      if (m && /\d/.test(m[1])) { out.push(ADDRESS_UNITS[i][1] + m[1].replace(/[,.;]+$/, "")); return; }
+    }
   });
+  return out.join(", ");
+}
+function lotAddressParts(r) {
+  var segs = String(r[C.end] || "").replace(/\s+/g, " ").split(",").map(function (x) {
+    return x.trim();
+  }).filter(Boolean);
+  if (!segs.length) return null;
+  var street = metaText(title(segs[0].replace(/\s*\([^)]*\)/g, "")), 40), rest = segs.slice(1), number = null;
+  if (rest.length && ADDRESS_NUMBER.test(rest[0])) {
+    number = rest[0].replace(/^n[º°o]?\.?\s*/i, "").toUpperCase();
+    rest = rest.slice(1);
+  }
+  var short = street + (number ? ", " + number : "");
+  var unit = addressUnit(rest);
+  return { short: short, full: unit ? short + ", " + unit : short };
+}
+function lotTitleLadder(r) {
+  var what = lotMetaSubject(r), kind = lotMetaSubject(r, true);
+  var district = r[C.bairro] ? metaText(title(r[C.bairro]), 32) : city.nome;
+  var full = lotTitlePlace(r), addr = lotAddressParts(r), out = [];
+  out.push(t("head.lot.title", { what: what, place: full }));
+  if (addr) {
+    out.push(t("head.lot.title.address", { what: what, address: addr.short, place: full }));
+    out.push(t("head.lot.title.compact", { what: what, address: addr.short, place: district }));
+    out.push(t("head.lot.title.compact", { what: kind, address: addr.short, place: district }));
+    out.push(t("head.lot.title.street", { what: what, address: addr.short }));
+    out.push(t("head.lot.title.street", { what: kind, address: addr.short }));
+    // One building, many lots: the unit is the identity, the kind gives way first.
+    out.push(t("head.lot.title.compact", { what: kind, address: addr.full, place: district }));
+    out.push(t("head.lot.title.street", { what: kind, address: addr.full }));
+    out.push(t("head.lot.title.unit", { address: addr.full, place: district }));
+    out.push(t("head.lot.title.bare", { address: addr.full }));
+  }
+  // A ladder repeats itself when a lot has no unit or no area; counting a
+  // repeat twice would make a lot collide with itself.
+  return out.filter(function (x, i) { return out.indexOf(x) === i; });
 }
 /* Every current lot competes for a title, indexable or not: two pages with
- * one title are a defect wherever they sit, and the address step below keeps
- * the hash off almost all of them anyway. */
+ * one title are a defect wherever they sit. */
 function countLotTitles(c) {
   lotTitleCounts = {};
-  var searchable = c.rows.filter(function (r) { return isCurrent(r, c); });
-  function count(key) { if (key) lotTitleCounts[key] = (lotTitleCounts[key] || 0) + 1; }
-  searchable.forEach(function (r) { count(lotTitleBase(r)); });
-  searchable.forEach(function (r) { count(lotTitleAddress(r)); });
+  c.rows.filter(function (r) { return isCurrent(r, c); }).forEach(function (r) {
+    lotTitleLadder(r).forEach(function (key) { lotTitleCounts[key] = (lotTitleCounts[key] || 0) + 1; });
+  });
 }
-var LOT_TITLE_MAX = 120;
 function lotTitle(r) {
-  var base = lotTitleBase(r);
-  if ((lotTitleCounts[base] || 0) <= 1 && base.length <= LOT_TITLE_MAX) return base;
-  var address = lotTitleAddress(r);
-  if (address && (lotTitleCounts[address] || 0) <= 1 && address.length <= LOT_TITLE_MAX) return address;
-  // The reference is unique by construction; only the subject may still be
-  // trimmed to keep the whole title compact.
-  var withRef = t("head.lot.title.ref", { title: base, ref: lotReference(r) });
-  var over = withRef.length - LOT_TITLE_MAX;
-  if (over > 0) {
-    var what = lotMetaSubject(r);
-    withRef = t("head.lot.title.ref", {
-      title: t("head.lot.title", { what: metaText(what, Math.max(12, what.length - over)), place: lotTitlePlace(r) }),
-      ref: lotReference(r),
-    });
+  var ladder = lotTitleLadder(r);
+  for (var i = 0; i < ladder.length; i++) {
+    if ((lotTitleCounts[ladder[i]] || 0) <= 1 && ladder[i].length <= TITLE_MAX) return ladder[i];
   }
-  return withRef;
+  // The reference is unique by construction. Address searches match the
+  // street and number, so they lead when they fit; otherwise the kind and area,
+  // trimmed area first, never the "leilão" that names the subject.
+  var ref = lotReference(r), kind = lotMetaSubject(r, true), addr = lotAddressParts(r);
+  var room = TITLE_MAX - t("head.lot.title.ref", { title: "", ref: ref }).length;
+  var street = addr && t("head.lot.title.bare", { address: addr.short });
+  if (street && street.length <= room) return t("head.lot.title.ref", { title: street, ref: ref });
+  var district = r[C.bairro] ? title(r[C.bairro]) : city.nome;
+  var head = t("head.lot.title.short", { what: kind, place: district });
+  if (head.length > room) {
+    var bare = t("head.lot.title.short", { what: kind, place: "" }).length;
+    district = metaText(district, Math.max(6, room - bare));
+    head = t("head.lot.title.short", { what: kind, place: district });
+  }
+  if (head.length > room) {
+    kind = metaText(kind, Math.max(8, kind.length - (head.length - room)));
+    head = t("head.lot.title.short", { what: kind, place: district });
+  }
+  return t("head.lot.title.ref", { title: head, ref: ref });
 }
 
-function lotMetaSubject(r) {
+function lotMetaSubject(r, withoutArea) {
   var bits = [];
   if (sourceDetailText(r)) bits.push(sourceDetailText(r));
   bits.push(title(r[C.tipo] || t("lot.fallback")));
-  if (priceKnown(r[C.area]) && r[C.area] > 0) bits.push(r[C.area] + " " + t("unit.m2"));
+  if (!withoutArea && priceKnown(r[C.area]) && r[C.area] > 0) bits.push(r[C.area] + " " + t("unit.m2"));
   return metaText(bits.join(" · "), 52);
 }
 function lotMetaFacts(r) {
@@ -3113,7 +3175,10 @@ function headFor(path) {
   if (p[p.length - 2] === SEG.rua && streetBySlug[last]) {
     var stx = city.streets.d[streetBySlug[last]];
     var main = stx.f || stx.h;
-    base.title = t("head.street.title", { street: title(stx.name), city: name });
+    base.title = fitTitle([
+      t("head.street.title", { street: title(stx.name), city: name }),
+      t("head.street.title.short", { street: title(stx.name), city: name }),
+    ]);
     base.desc = main ? t("head.street.desc", {
       street: title(stx.name), district: areaName(stx.bairro),
       year: city.streets.year, value: money(main[0]), n: num(main[1]),
@@ -3121,7 +3186,10 @@ function headFor(path) {
     if (!streetSeoEligible(streetBySlug[last])) base.noindex = true;
   } else if (slugToKey.fwd[last]) {
     var st = areaStat(slugToKey.fwd[last]);
-    base.title = t("head.area.title", { name: areaName(st.key), city: name });
+    base.title = fitTitle([
+      t("head.area.title", { name: areaName(st.key), city: name }),
+      t("head.area.title.short", { name: areaName(st.key), city: name }),
+    ]);
     base.desc = t("head.area.desc", {
       name: areaName(st.key), city: name,
       lots: lots(st.n), below: num(st.below), rel: num(st.rel),
