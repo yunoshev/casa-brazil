@@ -59,3 +59,39 @@ jobs:
           git commit -q -m "caixa lists ${{ steps.lists.outputs.source_date }} (changed: ${{ steps.lists.outputs.changed }})"
           git -c "http.https://github.com/.extraheader=$auth" push -q -f \
             "https://github.com/$GITHUB_REPOSITORY.git" HEAD:caixa-lists
+
+  # Caixa's bot manager judges the address, and a runner sometimes draws one it
+  # challenges. A second job runs on another runner, so another address.
+  retry:
+    needs: mirror
+    if: failure()
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          sparse-checkout: caixa_lists.py
+          sparse-checkout-cone-mode: false
+
+      - name: Previous lists
+        run: |
+          mkdir -p "$RUNNER_TEMP/lists"
+          if git fetch -q --depth=1 origin caixa-lists; then
+            git archive FETCH_HEAD | tar -x -C "$RUNNER_TEMP/lists"
+          fi
+
+      - name: Fetch Caixa's lists
+        id: lists
+        run: python3 caixa_lists.py --dir "$RUNNER_TEMP/lists"
+
+      - name: Publish the caixa-lists branch
+        run: |
+          auth=$(git config --get http.https://github.com/.extraheader)
+          cd "$RUNNER_TEMP/lists"
+          git init -q -b caixa-lists
+          git config user.name caixa-lists
+          git config user.email caixa-lists@users.noreply.github.com
+          git add -A
+          git commit -q -m "caixa lists ${{ steps.lists.outputs.source_date }} (changed: ${{ steps.lists.outputs.changed }})"
+          git -c "http.https://github.com/.extraheader=$auth" push -q -f \
+            "https://github.com/$GITHUB_REPOSITORY.git" HEAD:caixa-lists

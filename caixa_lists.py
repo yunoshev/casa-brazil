@@ -29,6 +29,7 @@ import os
 import re
 import subprocess
 import sys
+import tempfile
 import time
 from datetime import UTC, date, datetime
 from pathlib import Path
@@ -81,34 +82,47 @@ def parse(raw: bytes, uf: str, today: date | None = None) -> tuple[str, int]:
     return generated.isoformat(), rows
 
 
+def annotate(level: str, message: str) -> None:
+    """A GitHub annotation: readable through the public API, unlike the job log."""
+    print(f"::{level} title=caixa-lists::{message}", flush=True)
+
+
 def download(uf: str, run=subprocess.run, pause=time.sleep) -> bytes:
-    """Plain curl, as a person's terminal would ask; a browser-like request
-    is what Caixa's bot manager challenges."""
+    """Plain curl into a file, as a person's terminal would ask; a browser-like
+    request is what Caixa's bot manager challenges."""
     last = "no attempt"
-    for attempt in range(1, ATTEMPTS + 1):
-        result = run(
-            [
-                "curl",
-                "-sS",
-                "--max-time",
-                str(TIMEOUT_SECONDS),
-                "--max-filesize",
-                str(MAX_BYTES),
-                "-w",
-                "%{http_code}",
-                "-o",
-                "-",
-                URL.format(uf=uf),
-            ],
-            capture_output=True,
-            check=False,
-        )
-        body, code = result.stdout[:-3], result.stdout[-3:].decode("ascii", "replace")
-        if result.returncode == 0 and code == "200" and body:
-            return body
-        last = f"HTTP {code} curl {result.returncode}"
-        if attempt < ATTEMPTS:
-            pause(20 * attempt)
+    with tempfile.TemporaryDirectory() as scratch:
+        target = Path(scratch) / filename(uf)
+        for attempt in range(1, ATTEMPTS + 1):
+            target.unlink(missing_ok=True)
+            result = run(
+                [
+                    "curl",
+                    "-sS",
+                    "--max-time",
+                    str(TIMEOUT_SECONDS),
+                    "-o",
+                    str(target),
+                    "-w",
+                    "%{http_code} %{size_download} %{redirect_url}",
+                    URL.format(uf=uf),
+                ],
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            code, _, rest = result.stdout.strip().partition(" ")
+            body = target.read_bytes() if target.exists() else b""
+            if result.returncode == 0 and code == "200" and body:
+                if len(body) > MAX_BYTES:
+                    raise ListError(f"{uf}: list larger than {MAX_BYTES} bytes")
+                return body
+            size, _, redirect = rest.partition(" ")
+            where = redirect.split("?", 1)[0]
+            last = f"HTTP {code or '-'} curl {result.returncode} {size} bytes {where}".strip()
+            annotate("warning", f"{uf} attempt {attempt}: {last} {result.stderr.strip()[:160]}")
+            if attempt < ATTEMPTS:
+                pause(20 * attempt)
     raise ListError(f"{uf}: download failed ({last})")
 
 
@@ -160,7 +174,11 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--dir", type=Path, required=True)
     args = parser.parse_args(argv)
     args.dir.mkdir(parents=True, exist_ok=True)
-    changed = refresh(args.dir)
+    try:
+        changed = refresh(args.dir)
+    except ListError as exc:
+        annotate("error", str(exc))
+        return 1
     manifest = json.loads((args.dir / "manifest.json").read_text())
     dates = sorted({state["source_date"] for state in manifest["states"].values()})
     print(f"caixa-lists: {'new lists' if changed else 'unchanged'} {', '.join(dates)}", flush=True)
