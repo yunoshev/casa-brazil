@@ -3,9 +3,10 @@
 # `publish_repo.py` copies this file into the public repository as
 # .github/workflows/caixa-lists.yml, next to pages.yml. Caixa answers 403 to the
 # server the worker runs on; GitHub's runners download the same public CSVs
-# with a plain curl. The lists go to the orphan `caixa-lists` branch (one
-# commit, force-pushed, so the history never grows), never to main: a list
-# changing must not rebuild the site by itself, the worker decides that.
+# with a plain curl, one file per runner (a runner's second request in a row
+# is challenged). The lists go to the orphan `caixa-lists` branch (one commit,
+# force-pushed, so the history never grows), never to main: a list changing
+# must not rebuild the site by itself, the worker decides that.
 #
 # Everything here is public data: the four CSVs Caixa publishes for anyone and
 # a manifest with their dates and hashes. No secret is used.
@@ -28,27 +29,33 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  mirror:
+  probe:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 10
+    outputs:
+      changed: ${{ steps.probe.outputs.changed }}
     steps:
       - uses: actions/checkout@v4
         with:
           sparse-checkout: caixa_lists.py
           sparse-checkout-cone-mode: false
-
       - name: Previous lists
         run: |
           mkdir -p "$RUNNER_TEMP/lists"
           if git fetch -q --depth=1 origin caixa-lists; then
             git archive FETCH_HEAD | tar -x -C "$RUNNER_TEMP/lists"
           fi
-
-      - name: Fetch Caixa's lists
-        id: lists
-        run: python3 caixa_lists.py --dir "$RUNNER_TEMP/lists"
-
-      - name: Publish the caixa-lists branch
+      - name: Probe Caixa's CE list
+        id: probe
+        run: python3 caixa_lists.py probe --dir "$RUNNER_TEMP/lists" --out "$RUNNER_TEMP/new"
+      - if: steps.probe.outputs.changed == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: list-CE
+          path: ${{ runner.temp }}/new
+          retention-days: 1
+      - name: Record the check
+        if: steps.probe.outputs.changed == 'false'
         run: |
           auth=$(git config --get http.https://github.com/.extraheader)
           cd "$RUNNER_TEMP/lists"
@@ -56,34 +63,52 @@ jobs:
           git config user.name caixa-lists
           git config user.email caixa-lists@users.noreply.github.com
           git add -A
-          git commit -q -m "caixa lists ${{ steps.lists.outputs.source_date }} (changed: ${{ steps.lists.outputs.changed }})"
+          git commit -q -m "caixa lists checked $(date -u +%FT%TZ)"
           git -c "http.https://github.com/.extraheader=$auth" push -q -f \
             "https://github.com/$GITHUB_REPOSITORY.git" HEAD:caixa-lists
 
-  # Caixa's bot manager judges the address, and a runner sometimes draws one it
-  # challenges. A second job runs on another runner, so another address.
-  retry:
-    needs: mirror
-    if: failure()
+  fetch:
+    needs: probe
+    if: needs.probe.outputs.changed == 'true'
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        uf: [PE, RJ, SP]
     steps:
       - uses: actions/checkout@v4
         with:
           sparse-checkout: caixa_lists.py
           sparse-checkout-cone-mode: false
+      - run: python3 caixa_lists.py fetch --uf ${{ matrix.uf }} --out "$RUNNER_TEMP/new"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: list-${{ matrix.uf }}
+          path: ${{ runner.temp }}/new
+          retention-days: 1
 
+  publish:
+    needs: fetch
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          sparse-checkout: caixa_lists.py
+          sparse-checkout-cone-mode: false
       - name: Previous lists
         run: |
           mkdir -p "$RUNNER_TEMP/lists"
           if git fetch -q --depth=1 origin caixa-lists; then
             git archive FETCH_HEAD | tar -x -C "$RUNNER_TEMP/lists"
           fi
-
-      - name: Fetch Caixa's lists
-        id: lists
-        run: python3 caixa_lists.py --dir "$RUNNER_TEMP/lists"
-
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: list-*
+          merge-multiple: true
+          path: ${{ runner.temp }}/new
+      - run: python3 caixa_lists.py assemble --dir "$RUNNER_TEMP/lists" --from "$RUNNER_TEMP/new"
       - name: Publish the caixa-lists branch
         run: |
           auth=$(git config --get http.https://github.com/.extraheader)
@@ -92,6 +117,6 @@ jobs:
           git config user.name caixa-lists
           git config user.email caixa-lists@users.noreply.github.com
           git add -A
-          git commit -q -m "caixa lists ${{ steps.lists.outputs.source_date }} (changed: ${{ steps.lists.outputs.changed }})"
+          git commit -q -m "caixa lists checked $(date -u +%FT%TZ)"
           git -c "http.https://github.com/.extraheader=$auth" push -q -f \
             "https://github.com/$GITHUB_REPOSITORY.git" HEAD:caixa-lists

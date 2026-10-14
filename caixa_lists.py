@@ -9,13 +9,19 @@ feed that republishes the lists can sit on an old one for days (9 Oct 2026 was
 served until the 14th while Caixa already had the 13th). GitHub's runners
 download the same public CSVs with a plain curl, no browser and no proxy.
 
-Polite by construction: the smallest list (CE, ~200 KB) tells whether Caixa
-has regenerated its lists since the last run; the other three are fetched only
-when it has. Nothing replaces the mirrored lists unless every one of them
-downloads and parses; a failed run leaves `checked_at` old, and the worker
-treats a mirror older than a few hours as unavailable.
+One download per runner: Caixa's bot manager (Radware) lets a runner's first
+request through and answers its second, three seconds later, with a 302 to a
+challenge page (both runs on 14 Oct 2026: CE fetched, PE challenged on every
+retry). So the workflow is three steps, each its own command here:
 
-Run: python3 caixa_lists.py --dir <checkout of the caixa-lists branch>
+  probe     one runner fetches the smallest list (CE, ~200 KB); when its date
+            equals the mirrored one, only `checked_at` moves;
+  fetch     otherwise PE, RJ and SP are fetched by one runner each;
+  assemble  the four lists are validated together and replace the mirror.
+
+Nothing replaces the mirrored lists unless every one downloads and parses; a
+failed run leaves `checked_at` old, and the worker treats a mirror older than a
+few hours as unavailable.
 """
 
 from __future__ import annotations
@@ -39,7 +45,8 @@ STATES = ("CE", "PE", "RJ", "SP")
 PROBE = "CE"
 SCHEMA = "caixa-lists-v1"
 MAX_BYTES = 20 * 1024 * 1024
-ATTEMPTS = 3
+# A challenged address stays challenged for a while; one retry is enough.
+ATTEMPTS = 2
 TIMEOUT_SECONDS = 120
 
 
@@ -126,67 +133,124 @@ def download(uf: str, run=subprocess.run, pause=time.sleep) -> bytes:
     raise ListError(f"{uf}: download failed ({last})")
 
 
-def refresh(
-    directory: Path, *, fetch=download, pause=time.sleep, now: datetime | None = None
-) -> bool:
-    """Bring the mirror up to date. True when the lists themselves changed."""
+def _read_manifest(directory: Path) -> dict:
+    path = directory / "manifest.json"
+    manifest = json.loads(path.read_text()) if path.exists() else {}
+    return manifest if manifest.get("schema") == SCHEMA else {}
+
+
+def _write(path: Path, data: bytes) -> None:
+    temporary = path.with_name(path.name + ".next")
+    temporary.write_bytes(data)
+    os.replace(temporary, path)
+
+
+def _stamp(now: datetime) -> str:
+    return now.isoformat().replace("+00:00", "Z")
+
+
+def probe(
+    directory: Path, out: Path, *, fetch=None, now: datetime | None = None
+) -> tuple[bool, str]:
+    """Fetch CE. Unchanged: move `checked_at` in place. Changed: leave CE in ``out``."""
     now = now or datetime.now(UTC)
-    manifest_path = directory / "manifest.json"
-    previous = json.loads(manifest_path.read_text()) if manifest_path.exists() else {}
-    known = previous.get("states", {}) if previous.get("schema") == SCHEMA else {}
-    fetched_at = now.isoformat().replace("+00:00", "Z")
-    lists = {PROBE: fetch(PROBE)}
-    probe_date, _rows = parse(lists[PROBE], PROBE, now.date())
+    raw = (fetch or download)(PROBE)
+    day, _rows = parse(raw, PROBE, now.date())
+    known = _read_manifest(directory)
     unchanged = all(
-        known.get(uf, {}).get("source_date") == probe_date and (directory / filename(uf)).is_file()
+        known.get("states", {}).get(uf, {}).get("source_date") == day
+        and (directory / filename(uf)).is_file()
         for uf in STATES
     )
     if unchanged:
-        manifest = {**previous, "checked_at": fetched_at}
-        manifest_path.write_text(json.dumps(manifest, indent=1, sort_keys=True) + "\n")
-        return False
+        manifest = {**known, "checked_at": _stamp(now)}
+        _write(
+            directory / "manifest.json",
+            (json.dumps(manifest, indent=1, sort_keys=True) + "\n").encode(),
+        )
+        return False, day
+    out.mkdir(parents=True, exist_ok=True)
+    _write(out / filename(PROBE), raw)
+    return True, day
+
+
+def fetch_one(uf: str, out: Path, *, fetch=None, now: datetime | None = None) -> str:
+    """One state's list into ``out``, validated."""
+    now = now or datetime.now(UTC)
+    raw = (fetch or download)(uf)
+    day, _rows = parse(raw, uf, now.date())
+    out.mkdir(parents=True, exist_ok=True)
+    _write(out / filename(uf), raw)
+    return day
+
+
+def assemble(directory: Path, source: Path, *, now: datetime | None = None) -> dict:
+    """Validate the four fetched lists together and make them the mirror."""
+    now = now or datetime.now(UTC)
+    lists, states = {}, {}
     for uf in STATES:
-        if uf not in lists:
-            pause(3)
-            lists[uf] = fetch(uf)
-    states = {}
-    for uf in STATES:
-        source_date, rows = parse(lists[uf], uf, now.date())
+        path = source / filename(uf)
+        if not path.is_file():
+            raise ListError(f"{uf}: list missing from this run")
+        lists[uf] = path.read_bytes()
+        day, rows = parse(lists[uf], uf, now.date())
         states[uf] = {
-            "source_date": source_date,
+            "source_date": day,
             "rows": rows,
             "bytes": len(lists[uf]),
             "sha256": hashlib.sha256(lists[uf]).hexdigest(),
-            "fetched_at": fetched_at,
+            "fetched_at": _stamp(now),
             "url": URL.format(uf=uf),
         }
+    directory.mkdir(parents=True, exist_ok=True)
     for uf, raw in lists.items():
-        temporary = directory / (filename(uf) + ".next")
-        temporary.write_bytes(raw)
-        os.replace(temporary, directory / filename(uf))
-    manifest = {"schema": SCHEMA, "checked_at": fetched_at, "states": states}
-    manifest_path.write_text(json.dumps(manifest, indent=1, sort_keys=True) + "\n")
-    return True
+        _write(directory / filename(uf), raw)
+    manifest = {"schema": SCHEMA, "checked_at": _stamp(now), "states": states}
+    _write(
+        directory / "manifest.json",
+        (json.dumps(manifest, indent=1, sort_keys=True) + "\n").encode(),
+    )
+    return manifest
+
+
+def _output(**values: str) -> None:
+    output = os.environ.get("GITHUB_OUTPUT")
+    if output:
+        with open(output, "a") as handle:
+            for key, value in values.items():
+                handle.write(f"{key}={value}\n")
 
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--dir", type=Path, required=True)
+    commands = parser.add_subparsers(dest="command", required=True)
+    probe_parser = commands.add_parser("probe")
+    probe_parser.add_argument("--dir", type=Path, required=True)
+    probe_parser.add_argument("--out", type=Path, required=True)
+    fetch_parser = commands.add_parser("fetch")
+    fetch_parser.add_argument("--uf", choices=STATES, required=True)
+    fetch_parser.add_argument("--out", type=Path, required=True)
+    assemble_parser = commands.add_parser("assemble")
+    assemble_parser.add_argument("--dir", type=Path, required=True)
+    assemble_parser.add_argument("--from", dest="source", type=Path, required=True)
     args = parser.parse_args(argv)
-    args.dir.mkdir(parents=True, exist_ok=True)
     try:
-        changed = refresh(args.dir)
+        if args.command == "probe":
+            args.dir.mkdir(parents=True, exist_ok=True)
+            changed, day = probe(args.dir, args.out)
+            print(f"caixa-lists: CE list {day}, {'new' if changed else 'unchanged'}", flush=True)
+            _output(changed="true" if changed else "false", source_date=day)
+        elif args.command == "fetch":
+            day = fetch_one(args.uf, args.out)
+            print(f"caixa-lists: {args.uf} list {day}", flush=True)
+        else:
+            manifest = assemble(args.dir, args.source)
+            dates = sorted({state["source_date"] for state in manifest["states"].values()})
+            print(f"caixa-lists: mirrored {', '.join(dates)}", flush=True)
+            _output(source_date=dates[-1])
     except ListError as exc:
         annotate("error", str(exc))
         return 1
-    manifest = json.loads((args.dir / "manifest.json").read_text())
-    dates = sorted({state["source_date"] for state in manifest["states"].values()})
-    print(f"caixa-lists: {'new lists' if changed else 'unchanged'} {', '.join(dates)}", flush=True)
-    output = os.environ.get("GITHUB_OUTPUT")
-    if output:
-        with open(output, "a") as handle:
-            handle.write(f"changed={'true' if changed else 'false'}\n")
-            handle.write(f"source_date={dates[-1]}\n")
     return 0
 
 
