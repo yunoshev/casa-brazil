@@ -167,23 +167,50 @@ function caixaDetailSource(r) {
       /^\d+$/.test(source.searchParams.get("hdnimovel") || "") ? value : null;
   } catch (e) { return null; }
 }
+/* A Caixa list the site still shows after this many days without a newer one
+ * is no longer evidence that its lots are on sale (Caixa publishes every few
+ * days; the bot reports a source quiet for a week). */
+var CAIXA_LIST_MAX_AGE_DAYS = 14;
+var newestCaixaObservation = null;
+function newestCaixaObservationFor(uf) {
+  // One import stamps every lot of a state's list with the same instant, so
+  // the newest stamp among a state's lots is the list the site shows for it.
+  if (!newestCaixaObservation) {
+    newestCaixaObservation = {};
+    (D.cities || []).forEach(function (c) {
+      var key = String(c.uf || "").toLowerCase(), entries = c.lifecycle || {};
+      Object.keys(entries).forEach(function (id) {
+        var observed = archiveDate((entries[id] || {}).positive_source_observed_at);
+        if (observed && (!newestCaixaObservation[key] || observed > newestCaixaObservation[key])) {
+          newestCaixaObservation[key] = observed;
+        }
+      });
+    });
+  }
+  return newestCaixaObservation[String(uf || "").toLowerCase()] || null;
+}
 function observedPartialCaixaPresence(r) {
   /* A partial capture can prove that its direct source row was present, but
    * cannot prove whether an omitted row is unavailable. The exporter writes
-   * this marker only for a newly observed row, so it is deliberately distinct
-   * from last_seen_at and does not promote the lifecycle status to active. */
+   * this marker for every row a list import sees, so it is deliberately
+   * distinct from last_seen_at and does not promote the status to active.
+   * A lot counts while it is in the newest list the site shows for its state:
+   * one missing from a newer list keeps an older stamp and stops counting.
+   * An unchanged list is not imported again, so the stamp's age alone says
+   * nothing (a three-day expiry took live lots out of the index between
+   * lists, Oct 2026). */
   var lc = lifecycle(r), observed = archiveDate(lc.positive_source_observed_at);
   if (lotStatus(r) !== "unverified" || !observed || !caixaDetailSource(r) ||
       lc.first_seen_at !== null || lc.missing_since !== null || lc.archived_at !== null ||
       lc.last_seen_at !== observed || lc.last_checked_at !== observed ||
       !Array.isArray(lc.history) || lc.history.length) return false;
+  if (observed !== newestCaixaObservationFor(city.uf)) return false;
   var observedDay = observed.slice(0, 10);
   var observedAt = Date.parse(observedDay + "T00:00:00Z");
   var referenceAt = Date.parse(dateReference + "T00:00:00Z");
-  // The renderer has a UTC day, not a trusted wall-clock. Keep the source row
-  // indexable on the day it was observed, and expire it after three UTC days.
+  // The renderer has a UTC day, not a trusted wall-clock.
   return !isNaN(observedAt) && !isNaN(referenceAt) && observedDay <= dateReference &&
-    (referenceAt - observedAt) <= 3 * 24 * 60 * 60 * 1000;
+    (referenceAt - observedAt) <= CAIXA_LIST_MAX_AGE_DAYS * 24 * 60 * 60 * 1000;
 }
 function sourceHost(r) {
   var value = httpsSource(r[C.link]);
@@ -931,6 +958,7 @@ function areaName(key) {
 function lots(n) { return num(n) + " " + plur("unit.lot", n); }
 
 function indexCity(c) {
+  newestCaixaObservation = null;
   relatedLotCache = {};
   relatedPlaceCache = {};
   relatedCandidates = {};

@@ -41,6 +41,7 @@ class Page(HTMLParser):
         self.og_urls: list[str] = []
         self.favicons: list[str] = []
         self.noindex = False
+        self.refreshes: list[str] = []
         self.links: list[str] = []
         self.structured: list[str] = []
         self._ld: list[str] | None = None
@@ -70,6 +71,8 @@ class Page(HTMLParser):
         if tag == "meta" and (a.get("name") or "").lower() in {"robots", "googlebot"}:
             directives = (a.get("content") or "").lower().replace(",", " ").split()
             self.noindex |= "noindex" in directives or "none" in directives
+        if tag == "meta" and (a.get("http-equiv") or "").lower() == "refresh":
+            self.refreshes.append(a.get("content") or "")
         if tag == "a" and a.get("href"):
             self.links.append(a["href"])
         if tag == "script" and a.get("type") == "application/ld+json":
@@ -243,6 +246,28 @@ def _check_lastmod(node, context: str, errors: list[str]) -> None:
         errors.append(f"{context}: lastmod is in the future")
 
 
+def _valid_redirect(page: Page, out: Path, site: str, pages: dict[Path, Page]) -> bool:
+    """An instant meta refresh (read by Google as a 301) to a real page here."""
+    move = re.fullmatch(r"0;\s*url=(\S+)", page.refreshes[0].strip()) if page.refreshes else None
+    if not move or len(page.refreshes) != 1:
+        return False
+    target = move.group(1)
+    try:
+        target_file = local_file(out, site, target)
+    except ValueError:
+        return False
+    return (
+        page.doctype
+        and page.lang.lower() in {"pt", "pt-br"}
+        and page.titles == 1
+        and page.noindex
+        and page.canonicals == [target]
+        and target_file is not None
+        and target_file.name != "404.html"
+        and target_file.resolve() in pages
+    )
+
+
 def check(out: Path, site: str, *, release: bool = False) -> dict:
     site = validate_release_site_url(site) if release else site_url(site)
     out = out.resolve()
@@ -294,6 +319,7 @@ def check(out: Path, site: str, *, release: bool = False) -> dict:
 
     read_sitemap(out / "sitemap.xml")
     pages: dict[Path, Page] = {}
+    redirects: dict[str, Page] = {}
     expected: set[str] = set()
     for path in sorted(out.rglob("*.html")):
         source = path.read_text(encoding="utf-8")
@@ -318,6 +344,11 @@ def check(out: Path, site: str, *, release: bool = False) -> dict:
             )
             if not valid:
                 errors.append(f"{rel}: invalid home map fragment")
+            continue
+        if page.refreshes:
+            # A retired address (prerender `write_retired_routes`) is a
+            # redirect, not a page; checked against the pages below.
+            redirects[rel] = page
             continue
         pages[path.resolve()] = page
         if release and LEGACY_SITE_URL in source:
@@ -362,6 +393,12 @@ def check(out: Path, site: str, *, release: bool = False) -> dict:
                         errors.append(f"{rel}: invalid breadcrumb target")
             except (ValueError, TypeError) as exc:
                 errors.append(f"{rel}: invalid structured data ({type(exc).__name__})")
+
+    for rel, page in sorted(redirects.items()):
+        if not _valid_redirect(page, out, site, pages):
+            errors.append(
+                f"{rel}: redirect must be an instant, noindex move to a page of this artifact"
+            )
 
     for url in urls:
         try:

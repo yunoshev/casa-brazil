@@ -1,0 +1,301 @@
+{
+ "schema": "retired-routes-v1",
+ "note": "Street pages built in mid-September 2026 that Google indexed and showed in results, then answered 404 from October (list from Search Console, 14 Oct 2026). Each names its replacements, closest first: the district of the lots on that street, those lots, the city. prerender.py redirects to the first one that is an indexable page of the build.",
+ "routes": {
+  "/leilao-de-imoveis/pe/recife/rua/avenida-conselheiro-rosa-e-silva/": [
+   "/leilao-de-imoveis/pe/recife/gracas/",
+   "/leilao-de-imoveis/pe/recife/lote/apartamento-169m2-gracas-430a0e769157fca0/",
+   "/leilao-de-imoveis/pe/recife/"
+  ],
+  "/leilao-de-imoveis/rj/rio-de-janeiro/rua/avenida-alvares-da-rocha/": [
+   "/leilao-de-imoveis/rj/rio-de-janeiro/engenho-da-rainha/",
+   "/leilao-de-imoveis/rj/rio-de-janeiro/lote/apartamento-50m2-engenho-da-rainha-10194a1422384f9b/",
+   "/leilao-de-imoveis/rj/rio-de-janeiro/"
+  ],
+  "/leilao-de-imoveis/rj/rio-de-janeiro/rua/avenida-chrisostomo-pimentel-de-oliveira/": [
+   "/leilao-de-imoveis/rj/rio-de-janeiro/anchieta/",
+   "/leilao-de-imoveis/rj/rio-de-janeiro/pavuna/",
+   "/leilao-de-imoveis/rj/rio-de-janeiro/lote/apartamento-39m2-anchieta-0516a4940095b346/",
+   "/leilao-de-imoveis/rj/rio-de-janeiro/lote/apartamento-41m2-anchieta-6b2213701afea052/",
+   "/leilao-de-imoveis/rj/rio-de-janeiro/lote/apartamento-44m2-anchieta-9922ff4ca14ae4e2/",
+   "/leilao-de-imoveis/rj/rio-de-janeiro/"
+  ],
+  "/leilao-de-imoveis/rj/rio-de-janeiro/rua/estrada-do-barro-vermelho/": [
+   "/leilao-de-imoveis/rj/rio-de-janeiro/rocha-miranda/",
+   "/leilao-de-imoveis/rj/rio-de-janeiro/colegio/",
+   "/leilao-de-imoveis/rj/rio-de-janeiro/lote/apartamento-44m2-rocha-miranda-8edeab3afb327ed0/",
+   "/leilao-de-imoveis/rj/rio-de-janeiro/lote/apartamento-48m2-rocha-miranda-9b3e956a6dc32007/",
+   "/leilao-de-imoveis/rj/rio-de-janeiro/lote/apartamento-48m2-rocha-miranda-c5c65f9af101b105/",
+   "/leilao-de-imoveis/rj/rio-de-janeiro/"
+  ],
+  "/leilao-de-imoveis/rj/rio-de-janeiro/rua/estrada-do-cafunda/": [
+   "/leilao-de-imoveis/rj/rio-de-janeiro/taquara/",
+   "/leilao-de-imoveis/rj/rio-de-janeiro/lote/apartamento-57m2-taquara-c904eb9863eb980a/",
+   "/leilao-de-imoveis/rj/rio-de-janeiro/lote/apartamento-56m2-taquara-171c018b0abdd1e8/",
+   "/leilao-de-imoveis/rj/rio-de-janeiro/"
+  ],
+  "/leilao-de-imoveis/rj/rio-de-janeiro/rua/estrada-do-taquaral/": [
+   "/leilao-de-imoveis/rj/rio-de-janeiro/bangu/",
+   "/leilao-de-imoveis/rj/rio-de-janeiro/lote/apartamento-46m2-bangu-29c909919e0a1c2e/",
+   "/leilao-de-imoveis/rj/rio-de-janeiro/lote/apartamento-46m2-bangu-202714a706aa92d7/",
+   "/leilao-de-imoveis/rj/rio-de-janeiro/lote/apartamento-46m2-bangu-a87210e1277a8533/",
+   "/leilao-de-imoveis/rj/rio-de-janeiro/"
+  ],
+  "/leilao-de-imoveis/rj/rio-de-janeiro/rua/estrada-joao-paulo/": [
+   "/leilao-de-imoveis/rj/rio-de-janeiro/honorio-gurgel/",
+   "/leilao-de-imoveis/rj/rio-de-janeiro/lote/apartamento-43m2-honorio-gurgel-59c1d451d39eb720/",
+   "/leilao-de-imoveis/rj/rio-de-janeiro/lote/apartamento-47m2-honorio-gurgel-868cb45cd6b27868/",
+   "/leilao-de-imoveis/rj/rio-de-janeiro/lote/apartamento-47m2-honorio-gurgel-c8cd00a0a03c2a18/",
+   "/leilao-de-imoveis/rj/rio-de-janeiro/"
+  ],
+  "/leilao-de-imoveis/rj/rio-de-janeiro/rua/rua-atilio-milano/": [
+   "/leilao-de-imoveis/rj/rio-de-janeiro/lote/outro-650m2-470f9d3bc539ef85/",
+   "/leilao-de-imoveis/rj/rio-de-janeiro/"
+  ],
+  "/leilao-de-imoveis/rj/rio-de-janeiro/rua/rua-avila/": [
+   "/leilao-de-imoveis/rj/rio-de-janeiro/lote/apartamento-3ade3512f9f6922e/",
+   "/leilao-de-imoveis/rj/rio-de-janeiro/"
+  ],
+  "/leilao-de-imoveis/rj/rio-de-janeiro/rua/rua-caioba/": [
+   "/leilao-de-imoveis/rj/rio-de-janeiro/lote/galpao-ef48b10af990dade/",
+   "/leilao-de-imoveis/rj/rio-de-janeiro/"
+  ],
+  "/leilao-de-imoveis/rj/rio-de-janeiro/rua/rua-clarimundo-de-melo/": [
+   "/leilao-de-imoveis/rj/rio-de-janeiro/encantado/",
+   "/leilao-de-imoveis/rj/rio-de-janeiro/quintino-bocaiuva/",
+   "/leilao-de-imoveis/rj/rio-de-janeiro/lote/apartamento-33m2-encantado-82d1ef9379af22ca/",
+   "/leilao-de-imoveis/rj/rio-de-janeiro/lote/casa-126m2-quintino-bocaiuva-2f4d07622e772cf4/",
+   "/leilao-de-imoveis/rj/rio-de-janeiro/lote/apartamento-33m2-encantado-97ce0a0a78866306/",
+   "/leilao-de-imoveis/rj/rio-de-janeiro/"
+  ],
+  "/leilao-de-imoveis/rj/rio-de-janeiro/rua/rua-corrego-rico/": [
+   "/leilao-de-imoveis/rj/rio-de-janeiro/pavuna/",
+   "/leilao-de-imoveis/rj/rio-de-janeiro/lote/apartamento-56m2-pavuna-89e5998c5c065aa8/",
+   "/leilao-de-imoveis/rj/rio-de-janeiro/lote/apartamento-48m2-pavuna-f5e7dfab6e381183/",
+   "/leilao-de-imoveis/rj/rio-de-janeiro/lote/apartamento-56m2-pavuna-a47dd9bcf674a04e/",
+   "/leilao-de-imoveis/rj/rio-de-janeiro/"
+  ],
+  "/leilao-de-imoveis/rj/rio-de-janeiro/rua/rua-durval-de-morais/": [
+   "/leilao-de-imoveis/rj/rio-de-janeiro/lote/casa-73m2-6d0d1e55ff59cfec/",
+   "/leilao-de-imoveis/rj/rio-de-janeiro/"
+  ],
+  "/leilao-de-imoveis/rj/rio-de-janeiro/rua/rua-engenheiro-enaldo-cravo-peixoto/": [
+   "/leilao-de-imoveis/rj/rio-de-janeiro/tijuca/",
+   "/leilao-de-imoveis/rj/rio-de-janeiro/lote/sala-comercial-23m2-tijuca-0cd4fd5d7bb36203/",
+   "/leilao-de-imoveis/rj/rio-de-janeiro/"
+  ],
+  "/leilao-de-imoveis/rj/rio-de-janeiro/rua/rua-grana-antiga-rua-caminare/": [
+   "/leilao-de-imoveis/rj/rio-de-janeiro/freg-n-s-d-ajuda/",
+   "/leilao-de-imoveis/rj/rio-de-janeiro/lote/casa-441m2-freg-n-s-d-ajuda-9aa905ecbb854d67/",
+   "/leilao-de-imoveis/rj/rio-de-janeiro/"
+  ],
+  "/leilao-de-imoveis/rj/rio-de-janeiro/rua/rua-iguaba-grande/": [
+   "/leilao-de-imoveis/rj/rio-de-janeiro/pavuna/",
+   "/leilao-de-imoveis/rj/rio-de-janeiro/lote/apartamento-56m2-pavuna-382220b3d7f5e7ba/",
+   "/leilao-de-imoveis/rj/rio-de-janeiro/lote/apartamento-48m2-pavuna-3da894d707f27c7e/",
+   "/leilao-de-imoveis/rj/rio-de-janeiro/lote/apartamento-48m2-pavuna-4f2dabe74c8b3356/",
+   "/leilao-de-imoveis/rj/rio-de-janeiro/"
+  ],
+  "/leilao-de-imoveis/rj/rio-de-janeiro/rua/rua-joao-baptista-scalco/": [
+   "/leilao-de-imoveis/rj/rio-de-janeiro/lote/apartamento-3f6ba49161cd977b/",
+   "/leilao-de-imoveis/rj/rio-de-janeiro/"
+  ],
+  "/leilao-de-imoveis/rj/rio-de-janeiro/rua/rua-joao-cruz-costa/": [
+   "/leilao-de-imoveis/rj/rio-de-janeiro/guaratiba/",
+   "/leilao-de-imoveis/rj/rio-de-janeiro/lote/apartamento-119m2-guaratiba-90a0f43a7692eee7/",
+   "/leilao-de-imoveis/rj/rio-de-janeiro/"
+  ],
+  "/leilao-de-imoveis/rj/rio-de-janeiro/rua/rua-leandro-martins/": [
+   "/leilao-de-imoveis/rj/rio-de-janeiro/lote/apartamento-02800baafefea341/",
+   "/leilao-de-imoveis/rj/rio-de-janeiro/"
+  ],
+  "/leilao-de-imoveis/rj/rio-de-janeiro/rua/rua-moranga/": [
+   "/leilao-de-imoveis/rj/rio-de-janeiro/inhoaiba/",
+   "/leilao-de-imoveis/rj/rio-de-janeiro/lote/apartamento-43m2-inhoaiba-524634ed3ff75377/",
+   "/leilao-de-imoveis/rj/rio-de-janeiro/lote/apartamento-43m2-inhoaiba-f5769f2b2f6a3fe3/",
+   "/leilao-de-imoveis/rj/rio-de-janeiro/lote/apartamento-44m2-inhoaiba-31f40d5bceb43a83/",
+   "/leilao-de-imoveis/rj/rio-de-janeiro/"
+  ],
+  "/leilao-de-imoveis/rj/rio-de-janeiro/rua/rua-soldado-arlindo-da-silva/": [
+   "/leilao-de-imoveis/rj/rio-de-janeiro/freguesia-de-guaratiba/",
+   "/leilao-de-imoveis/rj/rio-de-janeiro/lote/casa-69m2-freguesia-de-guaratiba-25d7821b03352b91/",
+   "/leilao-de-imoveis/rj/rio-de-janeiro/"
+  ],
+  "/leilao-de-imoveis/rj/rio-de-janeiro/rua/rua-tolentino-da-silva/": [
+   "/leilao-de-imoveis/rj/rio-de-janeiro/penha-circular/",
+   "/leilao-de-imoveis/rj/rio-de-janeiro/lote/casa-169m2-penha-circular-7546107f0e14b1e0/",
+   "/leilao-de-imoveis/rj/rio-de-janeiro/"
+  ],
+  "/leilao-de-imoveis/rj/rio-de-janeiro/rua/travessa-jose-higino/": [
+   "/leilao-de-imoveis/rj/rio-de-janeiro/lote/apartamento-61m2-0bd44d818214330b/",
+   "/leilao-de-imoveis/rj/rio-de-janeiro/"
+  ],
+  "/leilao-de-imoveis/rj/rio-de-janeiro/rua/travessa-paulo-provitina/": [
+   "/leilao-de-imoveis/rj/rio-de-janeiro/vila-isabel/",
+   "/leilao-de-imoveis/rj/rio-de-janeiro/lote/apartamento-70m2-vila-isabel-da8fd328f7439a18/",
+   "/leilao-de-imoveis/rj/rio-de-janeiro/"
+  ],
+  "/leilao-de-imoveis/rj/sao-goncalo/rua/rua-americo-miranda/": [
+   "/leilao-de-imoveis/rj/sao-goncalo/jardim-catarina/",
+   "/leilao-de-imoveis/rj/sao-goncalo/lote/casa-92m2-jardim-catarina-615b99cc4aacc4a7/",
+   "/leilao-de-imoveis/rj/sao-goncalo/"
+  ],
+  "/leilao-de-imoveis/rj/sao-goncalo/rua/rua-cristiano-figueiras/": [
+   "/leilao-de-imoveis/rj/sao-goncalo/jardim-catarina/",
+   "/leilao-de-imoveis/rj/sao-goncalo/lote/casa-99m2-jardim-catarina-fbf428192f46a54e/",
+   "/leilao-de-imoveis/rj/sao-goncalo/lote/apartamento-34m2-jardim-catarina-d2d8de5ce1fe09a3/",
+   "/leilao-de-imoveis/rj/sao-goncalo/lote/casa-49m2-jardim-catarina-4523d1b63cd6f338/",
+   "/leilao-de-imoveis/rj/sao-goncalo/"
+  ],
+  "/leilao-de-imoveis/rj/sao-goncalo/rua/rua-itatiba/": [
+   "/leilao-de-imoveis/rj/sao-goncalo/monjolos/",
+   "/leilao-de-imoveis/rj/sao-goncalo/lote/casa-64m2-monjolos-db69e82a9cee9232/",
+   "/leilao-de-imoveis/rj/sao-goncalo/"
+  ],
+  "/leilao-de-imoveis/rj/sao-goncalo/rua/rua-jose-moura-e-silva/": [
+   "/leilao-de-imoveis/rj/sao-goncalo/itauna/",
+   "/leilao-de-imoveis/rj/sao-goncalo/mutuapira/",
+   "/leilao-de-imoveis/rj/sao-goncalo/lote/apartamento-40m2-itauna-6ecb9ca582923eb5/",
+   "/leilao-de-imoveis/rj/sao-goncalo/lote/apartamento-40m2-itauna-6d904fd25c961036/",
+   "/leilao-de-imoveis/rj/sao-goncalo/lote/apartamento-53m2-itauna-44d300c7d178e130/",
+   "/leilao-de-imoveis/rj/sao-goncalo/"
+  ],
+  "/leilao-de-imoveis/rj/sao-goncalo/rua/rua-judith-carvalho-correia/": [
+   "/leilao-de-imoveis/rj/sao-goncalo/jockei-clube/",
+   "/leilao-de-imoveis/rj/sao-goncalo/lote/casa-153m2-jockei-clube-5315b0a89182f55b/",
+   "/leilao-de-imoveis/rj/sao-goncalo/"
+  ],
+  "/leilao-de-imoveis/rj/sao-goncalo/rua/travessa-arlete/": [
+   "/leilao-de-imoveis/rj/sao-goncalo/patronato/",
+   "/leilao-de-imoveis/rj/sao-goncalo/lote/apartamento-84m2-patronato-0507b4ef834c8332/",
+   "/leilao-de-imoveis/rj/sao-goncalo/"
+  ],
+  "/leilao-de-imoveis/sp/sao-paulo/rua/alameda-itu/": [
+   "/leilao-de-imoveis/sp/sao-paulo/lote/apartamento-100m2-e2349b8cdd9b4a30/",
+   "/leilao-de-imoveis/sp/sao-paulo/lote/apartamento-condominio-240m2-f0307e528e656a7f/",
+   "/leilao-de-imoveis/sp/sao-paulo/"
+  ],
+  "/leilao-de-imoveis/sp/sao-paulo/rua/alameda-ministro-rocha-azevedo/": [
+   "/leilao-de-imoveis/sp/sao-paulo/lote/apartamento-56m2-7748efb0d50442e7/",
+   "/leilao-de-imoveis/sp/sao-paulo/"
+  ],
+  "/leilao-de-imoveis/sp/sao-paulo/rua/avenida-camilo-castelo-branco/": [
+   "/leilao-de-imoveis/sp/sao-paulo/lote/apartamento-498daea908c11cf3/",
+   "/leilao-de-imoveis/sp/sao-paulo/"
+  ],
+  "/leilao-de-imoveis/sp/sao-paulo/rua/avenida-dos-ourives/": [
+   "/leilao-de-imoveis/sp/sao-paulo/jardim-sao-saverio/",
+   "/leilao-de-imoveis/sp/sao-paulo/saude/",
+   "/leilao-de-imoveis/sp/sao-paulo/21o-subdistrito/",
+   "/leilao-de-imoveis/sp/sao-paulo/lote/apartamento-40m2-jardim-sao-saverio-9bef97d5f710acdb/",
+   "/leilao-de-imoveis/sp/sao-paulo/lote/apartamento-35m2-jardim-sao-saverio-f216ac819e4bd898/",
+   "/leilao-de-imoveis/sp/sao-paulo/lote/apartamento-48m2-jardim-sao-saverio-f8d580c2e6cc3a5f/",
+   "/leilao-de-imoveis/sp/sao-paulo/"
+  ],
+  "/leilao-de-imoveis/sp/sao-paulo/rua/avenida-doutor-jose-maniero/": [
+   "/leilao-de-imoveis/sp/sao-paulo/vila-nova-parada/",
+   "/leilao-de-imoveis/sp/sao-paulo/jaragua/",
+   "/leilao-de-imoveis/sp/sao-paulo/lote/apartamento-44m2-vila-nova-parada-338023334eafbb5c/",
+   "/leilao-de-imoveis/sp/sao-paulo/lote/apartamento-44m2-vila-nova-parada-118fc6c21d47ce6c/",
+   "/leilao-de-imoveis/sp/sao-paulo/lote/apartamento-46m2-vila-nova-parada-5b8c624c4354f207/",
+   "/leilao-de-imoveis/sp/sao-paulo/"
+  ],
+  "/leilao-de-imoveis/sp/sao-paulo/rua/avenida-nagib-farah-maluf/": [
+   "/leilao-de-imoveis/sp/sao-paulo/guaianazes/",
+   "/leilao-de-imoveis/sp/sao-paulo/conjunto-residencial-jose-bonifacio/",
+   "/leilao-de-imoveis/sp/sao-paulo/lote/apartamento-26m2-guaianazes-5c7e16cff58ce28c/",
+   "/leilao-de-imoveis/sp/sao-paulo/lote/apartamento-26m2-guaianazes-b32d975b974d3e4f/",
+   "/leilao-de-imoveis/sp/sao-paulo/lote/apartamento-36m2-guaianazes-f4871fc3a8fe2122/",
+   "/leilao-de-imoveis/sp/sao-paulo/"
+  ],
+  "/leilao-de-imoveis/sp/sao-paulo/rua/avenida-professor-ascendino-reis/": [
+   "/leilao-de-imoveis/sp/sao-paulo/vila-clementino/",
+   "/leilao-de-imoveis/sp/sao-paulo/lote/terreno-1050m2-vila-clementino-8fc626430b4d88dc/",
+   "/leilao-de-imoveis/sp/sao-paulo/"
+  ],
+  "/leilao-de-imoveis/sp/sao-paulo/rua/rua-alvaro-luis-roberto-de-assumpcao/": [
+   "/leilao-de-imoveis/sp/sao-paulo/lote/apartamento-236m2-b3ea7041d44a16a9/",
+   "/leilao-de-imoveis/sp/sao-paulo/"
+  ],
+  "/leilao-de-imoveis/sp/sao-paulo/rua/rua-antonio-de-macedo-soares/": [
+   "/leilao-de-imoveis/sp/sao-paulo/vila-independencia/",
+   "/leilao-de-imoveis/sp/sao-paulo/lote/apartamento-48m2-vila-independencia-fe9271640d0803d2/",
+   "/leilao-de-imoveis/sp/sao-paulo/"
+  ],
+  "/leilao-de-imoveis/sp/sao-paulo/rua/rua-aparecida-da-costa-melo/": [
+   "/leilao-de-imoveis/sp/sao-paulo/vila-costa-mello/",
+   "/leilao-de-imoveis/sp/sao-paulo/lote/casa-97m2-vila-costa-mello-6a47fde6f759ddd9/",
+   "/leilao-de-imoveis/sp/sao-paulo/"
+  ],
+  "/leilao-de-imoveis/sp/sao-paulo/rua/rua-apeninos/": [
+   "/leilao-de-imoveis/sp/sao-paulo/lote/comercial-70m2-04306f42b472a412/",
+   "/leilao-de-imoveis/sp/sao-paulo/lote/comercial-86m2-9cc728da8d8cda0f/",
+   "/leilao-de-imoveis/sp/sao-paulo/lote/area-d17b52381f4cfa0f/",
+   "/leilao-de-imoveis/sp/sao-paulo/"
+  ],
+  "/leilao-de-imoveis/sp/sao-paulo/rua/rua-bastos-tigre/": [
+   "/leilao-de-imoveis/sp/sao-paulo/lote/casa-280m2-6fa8a49b02730134/",
+   "/leilao-de-imoveis/sp/sao-paulo/"
+  ],
+  "/leilao-de-imoveis/sp/sao-paulo/rua/rua-do-piquete/": [
+   "/leilao-de-imoveis/sp/sao-paulo/lote/apartamento-condominio-10d7a9c4c44f2b1b/",
+   "/leilao-de-imoveis/sp/sao-paulo/"
+  ],
+  "/leilao-de-imoveis/sp/sao-paulo/rua/rua-doutor-clementino/": [
+   "/leilao-de-imoveis/sp/sao-paulo/lote/casa-300m2-e93a825ad05a81f4/",
+   "/leilao-de-imoveis/sp/sao-paulo/"
+  ],
+  "/leilao-de-imoveis/sp/sao-paulo/rua/rua-edson-danillo-dotto/": [
+   "/leilao-de-imoveis/sp/sao-paulo/guaianazes/",
+   "/leilao-de-imoveis/sp/sao-paulo/lote/apartamento-42m2-guaianazes-693599cc2424fcc2/",
+   "/leilao-de-imoveis/sp/sao-paulo/"
+  ],
+  "/leilao-de-imoveis/sp/sao-paulo/rua/rua-eleonora-ragusa/": [
+   "/leilao-de-imoveis/sp/sao-paulo/vila-celeste/",
+   "/leilao-de-imoveis/sp/sao-paulo/lote/apartamento-38m2-vila-celeste-21cdbbdef665f59d/",
+   "/leilao-de-imoveis/sp/sao-paulo/lote/apartamento-38m2-vila-celeste-a67049b5413477cd/",
+   "/leilao-de-imoveis/sp/sao-paulo/"
+  ],
+  "/leilao-de-imoveis/sp/sao-paulo/rua/rua-eugenio-falk/": [
+   "/leilao-de-imoveis/sp/sao-paulo/saude/",
+   "/leilao-de-imoveis/sp/sao-paulo/lote/apartamento-35m2-saude-187133971e526380/",
+   "/leilao-de-imoveis/sp/sao-paulo/lote/apartamento-36m2-saude-23e810976f5e3bc1/",
+   "/leilao-de-imoveis/sp/sao-paulo/"
+  ],
+  "/leilao-de-imoveis/sp/sao-paulo/rua/rua-herbert-smith/": [
+   "/leilao-de-imoveis/sp/sao-paulo/lote/casa-240m2-6af6ff9a23505e8f/",
+   "/leilao-de-imoveis/sp/sao-paulo/"
+  ],
+  "/leilao-de-imoveis/sp/sao-paulo/rua/rua-itaguara/": [
+   "/leilao-de-imoveis/sp/sao-paulo/lote/casa-153m2-1d68ec2ec24d01ae/",
+   "/leilao-de-imoveis/sp/sao-paulo/"
+  ],
+  "/leilao-de-imoveis/sp/sao-paulo/rua/rua-jaracatia/": [
+   "/leilao-de-imoveis/sp/sao-paulo/lote/apartamento-52m2-bd7293d9a7fe52ed/",
+   "/leilao-de-imoveis/sp/sao-paulo/"
+  ],
+  "/leilao-de-imoveis/sp/sao-paulo/rua/rua-jose-martins-borges/": [
+   "/leilao-de-imoveis/sp/sao-paulo/tremembe/",
+   "/leilao-de-imoveis/sp/sao-paulo/lote/casa-149m2-tremembe-7a3ecd4f2d592dde/",
+   "/leilao-de-imoveis/sp/sao-paulo/"
+  ],
+  "/leilao-de-imoveis/sp/sao-paulo/rua/rua-pamplona/": [
+   "/leilao-de-imoveis/sp/sao-paulo/jardim-paulista/",
+   "/leilao-de-imoveis/sp/sao-paulo/lote/apartamento-30m2-jardim-paulista-b16b4426de7bf154/",
+   "/leilao-de-imoveis/sp/sao-paulo/lote/apartamento-20m2-jardim-paulista-7b24f6fc51472408/",
+   "/leilao-de-imoveis/sp/sao-paulo/lote/apartamento-64m2-jardim-paulista-04915caf5adb82cd/",
+   "/leilao-de-imoveis/sp/sao-paulo/"
+  ],
+  "/leilao-de-imoveis/sp/sao-paulo/rua/rua-salvador-gianetti/": [
+   "/leilao-de-imoveis/sp/sao-paulo/guaianazes/",
+   "/leilao-de-imoveis/sp/sao-paulo/lote/apartamento-34m2-guaianazes-36dd44eccc006bbb/",
+   "/leilao-de-imoveis/sp/sao-paulo/lote/apartamento-37m2-guaianazes-686d97a6ea1c6a0b/",
+   "/leilao-de-imoveis/sp/sao-paulo/lote/apartamento-34m2-guaianazes-921522da83d4c8a0/",
+   "/leilao-de-imoveis/sp/sao-paulo/"
+  ],
+  "/leilao-de-imoveis/sp/sao-paulo/rua/rua-sao-caetano-do-sul/": [
+   "/leilao-de-imoveis/sp/sao-paulo/lote/outro-43m2-425ce74f9f2ed4bd/",
+   "/leilao-de-imoveis/sp/sao-paulo/"
+  ]
+ }
+}

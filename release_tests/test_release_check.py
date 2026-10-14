@@ -111,6 +111,34 @@ class ReleaseCheckTest(unittest.TestCase):
         self.assertFalse(result["ok"])
         self.assertTrue(any("non-self canonical" in e for e in result["errors"]))
 
+    def redirect(self, target, *, noindex=True):
+        moved = self.out / "rua" / "velha"
+        moved.mkdir(parents=True, exist_ok=True)
+        robots = '<meta name="robots" content="noindex">' if noindex else ""
+        (moved / "index.html").write_text(
+            '<!doctype html><html lang="pt-BR"><head><title>Mudou</title>'
+            + robots
+            + f'<link rel="canonical" href="{target}">'
+            + f'<meta http-equiv="refresh" content="0; url={target}"></head>'
+            + f'<body><a href="{target}">Continue</a></body></html>'
+        )
+
+    def test_retired_address_may_redirect_to_a_page_of_the_artifact(self):
+        self.redirect(self.site + "/")
+        result = self.result()
+        self.assertTrue(result["ok"], result["errors"])
+        self.assertEqual(result["html_pages"], 1)
+
+    def test_redirect_to_a_missing_page_fails(self):
+        self.redirect(self.site + "/sumiu/")
+        self.assertTrue(any("redirect must be" in e for e in self.result()["errors"]))
+
+    def test_redirect_must_be_noindex_and_stay_on_the_site(self):
+        self.redirect(self.site + "/", noindex=False)
+        self.assertFalse(self.result()["ok"])
+        self.redirect("https://example.com/")
+        self.assertFalse(self.result()["ok"])
+
     def test_same_host_http_link_is_not_treated_as_external(self):
         (self.out / "index.html").write_text(
             self.html + f'<a href="http://{self.site.removeprefix("https://")}/city/">Cidade</a>'

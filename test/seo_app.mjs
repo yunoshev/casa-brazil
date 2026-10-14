@@ -258,7 +258,16 @@ assert.equal(ctx.headFor(ctx.href('/l/partial-wrong-source')).noindex, true,
 assert.equal(ctx.headFor(ctx.href('/l/partial-no-marker')).noindex, true,
   'generic lifecycle dates cannot masquerade as a positive source observation');
 assert.equal(ctx.headFor(ctx.href('/l/partial-stale')).noindex, true,
-  'positive observation evidence expires after three days');
+  'a lot missing from the newer list keeps its older stamp and drops out');
+// An unchanged list is not imported again: its lots stay in while it is the
+// newest list for the state, and drop out only when it is two weeks old.
+ctx.dateReference = '2026-09-25';
+assert.equal(ctx.headFor(ctx.href('/l/partial-caixa')).noindex, undefined,
+  'a lot of the newest list does not expire three days after the import');
+ctx.dateReference = '2026-09-30';
+assert.equal(ctx.headFor(ctx.href('/l/partial-caixa')).noindex, true,
+  'a list two weeks without a newer one no longer carries its lots');
+ctx.dateReference = '2026-09-15';
 assert.match(ctx.screenLot('strong'), /Dados deste lote/);
 assert.match(ctx.screenLot('strong'), /status da disponibilidade/);
 assert.match(ctx.screenLot('strong'), /lance inicial por m²/);

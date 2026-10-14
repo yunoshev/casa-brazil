@@ -466,8 +466,11 @@ def write_sitemap(
     when: str | None,
     *,
     route_dates: dict[str, str] | None = None,
-) -> None:
-    """Only validated, indexable files written during THIS run enter the sitemap."""
+) -> dict[str, bool]:
+    """Only validated, indexable files written during THIS run enter the sitemap.
+
+    Returns every written page with whether it is indexable.
+    """
     pages = {}
     urls = {canonical_url(site, p) for p in emitted if route_file(p) != "404.html"}
     for path in emitted:
@@ -478,6 +481,75 @@ def write_sitemap(
         pages, site, when, route_dates=route_dates, chunk_size=SITEMAP_MAX
     ).items():
         (out / name).write_text(xml)
+    return pages
+
+
+#: Addresses Google indexed and showed in results that the site no longer
+#: builds, each with the pages that replace it, closest first.
+RETIRED_ROUTES = SITE / "content" / "retired-routes.json"
+
+
+def load_retired_routes(path: Path = RETIRED_ROUTES) -> dict[str, list[str]]:
+    if not path.exists():
+        return {}
+    doc = json.loads(path.read_text(encoding="utf-8"))
+    if doc.get("schema") != "retired-routes-v1" or not isinstance(doc.get("routes"), dict):
+        raise ValueError("retired routes must use schema retired-routes-v1")
+    routes: dict[str, list[str]] = {}
+    for old, candidates in doc["routes"].items():
+        route_file(old)
+        if not isinstance(candidates, list) or not candidates:
+            raise ValueError(f"retired route {old} names no replacement")
+        for candidate in candidates:
+            route_file(candidate)
+        routes[old] = list(candidates)
+    return routes
+
+
+def retired_targets(retired: dict[str, list[str]], pages: dict[str, bool]) -> dict[str, str]:
+    """Where each retired address sends its visitors in this build.
+
+    The street pages of mid-September earned impressions and stayed in
+    Google's index after the build stopped making them, so in October 54 of
+    them answered 404 to anyone who clicked. A redirect keeps the visitor and
+    the signal. The first replacement that is an indexable page of this build
+    wins, else the first that exists at all; a route that is a page again is
+    left alone.
+    """
+    targets = {}
+    for old, candidates in sorted(retired.items()):
+        if old in pages:
+            continue
+        live = [path for path in candidates if path in pages and route_file(path) != "404.html"]
+        target = next((path for path in live if pages[path]), live[0] if live else None)
+        if target is not None:
+            targets[old] = target
+    return targets
+
+
+def redirect_page(site: str, target: str) -> str:
+    """A permanent redirect GitHub Pages can serve: an instant meta refresh,
+    which Google reads as a 301, with the canonical on the target."""
+    url = esc_attr(canonical_url(site, target))
+    return (
+        '<!doctype html>\n<html lang="pt-BR"><head><meta charset="utf-8">\n'
+        "<title>Esta página mudou de endereço — Preço Real</title>\n"
+        '<meta name="robots" content="noindex">\n'
+        f'<link rel="canonical" href="{url}">\n'
+        f'<meta http-equiv="refresh" content="0; url={url}">\n'
+        f'</head><body><p><a href="{url}">Continue na página atual</a></p></body></html>\n'
+    )
+
+
+def write_retired_routes(
+    out: Path, site: str, pages: dict[str, bool], retired: dict[str, list[str]]
+) -> int:
+    targets = retired_targets(retired, pages)
+    for old, target in targets.items():
+        destination = out / route_file(old)
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        destination.write_text(redirect_page(site, target))
+    return len(targets)
 
 
 def write_robots(out: Path, site: str) -> None:
@@ -715,7 +787,9 @@ async def run(a, ws_url: str, tpl: str, out: Path) -> None:
                     )
                     validate_page(html, path, a.site, emitted_urls=urls)
                     target.write_text(html)
-            write_sitemap(out, emitted, a.site, a.generated, route_dates=route_dates)
+            pages = write_sitemap(out, emitted, a.site, a.generated, route_dates=route_dates)
+            moved = write_retired_routes(out, a.site, pages, load_retired_routes())
+            print(f"  перенаправлений со старых адресов: {moved}", flush=True)
             write_robots(out, a.site)
             # IndexNow verifies key ownership through this root file (see indexnow.py).
             write_key_file(out)

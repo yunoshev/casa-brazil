@@ -20,6 +20,37 @@ from seo import breadcrumbs, canonical_url, route_file
 
 
 class BuildIntegrationTest(unittest.TestCase):
+    def test_retired_address_redirects_to_the_closest_live_page(self):
+        street = "/leilao-de-imoveis/rj/rio-de-janeiro/rua/rua-avila/"
+        district = "/leilao-de-imoveis/rj/rio-de-janeiro/encantado/"
+        lot = "/leilao-de-imoveis/rj/rio-de-janeiro/lote/casa-60m2-abc/"
+        city = "/leilao-de-imoveis/rj/rio-de-janeiro/"
+        retired = {street: [district, lot, city]}
+        self.assertEqual(
+            prerender.retired_targets(retired, {district: True, lot: True, city: True}),
+            {street: district},
+        )
+        # A noindex district gives way to the next indexable replacement.
+        self.assertEqual(
+            prerender.retired_targets(retired, {district: False, lot: True, city: True}),
+            {street: lot},
+        )
+        self.assertEqual(prerender.retired_targets(retired, {district: False}), {street: district})
+        self.assertEqual(prerender.retired_targets(retired, {}), {})
+        # A street that is a page again is never shadowed by its redirect.
+        self.assertEqual(prerender.retired_targets(retired, {street: True, city: True}), {})
+        html = prerender.redirect_page("https://precodemartelo.com", district)
+        self.assertIn(f'content="0; url=https://precodemartelo.com{district}"', html)
+        self.assertIn(f'rel="canonical" href="https://precodemartelo.com{district}"', html)
+        self.assertIn('content="noindex"', html)
+
+    def test_retired_routes_file_names_valid_routes(self):
+        routes = prerender.load_retired_routes()
+        self.assertTrue(routes)
+        for old, candidates in routes.items():
+            self.assertIn("/rua/", old)
+            self.assertEqual(candidates[-1], old.split("rua/")[0])
+
     def test_prerender_seed_routes_are_unique_and_fail_closed(self):
         self.assertEqual(
             prerender.unique_routes(["/", "/cidade/", "/cidade/", "/404", "/"]),
