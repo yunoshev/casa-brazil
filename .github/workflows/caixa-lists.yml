@@ -1,7 +1,8 @@
 # Caixa's own state lists, mirrored every hour for the private catalogue worker.
 #
 # `publish_repo.py` copies this file into the public repository as
-# .github/workflows/caixa-lists.yml, next to pages.yml. Caixa answers 403 to the
+# .github/workflows/caixa-lists.yml, next to pages.yml; a change to it or to
+# caixa_lists.py runs on the next hourly tick. Caixa answers 403 to the
 # server the worker runs on; GitHub's runners download the same public CSVs
 # with a plain curl, one file per runner (a runner's second request in a row
 # is challenged). The lists go to the orphan `caixa-lists` branch (one commit,
@@ -13,13 +14,15 @@
 name: caixa-lists
 
 on:
+  # GitHub starts this repository's scheduled runs hours late (pages.yml, due
+  # at 03:37 UTC, started 08:58-11:15 on 9-14 Oct 2026). The server's
+  # publisher therefore pushes a commit with main's tree to this branch once
+  # an hour, and a push starts the run at once. The cron is only a backstop.
+  push:
+    branches: [caixa-lists-tick]
   schedule:
     - cron: '41 * * * *'
   workflow_dispatch: {}
-  # The first run, and any change to the mirror itself, should not wait an hour.
-  push:
-    branches: [main]
-    paths: [caixa_lists.py, .github/workflows/caixa-lists.yml]
 
 permissions:
   contents: write
