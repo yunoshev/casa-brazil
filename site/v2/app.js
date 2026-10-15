@@ -189,7 +189,7 @@ function newestCaixaObservationFor(uf) {
   }
   return newestCaixaObservation[String(uf || "").toLowerCase()] || null;
 }
-function observedPartialCaixaPresence(r) {
+function observedPartialCaixaPresence(r, c) {
   /* A partial capture can prove that its direct source row was present, but
    * cannot prove whether an omitted row is unavailable. The exporter writes
    * this marker for every row a list import sees, so it is deliberately
@@ -199,18 +199,43 @@ function observedPartialCaixaPresence(r) {
    * An unchanged list is not imported again, so the stamp's age alone says
    * nothing (a three-day expiry took live lots out of the index between
    * lists, Oct 2026). */
-  var lc = lifecycle(r), observed = archiveDate(lc.positive_source_observed_at);
-  if (lotStatus(r) !== "unverified" || !observed || !caixaDetailSource(r) ||
+  c = c || city;
+  var lc = lifecycle(r, c), observed = archiveDate(lc.positive_source_observed_at);
+  if (lotStatus(r, c) !== "unverified" || !observed || !caixaDetailSource(r) ||
       lc.first_seen_at !== null || lc.missing_since !== null || lc.archived_at !== null ||
       lc.last_seen_at !== observed || lc.last_checked_at !== observed ||
       !Array.isArray(lc.history) || lc.history.length) return false;
-  if (observed !== newestCaixaObservationFor(city.uf)) return false;
+  if (observed !== newestCaixaObservationFor(c.uf)) return false;
   var observedDay = observed.slice(0, 10);
   var observedAt = Date.parse(observedDay + "T00:00:00Z");
   var referenceAt = Date.parse(dateReference + "T00:00:00Z");
   // The renderer has a UTC day, not a trusted wall-clock.
   return !isNaN(observedAt) && !isNaN(referenceAt) && observedDay <= dateReference &&
     (referenceAt - observedAt) <= CAIXA_LIST_MAX_AGE_DAYS * 24 * 60 * 60 * 1000;
+}
+/* A lot of the newest Caixa list that our imports first saw in the week
+ * before it. A week, not "this list only": Caixa's new lots come in bursts
+ * (321 in the 13 Oct list, none in the 14 Oct one), and a block that is
+ * empty most days links nothing. Listed on the city and home pages, which
+ * Google revisits, so a new lot's page is found in days rather than waiting
+ * in "discovered, not crawled" (3 469 pages, Oct 2026). */
+var NEW_LOT_DAYS = 7;
+function newInCaixaList(r, c) {
+  c = c || city;
+  if (!observedPartialCaixaPresence(r, c)) return false;
+  var first = Date.parse(archiveDate(lifecycle(r, c).first_source_observed_at) || "");
+  var newest = Date.parse(newestCaixaObservationFor(c.uf) || "");
+  return !isNaN(first) && !isNaN(newest) && first <= newest &&
+    newest - first <= NEW_LOT_DAYS * 24 * 60 * 60 * 1000;
+}
+function newCaixaRows(c) {
+  c = c || city;
+  return c.rows.filter(function (r) { return newInCaixaList(r, c); });
+}
+function newLotsSince(c) {
+  var newest = Date.parse(newestCaixaObservationFor((c || city).uf) || "");
+  return isNaN(newest) ? null
+    : new Date(newest - NEW_LOT_DAYS * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
 }
 function sourceHost(r) {
   var value = httpsSource(r[C.link]);
@@ -1196,6 +1221,16 @@ function homeMap(main) {
       t("home.city.open", { city: esc(main.nome) }) + "</a></div>" : "";
 }
 
+function homeNewLots() {
+  var links = D.cities.map(function (c) {
+    var n = newCaixaRows(c).length;
+    return n ? '<a href="' + esc(cityBase(c)) + '#novos">' + esc(c.nome) + "</a> " + b(num(n)) : "";
+  }).filter(Boolean);
+  return links.length
+    ? '<p class="foot new-lots">' + t("home.new", { days: NEW_LOT_DAYS, links: links.join(" · ") }) + "</p>"
+    : "";
+}
+
 function screenHome() {
   var n = national();
   var main = DEFAULT_CITY;
@@ -1209,7 +1244,7 @@ function screenHome() {
       '<p class="kicker"><i></i>' + t("brand.kicker") +
         b(t("brand.kicker.free")) + "</p>" +
       "<h1>" + t("home.h1", { br: '<span class="mark">' + t("home.br") + "</span>" }) + "</h1>" +
-      '<p class="lede">' + t("home.lede") + "</p>" + inventoryNotice() +
+      '<p class="lede">' + t("home.lede") + "</p>" + inventoryNotice() + homeNewLots() +
     "</section>" +
 
     // Only cities with a measured verdict get a slot here: the page's promise
@@ -1551,6 +1586,29 @@ function med(xs) {
   return a.length % 2 ? a[i] : (a[i - 1] + a[i]) / 2;
 }
 
+var NEW_LOT_LIMIT = 30;
+function cityNewLots() {
+  var rows = newCaixaRows();
+  if (!rows.length) return "";
+  // Newest first; within one import, a reliable estimate before none.
+  function rank(r) { return reliable(r) && typeof r[C.margin] === "number" ? r[C.margin] : -Infinity; }
+  rows.sort(function (a, b) {
+    var fa = String(lifecycle(a).first_source_observed_at), fb = String(lifecycle(b).first_source_observed_at);
+    if (fa !== fb) return fb > fa ? 1 : -1;
+    var x = rank(a), y = rank(b);
+    return x === y ? String(a[C.id]).localeCompare(String(b[C.id])) : y > x ? 1 : -1;
+  });
+  var shown = rows.slice(0, NEW_LOT_LIMIT);
+  return '<section class="sec" id="novos"><div class="sechead"><h2>' + t("city.new.h2") +
+      '</h2><span class="n">' + t("city.new.note", { n: num(rows.length), date: newLotsSince() }) +
+      "</span></div>" +
+    '<div class="rowlist">' + shown.map(lotRow).join("") + "</div>" +
+    (rows.length > shown.length ? '<p class="foot" style="margin-top:10px">' +
+      t("city.new.more", { n: num(rows.length - shown.length), all: link("/all", t("city.cta")) }) +
+      "</p>" : "") +
+  "</section>";
+}
+
 function screenCity() {
   var s = city.stats;
   var areas = allAreas().filter(function (a) { return city.shapes && city.shapes.d[a.key]; });
@@ -1618,6 +1676,8 @@ function screenCity() {
         t("city.best.h2") + '</h2><span class="n">' + t("city.best.note") + "</span></div>" +
         '<div class="rowlist">' + best.map(areaRow).join("") + "</div></section>" : "") +
     "</div>" : "") +
+
+    cityNewLots() +
 
     (noted.length ? '<section class="sec district-notes"><div class="sechead"><h2>' +
       t("city.districts.h2") + '</h2><span class="n">' + t("city.districts.note") + "</span></div>" +

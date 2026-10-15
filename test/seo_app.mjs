@@ -268,6 +268,24 @@ ctx.dateReference = '2026-09-30';
 assert.equal(ctx.headFor(ctx.href('/l/partial-caixa')).noindex, true,
   'a list two weeks without a newer one no longer carries its lots');
 ctx.dateReference = '2026-09-15';
+// "New in the Caixa list": a lot of the newest list that our imports first
+// saw in the week before it. One first seen two weeks earlier is not new.
+city.lifecycle['partial-caixa'].first_source_observed_at = '2026-09-01T10:00:00Z';
+ctx.indexCity(city);
+assert.equal(ctx.newCaixaRows(city).length, 0, 'first seen two weeks before the newest list');
+assert.doesNotMatch(ctx.screenCity(), /id="novos"/, 'no new lots, no empty block');
+assert.doesNotMatch(ctx.screenHome(), /#novos/);
+city.lifecycle['partial-caixa'].first_source_observed_at = '2026-09-11T10:00:00Z';
+ctx.indexCity(city);
+assert.deepEqual(Array.from(ctx.newCaixaRows(city), r => r[0]), ['partial-caixa'],
+  'an earlier import of the same week still counts: new lots come in bursts');
+const newBlock = ctx.screenCity().split('id="novos"')[1] || '';
+assert.ok(newBlock.includes('href="' + ctx.href('/l/partial-caixa') + '"'), 'the city page links the new lot');
+assert.match(newBlock, /entraram na lista desde 2026-09-08: 1/);
+assert.match(ctx.screenHome(), new RegExp('href="' + base + '#novos">Rio de Janeiro</a> <b>1</b>'),
+  'the home page points at the city block');
+delete city.lifecycle['partial-caixa'].first_source_observed_at;
+ctx.indexCity(city);
 assert.match(ctx.screenLot('strong'), /Dados deste lote/);
 assert.match(ctx.screenLot('strong'), /status da disponibilidade/);
 assert.match(ctx.screenLot('strong'), /lance inicial por m²/);
