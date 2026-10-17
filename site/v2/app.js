@@ -53,7 +53,8 @@ function auctionNote(r) {
   if (day && day < dateReference) {
     text += t("seo.auction.past", { date: dateReference }) + " ";
   }
-  return text + t("seo.auction.verify");
+  var listed = caixaListDay(r);
+  return text + (listed ? t("seo.auction.listed", { date: listed }) : t("seo.auction.verify"));
 }
 
 /* Portuguese title-casing, and deliberately not translated: this folds the
@@ -143,9 +144,10 @@ function archiveDate(value) {
   return !isNaN(date.getTime()) && !isNaN(day.getTime()) &&
     day.toISOString().slice(0, 10) === value.slice(0, 10) ? value : null;
 }
-function dateFact(key, value) {
+/* Evidence dates keep their time; the availability banner reads as a day. */
+function dateFact(key, value, day) {
   var date = archiveDate(value);
-  return fact(t(key), date || t("archive.date.unknown"));
+  return fact(t(key), date ? (day ? date.slice(0, 10) : date) : t("archive.date.unknown"));
 }
 function priceKnown(value) { return typeof value === "number" && isFinite(value) && value >= 0; }
 function positiveNumber(value) { return typeof value === "number" && isFinite(value) && value > 0; }
@@ -239,6 +241,17 @@ function newInCaixaList(r, c) {
 function newCaixaRows(c) {
   c = c || city;
   return c.rows.filter(function (r) { return newInCaixaList(r, c); });
+}
+/* A lot in the newest Caixa list says so, with the list's day. "Not
+ * verified" is true of the catalogue, not of a lot Caixa lists today, and it
+ * was what an address search landed on (Oct 2026). */
+function caixaListDay(r, c) {
+  return observedPartialCaixaPresence(r, c)
+    ? archiveDate(lifecycle(r, c).positive_source_observed_at).slice(0, 10) : null;
+}
+function lotStatusText(r) {
+  var day = caixaListDay(r);
+  return day ? t("lot.caixa.listed", { date: day }) : t(STATUS_KEY[lotStatus(r)]);
 }
 function newLotsSince(c) {
   var newest = Date.parse(newestCaixaObservationFor((c || city).uf) || "");
@@ -381,12 +394,13 @@ function citySeoEligible(c) {
 function priceText(value) { return priceKnown(value) ? money(value) : t("archive.price.unknown"); }
 function inventoryNotice() { return '<p class="note inventory-note">' + esc(t("archive.inventory.notice")) + '</p>'; }
 function lifecycleBanner(r) {
-  var status = lotStatus(r), lc = lifecycle(r);
-  return '<section class="lifecycle-banner ' + status + '" aria-label="' + esc(t(STATUS_KEY[status])) + '">' +
-    '<h2>' + esc(t(STATUS_KEY[status])) + '</h2><p>' + esc(t(!isCurrent(r)
-      ? "archive.removal.notice" : status === "active" ? "archive.active.notice" : "archive.unverified.notice")) + '</p>' +
-    '<div class="facts">' + dateFact("archive.date.last_seen", lc.last_seen_at) +
-      dateFact("archive.date.checked", lc.last_checked_at) +
+  var status = lotStatus(r), lc = lifecycle(r), listed = caixaListDay(r), head = lotStatusText(r);
+  return '<section class="lifecycle-banner ' + status + (listed ? " listed" : "") + '" aria-label="' + esc(head) + '">' +
+    '<h2>' + esc(head) + '</h2><p>' + esc(t(!isCurrent(r)
+      ? "archive.removal.notice" : listed ? "lot.caixa.listed.notice"
+      : status === "active" ? "archive.active.notice" : "archive.unverified.notice")) + '</p>' +
+    '<div class="facts">' + dateFact("archive.date.last_seen", lc.last_seen_at, true) +
+      dateFact("archive.date.checked", lc.last_checked_at, true) +
       (status === "missing" || lc.missing_since ? dateFact("archive.date.missing", lc.missing_since) : "") +
       (status === "archived" ? dateFact("archive.date.archived", lc.archived_at) : "") + '</div></section>';
 }
@@ -415,7 +429,7 @@ function sourceDetailLine(r) {
 function lotDossier(r) {
   var lc = lifecycle(r), history = Array.isArray(lc.history) ? lc.history : [];
   var entries = [
-    ["lot.fact.status", t(STATUS_KEY[lotStatus(r)])],
+    ["lot.fact.status", lotStatusText(r)],
     ["lot.fact.checked", lifecycleDate(r) ? lifecycleDate(r).slice(0, 10) : t("archive.date.unknown")],
     ["lot.price.open", priceText(r[C.preco])],
   ];
@@ -2055,7 +2069,7 @@ function lotMetaFacts(r) {
   if (priceKnown(r[C.preco])) facts.push(t("lot.price.open") + ": " + money(r[C.preco]));
   var perM2 = lotPricePerM2(r);
   if (perM2) facts.push(t("lot.fact.open_m2") + ": " + money(perM2) + "/" + t("unit.m2"));
-  facts.push(t("lot.fact.status") + ": " + t(STATUS_KEY[lotStatus(r)]));
+  facts.push(t("lot.fact.status") + ": " + lotStatusText(r));
   if (priceKnown(r[C.aval])) facts.push(t("lot.price.aval") + ": " + money(r[C.aval]));
   var day = auctionDate(r);
   if (day) facts.push(t("seo.auction.date", { date: day }));
@@ -2250,7 +2264,7 @@ function lotRow(r, i) {
         '<span class="pill ' + (vd ? vd[1] : "mute") + '">' +
           (historical ? esc(t(STATUS_KEY[lotStatus(r)])) : vd ? pct(r[C.margin]) : "?") + "</span></div>" +
       '<div class="meta">' + esc(title(r[C.end] || r[C.bairro] || "")) + "</div>" +
-      '<div class="meta">' + esc(historical ? t("archive.removal.notice") : t(STATUS_KEY[lotStatus(r)]) + '. ' + auctionNote(r)) + "</div>" +
+      '<div class="meta">' + esc(historical ? t("archive.removal.notice") : lotStatusText(r) + '. ' + auctionNote(r)) + "</div>" +
       // One line, not two columns: on a phone the two labelled prices sat in
       // 70px each and broke "R$ 33 635" across lines.
       '<div class="nums"><div class="k">' +
