@@ -156,8 +156,16 @@ function lifecycleDate(r) {
   var lc = lifecycle(r);
   return archiveDate(lc.last_checked_at) || archiveDate(lc.last_seen_at) || null;
 }
+/* Searches ask for "imóveis caixa {bairro}" and "leilão caixa {endereço}"; a
+ * title or heading says Caixa only where a Caixa lot is open on the page.
+ * "only" when every lot is Caixa's, "some" when part is, "" when none. */
+function isCaixaLot(r) { return r[C.src] === "caixa"; }
+function caixaPresence(rows) {
+  var n = rows.filter(isCaixaLot).length;
+  return !n ? "" : n === rows.length ? "only" : "some";
+}
 function caixaDetailSource(r) {
-  if (r[C.src] !== "caixa") return null;
+  if (!isCaixaLot(r)) return null;
   var value = httpsSource(r[C.link]);
   if (!value) return null;
   try {
@@ -622,7 +630,7 @@ function lotHistory(r) {
 function screenHistoricalLot(r) {
   var key = areaOf(r);
   return '<div class="hero">' + back(key ? href("/a/" + encodeURIComponent(key)) : href(), key ? areaName(key) : city.nome) +
-    '<h1><span class="lot-title" title="' + esc(title(r[C.end] || r[C.tipo] || t("lot.fallback"))) + '">' + esc(title(r[C.end] || r[C.tipo] || t("lot.fallback"))) + '</span></h1><p class="lede">' + lotLine(r) + '</p>' +
+    '<h1><span class="lot-title" title="' + esc(title(r[C.end] || r[C.tipo] || t("lot.fallback"))) + '">' + esc(title(r[C.end] || r[C.tipo] || t("lot.fallback"))) + '</span></h1><p class="lede">' + lotLede(r) + '</p>' +
     sourceDetailLine(r) +
     lotReferenceLine(r) +
     lotBreadcrumb(r) + (documentReportFor(r[C.id]) ? '<p><a class="analysis-cta" href="#document-report">' + esc(t("doc.report.view")) + '</a></p>' : '') + '</div>' +
@@ -1609,6 +1617,11 @@ function cityNewLots() {
   "</section>";
 }
 
+/* "city.h1" -> "city.h1.caixa" or "city.h1.caixa.only" by the open lots. */
+function cityCaixaKey(key) {
+  var seen = caixaPresence(currentRows());
+  return seen === "only" ? key + ".caixa.only" : seen ? key + ".caixa" : key;
+}
 function screenCity() {
   var s = city.stats;
   var areas = allAreas().filter(function (a) { return city.shapes && city.shapes.d[a.key]; });
@@ -1634,7 +1647,7 @@ function screenCity() {
       // article is a fact about the name, and Portuguese is not the last
       // language that will need one. The catalogue answers per city, so the
       // template never has to.
-      "<h1>" + t("city.h1", {
+      "<h1>" + t(cityCaixaKey("city.h1"), {
         prep: cityPrep(),
         city: '<span class="mark">' + esc(city.nome) + "</span>",
       }) +
@@ -1810,7 +1823,8 @@ function screenArea(key) {
 
   return '' +
     '<div class="hero">' + back(href(), city.nome) +
-      "<h1>" + esc(areaName(key)) + "</h1>" +
+      "<h1>" + esc(areaName(key)) + (caixaPresence(a.rows)
+        ? '<span class="h1-sub">' + esc(t("area.h1.caixa")) + "</span>" : "") + "</h1>" +
       '<p class="lede">' + (!a.n
         ? esc(emptyAreaText(key)) + " " + link("/all", t("area.nolots.cta"))
         : a.rel
@@ -1902,6 +1916,10 @@ function lotLine(r) {
   if (r[C.quartos]) bits.push(r[C.quartos] + " " + plur("unit.beds", r[C.quartos]));
   return bits.join(" · ");
 }
+/* The lot page's own lede names the seller; a row in a list does not repeat it. */
+function lotLede(r) {
+  return (isCaixaLot(r) ? esc(t("lot.line.caixa")) + " · " : "") + lotLine(r);
+}
 
 /* Search snippets use only fields carried by the source row. The stable
  * reference makes two units at the same address distinguishable; the facts
@@ -1962,22 +1980,28 @@ function lotAddressParts(r) {
   var unit = addressUnit(rest);
   return { short: short, full: unit ? short + ", " + unit : short };
 }
+/* "leilão de imóvel" / "leilão", with the seller where it is Caixa: the
+ * searches this site answers are "leilão caixa" plus an address. */
+function lotSale(r, short) {
+  return t("head.lot.sale" + (short ? ".short" : "") + (isCaixaLot(r) ? ".caixa" : ""));
+}
 function lotTitleLadder(r) {
   var what = lotMetaSubject(r), kind = lotMetaSubject(r, true);
   var district = r[C.bairro] ? metaText(title(r[C.bairro]), 32) : city.nome;
   var full = lotTitlePlace(r), addr = lotAddressParts(r), out = [];
-  out.push(t("head.lot.title", { what: what, place: full }));
+  var sale = lotSale(r), short = lotSale(r, true);
+  out.push(t("head.lot.title", { what: what, place: full, sale: sale }));
   if (addr) {
-    out.push(t("head.lot.title.address", { what: what, address: addr.short, place: full }));
-    out.push(t("head.lot.title.compact", { what: what, address: addr.short, place: district }));
-    out.push(t("head.lot.title.compact", { what: kind, address: addr.short, place: district }));
-    out.push(t("head.lot.title.street", { what: what, address: addr.short }));
-    out.push(t("head.lot.title.street", { what: kind, address: addr.short }));
+    out.push(t("head.lot.title.address", { what: what, address: addr.short, place: full, sale: sale }));
+    out.push(t("head.lot.title.compact", { what: what, address: addr.short, place: district, sale: short }));
+    out.push(t("head.lot.title.compact", { what: kind, address: addr.short, place: district, sale: short }));
+    out.push(t("head.lot.title.street", { what: what, address: addr.short, sale: short }));
+    out.push(t("head.lot.title.street", { what: kind, address: addr.short, sale: short }));
     // One building, many lots: the unit is the identity, the kind gives way first.
-    out.push(t("head.lot.title.compact", { what: kind, address: addr.full, place: district }));
-    out.push(t("head.lot.title.street", { what: kind, address: addr.full }));
-    out.push(t("head.lot.title.unit", { address: addr.full, place: district }));
-    out.push(t("head.lot.title.bare", { address: addr.full }));
+    out.push(t("head.lot.title.compact", { what: kind, address: addr.full, place: district, sale: short }));
+    out.push(t("head.lot.title.street", { what: kind, address: addr.full, sale: short }));
+    out.push(t("head.lot.title.unit", { address: addr.full, place: district, sale: short }));
+    out.push(t("head.lot.title.bare", { address: addr.full, sale: short }));
   }
   // A ladder repeats itself when a lot has no unit or no area; counting a
   // repeat twice would make a lot collide with itself.
@@ -2000,19 +2024,20 @@ function lotTitle(r) {
   // street and number, so they lead when they fit; otherwise the kind and area,
   // trimmed area first, never the "leilão" that names the subject.
   var ref = lotReference(r), kind = lotMetaSubject(r, true), addr = lotAddressParts(r);
+  var sale = lotSale(r, true);
   var room = TITLE_MAX - t("head.lot.title.ref", { title: "", ref: ref }).length;
-  var street = addr && t("head.lot.title.bare", { address: addr.short });
+  var street = addr && t("head.lot.title.bare", { address: addr.short, sale: sale });
   if (street && street.length <= room) return t("head.lot.title.ref", { title: street, ref: ref });
   var district = r[C.bairro] ? title(r[C.bairro]) : city.nome;
-  var head = t("head.lot.title.short", { what: kind, place: district });
+  var head = t("head.lot.title.short", { what: kind, place: district, sale: sale });
   if (head.length > room) {
-    var bare = t("head.lot.title.short", { what: kind, place: "" }).length;
+    var bare = t("head.lot.title.short", { what: kind, place: "", sale: sale }).length;
     district = metaText(district, Math.max(6, room - bare));
-    head = t("head.lot.title.short", { what: kind, place: district });
+    head = t("head.lot.title.short", { what: kind, place: district, sale: sale });
   }
   if (head.length > room) {
     kind = metaText(kind, Math.max(8, kind.length - (head.length - room)));
-    head = t("head.lot.title.short", { what: kind, place: district });
+    head = t("head.lot.title.short", { what: kind, place: district, sale: sale });
   }
   return t("head.lot.title.ref", { title: head, ref: ref });
 }
@@ -2537,7 +2562,7 @@ function screenLot(id) {
       ? back(href("/a/" + encodeURIComponent(key)), areaName(key))
       : back(href(), city.nome)) +
       '<h1><span class="lot-title" title="' + esc(title(r[C.end] || r[C.tipo] || t("lot.fallback"))) + '">' + esc(title(r[C.end] || r[C.tipo] || t("lot.fallback"))) + "</span></h1>" +
-      '<p class="lede">' + lotLine(r) + " · " +
+      '<p class="lede">' + lotLede(r) + " · " +
         esc(title(r[C.bairro] || (key ? areaName(key) : city.nome))) + "</p>" +
       sourceDetailLine(r) +
       lotReferenceLine(r) +
@@ -3274,10 +3299,10 @@ function headFor(path) {
     if (!streetSeoEligible(streetBySlug[last])) base.noindex = true;
   } else if (slugToKey.fwd[last]) {
     var st = areaStat(slugToKey.fwd[last]);
-    base.title = fitTitle([
-      t("head.area.title", { name: areaName(st.key), city: name }),
-      t("head.area.title.short", { name: areaName(st.key), city: name }),
-    ]);
+    var av = { name: areaName(st.key), city: name };
+    base.title = fitTitle(caixaPresence(st.rows) ? [
+      t("head.area.title.caixa", av), t("head.area.title.caixa.short", av), t("head.area.title.caixa.bare", av),
+    ] : [t("head.area.title", av), t("head.area.title.short", av)]);
     base.desc = t("head.area.desc", {
       name: areaName(st.key), city: name,
       lots: lots(st.n), below: num(st.below), rel: num(st.rel),
@@ -3316,7 +3341,7 @@ function headFor(path) {
     var ref = r ? lotReference(r) : "";
     var address = r ? metaText(title(r[C.end] || where), 88) : where;
     var facts = r ? lotMetaFacts(r) : what;
-    base.title = r ? lotTitle(r) : t("head.lot.title", { what: what, place: name });
+    base.title = r ? lotTitle(r) : t("head.lot.title", { what: what, place: name, sale: t("head.lot.sale") });
     base.desc = metaText(t("head.lot.desc", {
       what: what, where: where, city: name, address: address, facts: facts, ref: ref,
       reftext: t("lot.reference", { ref: ref }),
@@ -3345,7 +3370,10 @@ function headFor(path) {
       base.desc = pageLabel(page) + " / " + allPageCount() + ". " + base.desc;
     }
   } else {
-    base.title = t("head.city.title", { prep: cityPrep(), city: name });
+    base.title = fitTitle([
+      t(cityCaixaKey("head.city.title"), { prep: cityPrep(), city: name }),
+      t("head.city.title", { prep: cityPrep(), city: name }),
+    ]);
     base.desc = marketOnly()
       ? t("head.city.desc.market", {
           city: name, lots: lots(city.stats.lots), districts: num(mktDistricts()),

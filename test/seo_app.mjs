@@ -241,6 +241,23 @@ assert.match(ctx.headFor(base + 'copacabana/').desc, /escrituras do ITBI/);
 city.market = {};
 reliable[cols.indexOf('conf')] = 'ok';
 ctx.indexCity(city);
+// Searches ask for "imóveis caixa {bairro}" and "leilão caixa {endereço}".
+// "Caixa" is said only where a Caixa lot is open on the page.
+assert.equal(ctx.caixaPresence([]), '');
+assert.equal(ctx.caixaPresence([partialCaixa, partialStale]), 'only');
+assert.equal(ctx.caixaPresence([partialCaixa, strongTwin]), 'some');
+assert.equal(ctx.caixaPresence([strongTwin]), '');
+assert.match(ctx.headFor(ctx.href('/l/partial-caixa')).title,
+  /^Apartamento · 50 m² na Rua Observada, 4, Copacabana — leilão Caixa$/);
+assert.doesNotMatch(ctx.headFor(ctx.href('/l/strong-twin')).title, /Caixa/, 'another source is not called Caixa');
+assert.match(ctx.screenLot('partial-caixa'), /<p class="lede">Imóvel da Caixa · Apartamento · 50 m²/);
+assert.doesNotMatch(ctx.screenLot('strong-twin'), /Imóvel da Caixa/);
+assert.equal(ctx.headFor(base + 'copacabana/').title, 'Copacabana, Rio de Janeiro: imóveis Caixa em leilão e o preço real');
+assert.match(ctx.screenArea('COPACABANA'), /<h1>Copacabana<span class="h1-sub">imóveis da Caixa em leilão<\/span><\/h1>/);
+assert.equal(ctx.headFor(base + 'empty/').title, 'Empty, Rio de Janeiro: leilão de imóveis e o preço real');
+assert.doesNotMatch(ctx.screenArea('EMPTY'), /h1-sub/);
+assert.equal(ctx.headFor(base).title, 'Imóveis Caixa e outros leilões no Rio de Janeiro — o preço real');
+assert.match(ctx.screenCity(), /<h1>Imóveis da Caixa e outros leilões no <span class="mark">Rio de Janeiro<\/span> — é barato mesmo\?<\/h1>/);
 assert.equal(ctx.headFor(weakPath).noindex, true);
 assert.equal(ctx.headFor(barePath).noindex, true, 'area and appraisal alone are not independent evidence');
 assert.equal(ctx.headFor(ctx.href('/l/reliable')).noindex, undefined);

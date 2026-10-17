@@ -149,6 +149,7 @@ a{color:inherit}
 .hero{padding:22px 0 6px}
 h1{font-size:30px; font-weight:800; line-height:1.08}
 h1 .q{color:var(--bad)}
+h1 .h1-sub{display:block; margin-top:6px; color:var(--ink2); font-size:.55em; font-weight:700; letter-spacing:-.01em}
 .lot-title{font-size:clamp(24px,7vw,30px); overflow-wrap:anywhere}
 .lot-breadcrumb{display:flex; flex-wrap:wrap; gap:3px; margin-top:10px; color:var(--ink2); font-size:13px}
 .lot-breadcrumb a{min-height:28px; display:inline-flex; align-items:center}
