@@ -2066,10 +2066,13 @@ function lotMetaSubject(r, withoutArea) {
 function lotMetaFacts(r) {
   var facts = [];
   if (sourceDetailText(r)) facts.push(t("lot.fact.source_detail") + ": " + sourceDetailText(r));
+  // The list's day leads: in third place the 115-character cut ate the date.
+  var listed = caixaListDay(r);
+  if (listed) facts.push(lotStatusText(r));
   if (priceKnown(r[C.preco])) facts.push(t("lot.price.open") + ": " + money(r[C.preco]));
   var perM2 = lotPricePerM2(r);
   if (perM2) facts.push(t("lot.fact.open_m2") + ": " + money(perM2) + "/" + t("unit.m2"));
-  facts.push(t("lot.fact.status") + ": " + lotStatusText(r));
+  if (!listed) facts.push(t("lot.fact.status") + ": " + lotStatusText(r));
   if (priceKnown(r[C.aval])) facts.push(t("lot.price.aval") + ": " + money(r[C.aval]));
   var day = auctionDate(r);
   if (day) facts.push(t("seo.auction.date", { date: day }));

@@ -273,7 +273,7 @@ assert.match(ctx.screenLot('partial-caixa'), /Disponibilidade não verificada/,
 // An address search lands here: it says which Caixa list holds the lot, as a day.
 assert.match(ctx.screenLot('partial-caixa'), /<h2>Na lista da Caixa de 2026-09-15<\/h2>/);
 assert.match(ctx.screenLot('partial-caixa'), /Última presença observada<\/span><span class="v">2026-09-15<\/span>/);
-assert.match(ctx.headFor(ctx.href('/l/partial-caixa')).desc, /status da disponibilidade: Na lista da Caixa de 2026-09-15/);
+assert.match(ctx.headFor(ctx.href('/l/partial-caixa')).desc, /Dados publicados: Na lista da Caixa de 2026-09-15 · lance inicial/);
 assert.doesNotMatch(ctx.screenLot('partial-stale'), /Na lista da Caixa/, 'an older list does not count');
 assert.equal(ctx.headFor(ctx.href('/l/partial-wrong-source')).noindex, true,
   'a partial marker without the official Caixa detail URL is not enough');
