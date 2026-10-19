@@ -22,6 +22,12 @@ retry). So the workflow is three steps, each its own command here:
 Nothing replaces the mirrored lists unless every one downloads and parses; a
 failed run leaves `checked_at` old, and the worker treats a mirror older than a
 few hours as unavailable.
+
+Caixa being unreachable for an hour (a 504, a challenge on the retry: 18 Oct
+2026, 22:34) is not a failed run: it is a warning annotation and exit 0, and
+the next hourly run tries again. GitHub mails the owner on every failed run,
+while a mirror that stays stale is already the bot's alert (`checked_at` older
+than six hours). A list that downloads but does not parse still fails the run.
 """
 
 from __future__ import annotations
@@ -54,6 +60,10 @@ class ListError(RuntimeError):
     pass
 
 
+class SourceUnavailableError(ListError):
+    """Caixa did not hand the list over this time; the next run asks again."""
+
+
 def filename(uf: str) -> str:
     return f"Lista_imoveis_{uf}.csv"
 
@@ -62,7 +72,7 @@ def parse(raw: bytes, uf: str, today: date | None = None) -> tuple[str, int]:
     """The list's own generation date and its row count; raises on anything else."""
     head = raw[:4096].lower()
     if b"<html" in head or b"perfdrive" in head or b"<!doctype" in head:
-        raise ListError(f"{uf}: challenge page instead of the list")
+        raise SourceUnavailableError(f"{uf}: challenge page instead of the list")
     try:
         text = raw.decode("utf-8")
     except UnicodeDecodeError:
@@ -130,7 +140,7 @@ def download(uf: str, run=subprocess.run, pause=time.sleep) -> bytes:
             annotate("warning", f"{uf} attempt {attempt}: {last} {result.stderr.strip()[:160]}")
             if attempt < ATTEMPTS:
                 pause(20 * attempt)
-    raise ListError(f"{uf}: download failed ({last})")
+    raise SourceUnavailableError(f"{uf}: download failed ({last})")
 
 
 def _read_manifest(directory: Path) -> dict:
@@ -191,7 +201,8 @@ def assemble(directory: Path, source: Path, *, now: datetime | None = None) -> d
     for uf in STATES:
         path = source / filename(uf)
         if not path.is_file():
-            raise ListError(f"{uf}: list missing from this run")
+            # Its runner found Caixa unavailable and passed with a warning.
+            raise SourceUnavailableError(f"{uf}: list missing from this run")
         lists[uf] = path.read_bytes()
         day, rows = parse(lists[uf], uf, now.date())
         states[uf] = {
@@ -234,6 +245,7 @@ def main(argv: list[str] | None = None) -> int:
     assemble_parser.add_argument("--dir", type=Path, required=True)
     assemble_parser.add_argument("--from", dest="source", type=Path, required=True)
     args = parser.parse_args(argv)
+    unavailable = {"probe": {"changed": "unavailable"}, "fetch": {"fetched": "false"}}
     try:
         if args.command == "probe":
             args.dir.mkdir(parents=True, exist_ok=True)
@@ -243,11 +255,16 @@ def main(argv: list[str] | None = None) -> int:
         elif args.command == "fetch":
             day = fetch_one(args.uf, args.out)
             print(f"caixa-lists: {args.uf} list {day}", flush=True)
+            _output(fetched="true")
         else:
             manifest = assemble(args.dir, args.source)
             dates = sorted({state["source_date"] for state in manifest["states"].values()})
             print(f"caixa-lists: mirrored {', '.join(dates)}", flush=True)
-            _output(source_date=dates[-1])
+            _output(source_date=dates[-1], ready="true")
+    except SourceUnavailableError as exc:
+        annotate("warning", f"{exc}; Caixa unavailable this run, the next one retries")
+        _output(**unavailable.get(args.command, {"ready": "false"}))
+        return 0
     except ListError as exc:
         annotate("error", str(exc))
         return 1

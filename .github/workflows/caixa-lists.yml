@@ -84,8 +84,11 @@ jobs:
         with:
           sparse-checkout: caixa_lists.py
           sparse-checkout-cone-mode: false
-      - run: python3 caixa_lists.py fetch --uf ${{ matrix.uf }} --out "$RUNNER_TEMP/new"
-      - uses: actions/upload-artifact@v4
+      - id: fetch
+        run: python3 caixa_lists.py fetch --uf ${{ matrix.uf }} --out "$RUNNER_TEMP/new"
+      # Caixa unavailable: the step passed with a warning and has no list.
+      - if: steps.fetch.outputs.fetched == 'true'
+        uses: actions/upload-artifact@v4
         with:
           name: list-${{ matrix.uf }}
           path: ${{ runner.temp }}/new
@@ -106,13 +109,17 @@ jobs:
           if git fetch -q --depth=1 origin caixa-lists; then
             git archive FETCH_HEAD | tar -x -C "$RUNNER_TEMP/lists"
           fi
+      # The probe's CE list is always there; a state whose runner found Caixa
+      # unavailable uploaded nothing, and assemble reports it missing.
       - uses: actions/download-artifact@v4
         with:
           pattern: list-*
           merge-multiple: true
           path: ${{ runner.temp }}/new
-      - run: python3 caixa_lists.py assemble --dir "$RUNNER_TEMP/lists" --from "$RUNNER_TEMP/new"
+      - id: assemble
+        run: python3 caixa_lists.py assemble --dir "$RUNNER_TEMP/lists" --from "$RUNNER_TEMP/new"
       - name: Publish the caixa-lists branch
+        if: steps.assemble.outputs.ready == 'true'
         run: |
           auth=$(git config --get http.https://github.com/.extraheader)
           cd "$RUNNER_TEMP/lists"
