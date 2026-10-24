@@ -2,6 +2,7 @@
 
 import hashlib
 import json
+import re
 import shutil
 import sys
 import tempfile
@@ -48,8 +49,10 @@ class BuildIntegrationTest(unittest.TestCase):
         routes = prerender.load_retired_routes()
         self.assertTrue(routes)
         for old, candidates in routes.items():
-            self.assertIn("/rua/", old)
-            self.assertEqual(candidates[-1], old.split("rua/")[0])
+            # A street page or a page of the archive; the city is the last resort.
+            city = re.match(r"(/leilao-de-imoveis/[a-z]{2}/[a-z0-9-]+/)(rua|arquivo)/", old)
+            self.assertIsNotNone(city, old)
+            self.assertEqual(candidates[-1], city.group(1))
 
     def test_prerender_seed_routes_are_unique_and_fail_closed(self):
         self.assertEqual(
