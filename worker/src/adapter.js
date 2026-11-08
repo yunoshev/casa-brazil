@@ -2,7 +2,10 @@
  * No model keys, PDF fetches, KV/DO storage, email collection or fallback backend.
  */
 const ORIGINS = new Set(["https://precodemartelo.com", "https://www.precodemartelo.com"]);
-const CORE_HOSTS = new Set(["188-245-254-157.nip.io", "188-245-254-157.sslip.io"]);
+const CORE_HOSTS = new Set([
+  "95-216-15-28.nip.io", "95-216-15-28.sslip.io", // dedicated box, Nov 2026
+  "188-245-254-157.nip.io", "188-245-254-157.sslip.io", // old Cloud box until it is deleted
+]);
 const IDENTIFIER = /^[A-Za-z0-9_.:-]{16,120}$/;
 const LOT = /^[A-Za-z0-9_.:-]{1,120}$/;
 const PATH = "/api/brazil-analysis";
