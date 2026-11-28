@@ -1,0 +1,38 @@
+{
+ "checked_at": "2026-11-28T10:51:11.246392Z",
+ "schema": "caixa-lists-v1",
+ "states": {
+  "CE": {
+   "bytes": 145118,
+   "fetched_at": "2026-11-28T10:51:11.246392Z",
+   "rows": 419,
+   "sha256": "4e51cebf354fa0bd87ef94648dcbd21352a813cea5c740ac54275ae3201d4b80",
+   "source_date": "2026-11-27",
+   "url": "https://venda-imoveis.caixa.gov.br/listaweb/Lista_imoveis_CE.csv"
+  },
+  "PE": {
+   "bytes": 242652,
+   "fetched_at": "2026-11-28T10:51:11.246392Z",
+   "rows": 665,
+   "sha256": "ce50b4d4481c12c1a15bf4cd8a50f5ded636dd2776a7cff59131ee50e42eab9e",
+   "source_date": "2026-11-27",
+   "url": "https://venda-imoveis.caixa.gov.br/listaweb/Lista_imoveis_PE.csv"
+  },
+  "RJ": {
+   "bytes": 2916473,
+   "fetched_at": "2026-11-28T10:51:11.246392Z",
+   "rows": 8176,
+   "sha256": "ec501af925a509b24e0b22059f1207994754af48d6dd32676bae63b86c86deec",
+   "source_date": "2026-11-27",
+   "url": "https://venda-imoveis.caixa.gov.br/listaweb/Lista_imoveis_RJ.csv"
+  },
+  "SP": {
+   "bytes": 1296686,
+   "fetched_at": "2026-11-28T10:51:11.246392Z",
+   "rows": 3488,
+   "sha256": "ddb41f3f868b1a02dbe0db45a5c3c9163a314690952cac771fe3ce45b7666f99",
+   "source_date": "2026-11-26",
+   "url": "https://venda-imoveis.caixa.gov.br/listaweb/Lista_imoveis_SP.csv"
+  }
+ }
+}
